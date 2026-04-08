@@ -1088,6 +1088,356 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
     );
 }
 
+// ── Relationships helpers ───────────────────────────────
+function buildPairMap(pairs) {
+    const m = {};
+    for (const p of pairs) {
+        const key = p.user_id1 < p.user_id2 ? `${p.user_id1}|${p.user_id2}` : `${p.user_id2}|${p.user_id1}`;
+        m[key] = p.score;
+    }
+    return m;
+}
+function lookupPair(map, a, b) {
+    if (a === b) return null;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    return map[key] ?? 0; // missing pair = 0 closeness
+}
+
+// Classical Multi-Dimensional Scaling: project a closeness matrix into 2D.
+// Closer pairs (higher score) end up nearer in the plane.
+function mdsLayout(members, pairMap) {
+    const n = members.length;
+    const ids = members.map((m) => m.user_id);
+    if (n === 0) return [];
+    if (n === 1) return [{ user_id: ids[0], x: 0, y: 0 }];
+
+    // 1. Convert closeness → distance. Higher closeness = smaller distance.
+    let cMax = -Infinity;
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const a = ids[i], b = ids[j];
+            const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+            const s = pairMap[k] ?? 0;
+            if (s > cMax) cMax = s;
+        }
+    }
+    if (!isFinite(cMax)) cMax = 0;
+
+    // 2. Build squared distance matrix D².
+    const D2 = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const a = ids[i], b = ids[j];
+            const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+            const s = pairMap[k] ?? 0;
+            const d = cMax - s; // ≥ 0
+            D2[i][j] = D2[j][i] = d * d;
+        }
+    }
+
+    // 3. Double-center: B = -1/2 * J * D² * J,  J = I - (1/n) * 1·1ᵀ
+    const rowMean = D2.map((r) => r.reduce((a, b) => a + b, 0) / n);
+    let grand = 0;
+    for (let i = 0; i < n; i++) grand += rowMean[i];
+    grand /= n;
+    const B = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+            B[i][j] = -0.5 * (D2[i][j] - rowMean[i] - rowMean[j] + grand);
+        }
+    }
+
+    // 4. Top-2 eigenvectors via power iteration with deflation.
+    const v1 = powerIter(B, 60);
+    const lam1 = rayleigh(B, v1);
+    const Bd = B.map((row, i) => row.map((val, j) => val - lam1 * v1[i] * v1[j]));
+    const v2 = powerIter(Bd, 60);
+    const lam2 = rayleigh(Bd, v2);
+
+    const s1 = Math.sqrt(Math.max(0, lam1));
+    const s2 = Math.sqrt(Math.max(0, lam2));
+
+    return ids.map((uid, i) => ({ user_id: uid, x: s1 * v1[i], y: s2 * v2[i] }));
+}
+
+function powerIter(M, iters) {
+    const n = M.length;
+    let v = new Array(n).fill(0).map(() => Math.random() - 0.5);
+    for (let it = 0; it < iters; it++) {
+        const w = new Array(n).fill(0);
+        for (let i = 0; i < n; i++) {
+            let s = 0;
+            for (let j = 0; j < n; j++) s += M[i][j] * v[j];
+            w[i] = s;
+        }
+        let norm = 0;
+        for (let i = 0; i < n; i++) norm += w[i] * w[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < n; i++) v[i] = w[i] / norm;
+    }
+    return v;
+}
+
+function rayleigh(M, v) {
+    const n = M.length;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+        let s = 0;
+        for (let j = 0; j < n; j++) s += M[i][j] * v[j];
+        num += v[i] * s;
+        den += v[i] * v[i];
+    }
+    return num / (den || 1);
+}
+
+// ── Relationships: Heatmap View ─────────────────────────
+function HeatmapView({ data, agentsByUserId, openDetail }) {
+    const { members, pairs } = data;
+    const pairMap = useMemo(() => buildPairMap(pairs), [pairs]);
+
+    // Seriation: sort members by sum of their pairwise scores (cheap proxy
+    // for first principal component — clusters land near the diagonal).
+    const sorted = useMemo(() => {
+        const sums = {};
+        for (const m of members) {
+            let s = 0;
+            for (const other of members) {
+                if (other.user_id !== m.user_id) s += lookupPair(pairMap, m.user_id, other.user_id);
+            }
+            sums[m.user_id] = s;
+        }
+        return [...members].sort((a, b) => sums[b.user_id] - sums[a.user_id]);
+    }, [members, pairMap]);
+
+    const maxAbs = Math.max(0.001, ...pairs.map((p) => Math.abs(p.score)));
+    const cellSize = Math.max(14, Math.min(36, Math.floor(560 / Math.max(1, sorted.length))));
+    const labelW = 110;
+
+    const colorFor = (score) => {
+        if (score === null) return "#1a1a2e";
+        const t = Math.max(-1, Math.min(1, score / maxAbs));
+        if (t >= 0) return `rgba(78, 204, 163, ${(t * 0.85).toFixed(2)})`;
+        return `rgba(233, 69, 96, ${(-t * 0.85).toFixed(2)})`;
+    };
+
+    const labelOf = (uid) => agentsByUserId[uid]?.name || uid.slice(0, 6);
+
+    return (
+        <div style={{ overflow: "auto", background: "#0f0f1e", borderRadius: 6, padding: 12 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: "0.75rem", color: "#eee" }}>
+                <thead>
+                    <tr>
+                        <th style={{ width: labelW }}></th>
+                        {sorted.map((m) => (
+                            <th
+                                key={m.user_id}
+                                title={labelOf(m.user_id)}
+                                style={{ width: cellSize, height: labelW, verticalAlign: "bottom", padding: 0 }}
+                            >
+                                <div
+                                    style={{
+                                        transform: "rotate(-60deg)",
+                                        transformOrigin: "left bottom",
+                                        width: cellSize,
+                                        whiteSpace: "nowrap",
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={() => openDetail("user", m.user_id, labelOf(m.user_id))}
+                                >
+                                    {labelOf(m.user_id)}
+                                </div>
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {sorted.map((row) => (
+                        <tr key={row.user_id}>
+                            <td
+                                style={{ textAlign: "right", paddingRight: 6, cursor: "pointer", whiteSpace: "nowrap" }}
+                                onClick={() => openDetail("user", row.user_id, labelOf(row.user_id))}
+                            >
+                                {labelOf(row.user_id)}
+                            </td>
+                            {sorted.map((col) => {
+                                const score = row.user_id === col.user_id ? null : lookupPair(pairMap, row.user_id, col.user_id);
+                                return (
+                                    <td
+                                        key={col.user_id}
+                                        title={
+                                            score === null
+                                                ? ""
+                                                : `${labelOf(row.user_id)} ↔ ${labelOf(col.user_id)}: ${score >= 0 ? "+" : ""}${score.toFixed(2)}`
+                                        }
+                                        style={{
+                                            width: cellSize,
+                                            height: cellSize,
+                                            background: colorFor(score),
+                                            border: "1px solid #0f0f1e",
+                                        }}
+                                    ></td>
+                                );
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+// ── Relationships: Scatter (MDS) View ───────────────────
+function ScatterView({ data, agentsByUserId, openDetail }) {
+    const { members, pairs } = data;
+    const pairMap = useMemo(() => buildPairMap(pairs), [pairs]);
+    const coords = useMemo(() => mdsLayout(members, pairMap), [members, pairMap]);
+
+    const W = 720, H = 520, PAD = 40;
+    if (coords.length === 0) return null;
+    const xs = coords.map((c) => c.x), ys = coords.map((c) => c.y);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const sx = (x) => PAD + ((x - xMin) / (xMax - xMin || 1)) * (W - 2 * PAD);
+    const sy = (y) => PAD + ((y - yMin) / (yMax - yMin || 1)) * (H - 2 * PAD);
+
+    const labelOf = (uid) => agentsByUserId[uid]?.name || uid.slice(0, 6);
+
+    return (
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ background: "#0f0f1e", borderRadius: 6 }}>
+            {coords.map((c) => {
+                const cx = sx(c.x), cy = sy(c.y);
+                return (
+                    <g
+                        key={c.user_id}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => openDetail("user", c.user_id, labelOf(c.user_id))}
+                    >
+                        <circle cx={cx} cy={cy} r={9} fill="#e94560" stroke="#fff" strokeWidth={1.5} />
+                        <text x={cx + 12} y={cy + 4} fill="#eee" fontSize="11">{labelOf(c.user_id)}</text>
+                    </g>
+                );
+            })}
+        </svg>
+    );
+}
+
+// ── Relationships: Graph View (vis-network) ─────────────
+function GraphView({ data, agentsByUserId, openDetail }) {
+    const containerRef = useRef(null);
+    const networkRef = useRef(null);
+
+    useEffect(() => {
+        if (!containerRef.current || !window.vis) return;
+        const nodes = data.members.map((m) => {
+            const agent = agentsByUserId[m.user_id];
+            return {
+                id: m.user_id,
+                label: agent?.name || m.user_id.slice(0, 6),
+                title: agent?.role || "",
+            };
+        });
+        const maxAbs = Math.max(0.001, ...data.pairs.map((p) => Math.abs(p.score)));
+        const edges = data.pairs.map((p) => ({
+            from: p.user_id1,
+            to: p.user_id2,
+            value: Math.abs(p.score),
+            title: `${p.score > 0 ? "+" : ""}${p.score.toFixed(2)} closeness`,
+            width: 1 + (Math.abs(p.score) / maxAbs) * 8,
+            color: { color: p.score >= 0 ? "rgba(78, 204, 163, 0.7)" : "rgba(233, 69, 96, 0.7)" },
+            dashes: p.score < 0,
+        }));
+        if (networkRef.current) networkRef.current.destroy();
+        networkRef.current = new vis.Network(
+            containerRef.current,
+            { nodes, edges },
+            {
+                nodes: {
+                    shape: "dot",
+                    size: 18,
+                    font: { color: "#eee", size: 14 },
+                    color: { background: "#e94560", border: "#fff" },
+                },
+                edges: { smooth: false },
+                physics: { stabilization: true, barnesHut: { springLength: 140 } },
+            }
+        );
+        networkRef.current.on("click", (params) => {
+            if (params.nodes.length > 0) {
+                const uid = params.nodes[0];
+                const agent = agentsByUserId[uid];
+                openDetail("user", uid, agent?.name || uid.slice(0, 8));
+            }
+        });
+        return () => {
+            if (networkRef.current) {
+                networkRef.current.destroy();
+                networkRef.current = null;
+            }
+        };
+    }, [data, agentsByUserId, openDetail]);
+
+    return <div ref={containerRef} style={{ height: 600, width: "100%", background: "#0f0f1e", borderRadius: 6 }}></div>;
+}
+
+// ── Relationships Tab ──────────────────────────────────
+function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
+    const [data, setData] = useState({ members: [], pairs: [] });
+    const [loading, setLoading] = useState(true);
+    const [viewMode, setViewMode] = useState("heatmap"); // "heatmap" | "scatter" | "graph"
+
+    useEffect(() => {
+        if (!communityId) return;
+        let cancelled = false;
+        setLoading(true);
+        API.get(`/communities/${communityId}/closeness`)
+            .then((d) => { if (!cancelled) setData(d); })
+            .catch(() => { if (!cancelled) setData({ members: [], pairs: [] }); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [communityId]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading relationships...</div>;
+    if (data.pairs.length === 0) return <div className="empty-state">No relationships yet — members need to support proposals first</div>;
+
+    const positive = data.pairs.filter((p) => p.score > 0).length;
+    const negative = data.pairs.filter((p) => p.score < 0).length;
+    const viewProps = { data, agentsByUserId, openDetail };
+
+    return (
+        <div className="card">
+            <div
+                className="card-title"
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+            >
+                <span>
+                    Member Relationships ({data.members.length} members · {positive} positive · {negative} negative)
+                </span>
+                <div style={{ display: "flex", gap: 4 }}>
+                    {[
+                        { id: "heatmap", label: "Heatmap" },
+                        { id: "scatter", label: "Map" },
+                        { id: "graph", label: "Graph" },
+                    ].map((m) => (
+                        <button
+                            key={m.id}
+                            className={`tab-btn ${viewMode === m.id ? "active" : ""}`}
+                            onClick={() => setViewMode(m.id)}
+                        >
+                            {m.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            {viewMode === "heatmap" && <HeatmapView {...viewProps} />}
+            {viewMode === "scatter" && <ScatterView {...viewProps} />}
+            {viewMode === "graph"   && <GraphView   {...viewProps} />}
+            <div style={{ marginTop: 8, fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                Closeness uses per-proposal covariance: agreement on niche proposals scores high, agreement on unanimous proposals scores ≈ 0. Positive = aligned, negative = opposed.
+            </div>
+        </div>
+    );
+}
+
 // ── Tab Navigation ──────────────────────────────────────
 function TabNav({ activeTab, setActiveTab }) {
     const tabs = [
@@ -1099,6 +1449,7 @@ function TabNav({ activeTab, setActiveTab }) {
         { id: "actions", label: "Action Tree" },
         { id: "interview", label: "Interview" },
         { id: "timeline", label: "Timeline" },
+        { id: "relationships", label: "Relationships" },
     ];
     return (
         <div className="tab-nav">
@@ -2152,6 +2503,7 @@ function App() {
                     )}
                     {activeTab === "interview" && <InterviewTab agents={agents} />}
                     {activeTab === "timeline" && <TimelineTab pulses={pulses} proposals={proposals} events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />}
+                    {activeTab === "relationships" && <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />}
                 </div>
             </div>
             <DetailPanel

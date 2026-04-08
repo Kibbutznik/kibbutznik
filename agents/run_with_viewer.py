@@ -170,7 +170,7 @@ Examples:
         yield
 
     # Build the combined app with lifespan
-    from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, ws
+    from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, closeness, ws
     combined_app = FastAPI(
         title="KBZ Big Brother",
         description="KBZ Governance + AI Agents + Big Brother Viewer",
@@ -185,6 +185,7 @@ Examples:
     combined_app.include_router(statements.router, tags=["statements"])
     combined_app.include_router(actions.router, tags=["actions"])
     combined_app.include_router(comments.router, tags=["comments"])
+    combined_app.include_router(closeness.router, tags=["closeness"])
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, ws
+from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, closeness, ws
 
 app = FastAPI(
     title="KBZ - Kibutznik Governance Platform",
@@ -24,6 +24,7 @@ app.include_router(pulses.router, tags=["pulses"])
 app.include_router(statements.router, tags=["statements"])
 app.include_router(actions.router, tags=["actions"])
 app.include_router(comments.router, tags=["comments"])
+app.include_router(closeness.router, tags=["closeness"])
 app.include_router(ws.router, tags=["websocket"])
 
 

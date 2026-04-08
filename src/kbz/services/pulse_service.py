@@ -13,6 +13,7 @@ from kbz.enums import (
 from kbz.models.community import Community
 from kbz.models.proposal import Proposal
 from kbz.models.pulse import Pulse
+from kbz.services.closeness_service import ClosenessService
 from kbz.services.event_bus import event_bus
 from kbz.services.execution_service import ExecutionService
 from kbz.services.member_service import MemberService
@@ -70,6 +71,7 @@ class PulseService:
         member_count = community.member_count
         execution_svc = ExecutionService(self.db)
         member_svc = MemberService(self.db)
+        closeness_svc = ClosenessService(self.db)
 
         # --- Step 1: Process Active pulse proposals (accept/reject) ---
         active_pulse = await self.get_active_pulse(community_id)
@@ -89,6 +91,7 @@ class PulseService:
                     await execution_svc.execute_proposal(proposal)
                 else:
                     proposal.proposal_status = ProposalStatus.REJECTED
+                await closeness_svc.apply_proposal_outcome(community_id, proposal.id)
                 await self.db.flush()
 
             # Mark active pulse as Done
