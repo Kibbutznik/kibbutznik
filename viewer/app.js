@@ -1,0 +1,2173 @@
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// Agent color mapping
+const AGENT_COLORS = {};
+let colorIdx = 0;
+function agentColor(name) {
+    if (!AGENT_COLORS[name]) {
+        AGENT_COLORS[name] = colorIdx++;
+    }
+    return `agent-color-${AGENT_COLORS[name] % 6}`;
+}
+
+// API helpers with caching
+const _cache = {};
+const API = {
+    async get(path) {
+        const res = await fetch(path);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json();
+    },
+    async getCached(path, ttl = 5000) {
+        const now = Date.now();
+        if (_cache[path] && now - _cache[path].time < ttl) {
+            return _cache[path].data;
+        }
+        const data = await this.get(path);
+        _cache[path] = { data, time: now };
+        return data;
+    },
+    async post(path, body) {
+        const res = await fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json();
+    },
+};
+
+// Normalize the variables API response to [{name, value}, ...]
+// The endpoint returns {community_id, variables: {name: value, ...}}
+function parseVariables(data) {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    const vars = data.variables || data;
+    if (typeof vars === "object" && !Array.isArray(vars)) {
+        return Object.entries(vars).map(([name, value]) => ({ name, value }));
+    }
+    return [];
+}
+
+function formatTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleString();
+}
+
+function truncate(s, n = 80) {
+    if (!s) return "";
+    return s.length > n ? s.slice(0, n) + "..." : s;
+}
+
+// ── EntityLink ─────────────────────────────────────────
+function EntityLink({ type, id, label, openDetail }) {
+    return (
+        <span
+            className="entity-link"
+            onClick={(e) => { e.stopPropagation(); openDetail(type, id, label); }}
+        >
+            {label || id?.slice(0, 8) || "?"}
+        </span>
+    );
+}
+
+// ── LinkedDetails — makes event details clickable when ref_id is present ──
+function LinkedDetails({ details, refId, refType, openDetail }) {
+    if (!details) return null;
+    if (refId && openDetail) {
+        const type = refType || "proposal";
+        return (
+            <span className="entity-link" onClick={(e) => { e.stopPropagation(); openDetail(type, refId, details.slice(0, 30)); }}>
+                {details}
+            </span>
+        );
+    }
+    return <span>{details}</span>;
+}
+
+// ── Breadcrumbs ────────────────────────────────────────
+function Breadcrumbs({ stack, popToIndex }) {
+    return (
+        <div className="breadcrumbs">
+            {stack.map((item, i) => (
+                <span key={i}>
+                    {i > 0 && <span className="breadcrumb-sep">&rsaquo;</span>}
+                    <span
+                        className={`breadcrumb-item ${i === stack.length - 1 ? "current" : ""}`}
+                        onClick={() => i < stack.length - 1 && popToIndex(i)}
+                    >
+                        {item.label || `${item.type} ${(item.id || "").slice(0, 8)}`}
+                    </span>
+                </span>
+            ))}
+        </div>
+    );
+}
+
+// ── Detail Panel (sliding overlay) ─────────────────────
+function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agentsByUserId, communityId, events }) {
+    if (stack.length === 0) return null;
+    const current = stack[stack.length - 1];
+
+    useEffect(() => {
+        function onKey(e) { if (e.key === "Escape") closeDetail(); }
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [closeDetail]);
+
+    let content;
+    switch (current.type) {
+        case "proposal":
+            content = <ProposalDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} communityId={communityId} />;
+            break;
+        case "user":
+            content = <MemberDetail id={current.id} openDetail={openDetail} agents={agents} agentsByUserId={agentsByUserId} communityId={communityId} events={events} />;
+            break;
+        case "community":
+            content = <CommunityDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} />;
+            break;
+        case "pulse":
+            content = <PulseDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} communityId={communityId} />;
+            break;
+        case "statement":
+            content = <StatementDetail id={current.id} openDetail={openDetail} communityId={communityId} agentsByUserId={agentsByUserId} />;
+            break;
+        case "variable":
+            content = <VariableDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} />;
+            break;
+        default:
+            content = <div className="empty-state">Unknown entity type: {current.type}</div>;
+    }
+
+    return (
+        <React.Fragment>
+            <div className="detail-panel-backdrop" onClick={closeDetail}></div>
+            <div className="detail-panel">
+                <div className="detail-panel-header">
+                    <Breadcrumbs stack={stack} popToIndex={popToIndex} />
+                    <button className="detail-close-btn" onClick={closeDetail}>&times;</button>
+                </div>
+                <div className="detail-panel-body">
+                    {content}
+                </div>
+            </div>
+        </React.Fragment>
+    );
+}
+
+// ── ProposalDetail ─────────────────────────────────────
+function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
+    const [proposal, setProposal] = useState(null);
+    const [comments, setComments] = useState([]);
+    const [supporters, setSupporters] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        Promise.all([
+            API.getCached(`/proposals/${id}`),
+            API.getCached(`/entities/proposal/${id}/comments`).catch(() => []),
+            API.getCached(`/proposals/${id}/supporters`).catch(() => []),
+        ]).then(([p, c, s]) => {
+            setProposal(p);
+            setComments(c);
+            setSupporters(s || []);
+        }).finally(() => setLoading(false));
+    }, [id]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading proposal...</div>;
+    if (!proposal) return <div className="empty-state">Proposal not found</div>;
+
+    const creatorAgent = agentsByUserId?.[proposal.user_id];
+    const creatorName = creatorAgent?.name || proposal.user_id?.slice(0, 8);
+    const statusClass = proposal.proposal_status === "Accepted" ? "status-accepted" :
+                        proposal.proposal_status === "Rejected" ? "status-rejected" :
+                        proposal.proposal_status === "OnTheAir" ? "status-ontheair" : "status-outthere";
+
+    return (
+        <div className="detail-view">
+            <div className="detail-section">
+                <div className="detail-row">
+                    <span className={`detail-badge ${statusClass}`}>{proposal.proposal_status}</span>
+                    <span className="detail-type-badge">{proposal.proposal_type}</span>
+                </div>
+                <h2 className="detail-title">{proposal.proposal_type} Proposal</h2>
+                <div className="detail-meta">
+                    Created by <EntityLink type="user" id={proposal.user_id} label={creatorName} openDetail={openDetail} />
+                    {" "}&middot; Age: {proposal.age} &middot; Support: {proposal.support_count}
+                    {proposal.pulse_id && (
+                        <span> &middot; Pulse: <EntityLink type="pulse" id={proposal.pulse_id} label="View Pulse" openDetail={openDetail} /></span>
+                    )}
+                </div>
+            </div>
+            {/* Pitch / Description — the agent's persuasive text */}
+            <div className="detail-section proposal-pitch-section">
+                <div className="detail-section-title">Proposal Description</div>
+                <div className="proposal-pitch-text">{proposal.proposal_text || "(no description)"}</div>
+            </div>
+            {proposal.proposal_type === "ChangeVariable" && proposal.proposal_text && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Variable Change</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <EntityLink
+                            type="variable"
+                            id={`${communityId}|${proposal.proposal_text}`}
+                            label={proposal.proposal_text}
+                            openDetail={openDetail}
+                        />
+                        {proposal.val_text && (
+                            <span style={{ color: "var(--text-muted)" }}>
+                                → <span className="var-inline-value">{proposal.val_text}</span>
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )}
+            {proposal.proposal_type !== "ChangeVariable" && proposal.val_text && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Short Name</div>
+                    <div className="detail-text-block">{proposal.val_text}</div>
+                </div>
+            )}
+            {proposal.val_uuid && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Referenced Entity</div>
+                    <EntityLink type="user" id={proposal.val_uuid} label={agentsByUserId?.[proposal.val_uuid]?.name || proposal.val_uuid.slice(0, 12)} openDetail={openDetail} />
+                </div>
+            )}
+            {/* Full data dump — ID, community, pulse */}
+            <div className="detail-section">
+                <div className="detail-section-title">Details</div>
+                <div className="proposal-details-grid">
+                    <span className="proposal-detail-label">ID</span>
+                    <span className="proposal-detail-value mono">{proposal.id}</span>
+                    <span className="proposal-detail-label">Community</span>
+                    <span className="proposal-detail-value mono">
+                        <EntityLink type="community" id={proposal.community_id} label={proposal.community_id} openDetail={openDetail} />
+                    </span>
+                    {proposal.pulse_id && <>
+                        <span className="proposal-detail-label">Pulse</span>
+                        <span className="proposal-detail-value mono">
+                            <EntityLink type="pulse" id={proposal.pulse_id} label={proposal.pulse_id} openDetail={openDetail} />
+                        </span>
+                    </>}
+                    <span className="proposal-detail-label">Created</span>
+                    <span className="proposal-detail-value">{proposal.created_at ? new Date(proposal.created_at).toLocaleString() : "—"}</span>
+                </div>
+            </div>
+            {supporters.length > 0 && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Supporters ({supporters.length})</div>
+                    <div className="supporter-chips">
+                        {supporters.map(s => {
+                            const agent = agentsByUserId?.[s.user_id];
+                            const name = agent?.name || s.user_id?.slice(0, 8);
+                            return (
+                                <span key={s.user_id}
+                                      className={`supporter-chip ${agent ? agentColor(agent.name) : ""} clickable`}
+                                      onClick={() => openDetail("user", s.user_id, name)}>
+                                    {name}
+                                </span>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            <div className="detail-section">
+                <div className="detail-section-title">Discussion ({comments.length})</div>
+                <CommentThread comments={comments} openDetail={openDetail} agentsByUserId={agentsByUserId} />
+            </div>
+        </div>
+    );
+}
+
+// ── CommentThread (recursive tree — HN-style) ────────────
+function CommentThread({ comments, openDetail, agentsByUserId }) {
+    if (!comments || comments.length === 0) return <div className="empty-state" style={{ padding: 16 }}>No comments yet</div>;
+
+    // Build tree from flat list
+    const byId = {};
+    const roots = [];
+    comments.forEach(c => { byId[c.id] = { ...c, children: [] }; });
+    comments.forEach(c => {
+        if (c.parent_comment_id && byId[c.parent_comment_id]) {
+            byId[c.parent_comment_id].children.push(byId[c.id]);
+        } else {
+            roots.push(byId[c.id]);
+        }
+    });
+    // Sort roots and children by time ascending
+    const sortByTime = (a, b) => new Date(a.created_at) - new Date(b.created_at);
+    roots.sort(sortByTime);
+    Object.values(byId).forEach(c => c.children.sort(sortByTime));
+
+    function CommentNode({ comment, depth }) {
+        const authorAgent = agentsByUserId?.[comment.user_id];
+        const authorName = authorAgent?.name || comment.user_id?.slice(0, 8);
+        const colorClass = authorAgent ? agentColor(authorAgent.name) : "";
+        return (
+            <div className={`hn-comment ${depth > 0 ? "hn-comment-nested" : ""}`}>
+                <div className="hn-comment-indent" style={{ paddingLeft: depth * 24 }}>
+                    <div className="hn-comment-bar" style={{ borderLeftColor: depth === 0 ? "var(--accent)" : "var(--border)" }}></div>
+                    <div className="hn-comment-body">
+                        <div className="hn-comment-meta">
+                            <span className={`hn-comment-author ${colorClass} entity-link`}
+                                  onClick={() => openDetail("user", comment.user_id, authorName)}>
+                                {authorName}
+                            </span>
+                            <span className="hn-comment-time">{formatTime(comment.created_at)}</span>
+                            {(comment.score || 0) !== 0 && (
+                                <span className="hn-comment-score">{comment.score > 0 ? "+" : ""}{comment.score} pts</span>
+                            )}
+                        </div>
+                        <div className="hn-comment-text">{comment.text || comment.comment_text}</div>
+                    </div>
+                </div>
+                {comment.children.map(child => (
+                    <CommentNode key={child.id} comment={child} depth={depth + 1} />
+                ))}
+            </div>
+        );
+    }
+
+    return (
+        <div className="hn-comment-thread">
+            {roots.map(c => <CommentNode key={c.id} comment={c} depth={0} />)}
+        </div>
+    );
+}
+
+// ── MemberDetail ───────────────────────────────────────
+function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, events }) {
+    const [user, setUser] = useState(null);
+    const [proposals, setProposals] = useState([]);
+    const [membershipProposals, setMembershipProposals] = useState([]);
+    const [communities, setCommunities] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        const fetches = [
+            API.getCached(`/users/${id}`),
+            communityId
+                ? API.getCached(`/communities/${communityId}/proposals?user_id=${id}`).catch(() => [])
+                : Promise.resolve([]),
+            communityId
+                ? API.getCached(`/communities/${communityId}/proposals?val_uuid=${id}&proposal_type=Membership`).catch(() => [])
+                : Promise.resolve([]),
+            API.getCached(`/users/${id}/communities`).catch(() => []),
+        ];
+        Promise.all(fetches).then(([u, p, mp, comms]) => {
+            setUser(u);
+            setProposals(p);
+            setMembershipProposals(mp || []);
+            // Fetch community names for each membership
+            const communityPromises = (comms || []).map(m =>
+                API.getCached(`/communities/${m.community_id}`).then(c => ({
+                    ...m,
+                    community_name: c.name || c.community_name || m.community_id.slice(0, 8),
+                })).catch(() => ({
+                    ...m,
+                    community_name: m.community_id.slice(0, 8),
+                }))
+            );
+            return Promise.all(communityPromises);
+        }).then(commsWithNames => {
+            setCommunities(commsWithNames || []);
+        }).finally(() => setLoading(false));
+    }, [id, communityId]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading member...</div>;
+    if (!user) return <div className="empty-state">User not found</div>;
+
+    // Find agent info for this user
+    const agent = (agents || []).find(a => a.user_id === id);
+    // Filter events by agent name
+    const agentEvents = agent ? (events || []).filter(e => e.agent === agent.name) : [];
+
+    return (
+        <div className="detail-view">
+            <div className="detail-section">
+                <h2 className="detail-title">{user.user_name}</h2>
+                {user.about && <div className="detail-text-block">{user.about}</div>}
+                <div className="detail-meta">
+                    Joined: {formatDate(user.created_at)}
+                </div>
+            </div>
+            {agent && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Agent Profile</div>
+                    <div className="member-agent-info">
+                        <div>
+                            <div className="detail-meta">Role: <strong>{agent.role}</strong></div>
+                            <div className="detail-text-block" style={{ marginTop: 8 }}>{agent.background}</div>
+                        </div>
+                        {agent.traits && <TraitsRadarChart traits={agent.traits} agentName={agent.name} />}
+                    </div>
+                </div>
+            )}
+            {communities.length > 0 && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Communities ({communities.length})</div>
+                    <div className="detail-list">
+                        {communities.map(c => (
+                            <div key={c.community_id} className="detail-list-item clickable" onClick={() => openDetail("community", c.community_id, c.community_name)}>
+                                <span className={`mini-badge ${c.status === 1 ? "status-accepted" : ""}`}>
+                                    {c.status === 1 ? "Active" : c.status === 0 ? "Pending" : "Inactive"}
+                                </span>
+                                <span className="detail-list-text">{c.community_name}</span>
+                                <span className="detail-list-meta">Seniority: {c.seniority || 0}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            {membershipProposals.length > 0 && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Membership Proposal</div>
+                    <div className="detail-list">
+                        {membershipProposals.map(p => {
+                            const proposer = agentsByUserId?.[p.user_id];
+                            const proposerName = proposer?.name || p.user_id?.slice(0, 8);
+                            return (
+                                <div key={p.id} className="detail-list-item clickable" onClick={() => openDetail("proposal", p.id, "Membership")}>
+                                    <span className={`mini-badge ${p.proposal_status === "Accepted" ? "status-accepted" : p.proposal_status === "Rejected" ? "status-rejected" : ""}`}>
+                                        {p.proposal_status}
+                                    </span>
+                                    <span className="detail-list-text">Proposed by {proposerName}</span>
+                                    <span className="detail-list-meta">Support: {p.support_count}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            <div className="detail-section">
+                <div className="detail-section-title">Proposals ({proposals.length})</div>
+                {proposals.length === 0 && <div className="empty-state" style={{ padding: 16 }}>No proposals</div>}
+                <div className="detail-list">
+                    {proposals.map(p => (
+                        <div key={p.id} className="detail-list-item clickable" onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
+                            <span className={`mini-badge ${p.proposal_status === "Accepted" ? "status-accepted" : p.proposal_status === "Rejected" ? "status-rejected" : ""}`}>
+                                {p.proposal_status}
+                            </span>
+                            <span className="detail-type-badge">{p.proposal_type}</span>
+                            <span className="detail-list-text">{truncate(p.proposal_text, 60)}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            {agentEvents.length > 0 && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Recent Activity ({agentEvents.length})</div>
+                    <div className="detail-list" style={{ maxHeight: 300, overflowY: "auto" }}>
+                        {[...agentEvents].reverse().slice(0, 50).map((ev, i) => (
+                            <div key={i} className="detail-list-item clickable">
+                                <span className="comment-time">{formatTime(ev.time)}</span>
+                                <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
+                                <span className="detail-list-text">
+                                    <LinkedDetails details={ev.details} refId={ev.ref_id} openDetail={openDetail} />
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── CommunityDetail + VariablesPanel ───────────────────
+function CommunityDetail({ id, openDetail, agentsByUserId }) {
+    const [community, setCommunity] = useState(null);
+    const [variables, setVariables] = useState([]);
+    const [members, setMembers] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        Promise.all([
+            API.getCached(`/communities/${id}`),
+            API.getCached(`/communities/${id}/variables`).catch(() => []),
+            API.getCached(`/communities/${id}/members`).catch(() => []),
+        ]).then(([c, v, m]) => {
+            setCommunity(c);
+            setVariables(parseVariables(v));
+            setMembers(m);
+        }).finally(() => setLoading(false));
+    }, [id]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading community...</div>;
+    if (!community) return <div className="empty-state">Community not found</div>;
+
+    // Group variables by category
+    const varGroups = {};
+    (variables || []).forEach(v => {
+        const cat = categorizeVariable(v.name);
+        if (!varGroups[cat]) varGroups[cat] = [];
+        varGroups[cat].push(v);
+    });
+
+    return (
+        <div className="detail-view">
+            <div className="detail-section">
+                <h2 className="detail-title">{community.name}</h2>
+                <div className="detail-meta">
+                    Members: {community.member_count || 0}
+                    {community.parent_id && (
+                        <span> &middot; Parent: <EntityLink type="community" id={community.parent_id} label="Parent Community" openDetail={openDetail} /></span>
+                    )}
+                </div>
+            </div>
+            <div className="detail-section">
+                <div className="detail-section-title">Variables</div>
+                {Object.keys(varGroups).length === 0 && <div className="empty-state" style={{ padding: 16 }}>No variables</div>}
+                {Object.entries(varGroups).map(([cat, vars]) => (
+                    <div key={cat} className="var-group">
+                        <div className="var-group-title">{cat}</div>
+                        <div className="var-grid">
+                            {vars.map(v => (
+                                <div key={v.name} className="var-item clickable"
+                                     onClick={() => openDetail("variable", `${id}|${v.name}`, v.name)}>
+                                    <span className="var-name">{v.name}</span>
+                                    <span className="var-value">{v.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div className="detail-section">
+                <div className="detail-section-title">Members ({members.length})</div>
+                <div className="member-grid">
+                    {members.map(m => {
+                        const agent = agentsByUserId?.[m.user_id];
+                        const name = agent?.name || m.user_id?.slice(0, 8);
+                        return (
+                            <div key={m.user_id} className="member-chip clickable" onClick={() => openDetail("user", m.user_id, name)}>
+                                <span className={`member-name ${agent ? agentColor(agent.name) : ""}`}>{name}</span>
+                                <span className="member-seniority">Sen: {m.seniority || 0}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function categorizeVariable(name) {
+    const n = name.toLowerCase();
+    if (n.includes("threshold") || n.includes("quorum") || n.includes("majority")) return "Thresholds";
+    if (n.includes("age") || n.includes("cooldown") || n.includes("pulse")) return "Governance";
+    if (n.includes("member") || n.includes("handler")) return "Membership";
+    return "General";
+}
+
+// ── PulseDetail ────────────────────────────────────────
+function PulseDetail({ id, openDetail, agentsByUserId, communityId }) {
+    const [pulse, setPulse] = useState(null);
+    const [proposals, setProposals] = useState([]);
+    const [supporters, setSupporters] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        const fetches = [
+            API.getCached(`/pulses/${id}`),
+            API.getCached(`/pulses/${id}/supporters`).catch(() => []),
+        ];
+        if (communityId) {
+            fetches.push(API.getCached(`/communities/${communityId}/proposals`).catch(() => []));
+        } else {
+            fetches.push(Promise.resolve([]));
+        }
+        Promise.all(fetches).then(([p, s, allProps]) => {
+            setPulse(p);
+            setSupporters(s || []);
+            setProposals((allProps || []).filter(pr => pr.pulse_id === id));
+        }).finally(() => setLoading(false));
+    }, [id, communityId]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading pulse...</div>;
+    if (!pulse) return <div className="empty-state">Pulse not found</div>;
+
+    const statusLabel = pulse.status === 0 ? "Next" : pulse.status === 1 ? "Active" : "Done";
+
+    return (
+        <div className="detail-view">
+            <div className="detail-section">
+                <h2 className="detail-title">Pulse - {statusLabel}</h2>
+                <div className="detail-meta">
+                    Support: {pulse.support_count}/{pulse.threshold} &middot; Created: {formatDate(pulse.created_at)}
+                </div>
+            </div>
+            {supporters.length > 0 && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Pulse Supporters ({supporters.length})</div>
+                    <div className="supporter-chips">
+                        {supporters.map(s => {
+                            const agent = agentsByUserId?.[s.user_id];
+                            const name = agent?.name || s.user_id?.slice(0, 8);
+                            return (
+                                <span key={s.user_id}
+                                      className={`supporter-chip ${agent ? agentColor(agent.name) : ""} clickable`}
+                                      onClick={() => openDetail("user", s.user_id, name)}>
+                                    {name}
+                                </span>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            <div className="detail-section">
+                <div className="detail-section-title">Proposals in this Pulse ({proposals.length})</div>
+                {proposals.length === 0 && <div className="empty-state" style={{ padding: 16 }}>No proposals</div>}
+                <div className="detail-list">
+                    {proposals.map(p => {
+                        const creator = agentsByUserId?.[p.user_id];
+                        return (
+                            <div key={p.id} className="detail-list-item clickable" onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
+                                <span className={`mini-badge ${p.proposal_status === "Accepted" ? "status-accepted" : p.proposal_status === "Rejected" ? "status-rejected" : ""}`}>
+                                    {p.proposal_status}
+                                </span>
+                                <span className="detail-type-badge">{p.proposal_type}</span>
+                                <span className="detail-list-text">{truncate(p.proposal_text, 50)}</span>
+                                {creator && <span className="detail-list-meta">by {creator.name}</span>}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── StatementDetail ────────────────────────────────────
+function StatementDetail({ id, openDetail, communityId, agentsByUserId }) {
+    const [statement, setStatement] = useState(null);
+    const [relatedProposals, setRelatedProposals] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        API.getCached(`/statements/${id}`).then(s => {
+            setStatement(s);
+            // Find proposals that created/replaced this statement
+            if (s && s.community_id) {
+                API.getCached(`/communities/${s.community_id}/proposals`).then(proposals => {
+                    const stmtText = s.statement_text || s.text || "";
+                    const related = (proposals || []).filter(p =>
+                        (p.proposal_type === "AddStatement" || p.proposal_type === "ReplaceStatement") &&
+                        (p.proposal_text === stmtText || p.val_text === stmtText)
+                    );
+                    related.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    setRelatedProposals(related);
+                }).catch(() => setRelatedProposals([]));
+            }
+        }).finally(() => setLoading(false));
+    }, [id]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading statement...</div>;
+    if (!statement) return <div className="empty-state">Statement not found</div>;
+
+    return (
+        <div className="detail-view">
+            <div className="detail-section">
+                <h2 className="detail-title">Statement</h2>
+                <div className="detail-meta">
+                    Status: {statement.status === 1 ? "Active" : "Removed"} &middot; Created: {formatDate(statement.created_at)}
+                </div>
+            </div>
+            <div className="detail-section">
+                <div className="detail-section-title">Text</div>
+                <div className="detail-text-block">{statement.statement_text || statement.text}</div>
+            </div>
+            {relatedProposals.length > 0 && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Related Proposals ({relatedProposals.length})</div>
+                    <div className="detail-list">
+                        {relatedProposals.map(p => {
+                            const creator = agentsByUserId?.[p.user_id];
+                            return (
+                                <div key={p.id} className="detail-list-item clickable" onClick={() => openDetail("proposal", p.id, p.proposal_type)}>
+                                    <span className={`mini-badge ${p.proposal_status === "Accepted" ? "status-accepted" : p.proposal_status === "Rejected" ? "status-rejected" : ""}`}>
+                                        {p.proposal_status}
+                                    </span>
+                                    <span className="detail-type-badge">{p.proposal_type}</span>
+                                    {creator && <span className="detail-list-meta">by {creator.name}</span>}
+                                    <span className="detail-list-meta" style={{ marginLeft: "auto" }}>{formatDate(p.created_at)}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            {statement.prev_statement_id && (
+                <div className="detail-section">
+                    <div className="detail-section-title">Replaces</div>
+                    <EntityLink type="statement" id={statement.prev_statement_id} label="Previous Statement" openDetail={openDetail} />
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Statements Tab ─────────────────────────────────────
+function StatementsTab({ communityId, openDetail }) {
+    const [statements, setStatements] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!communityId) return;
+        setLoading(true);
+        API.getCached(`/communities/${communityId}/statements`).then(s => setStatements(s)).catch(() => setStatements([])).finally(() => setLoading(false));
+    }, [communityId]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading statements...</div>;
+
+    const active = statements.filter(s => s.status === 1);
+    const removed = statements.filter(s => s.status !== 1);
+
+    return (
+        <div className="card">
+            <div className="card-title">Community Constitution ({active.length} active statements)</div>
+            {active.length === 0 && <div className="empty-state">No active statements yet</div>}
+            <div className="statements-list">
+                {active.map(s => (
+                    <div key={s.id} className="statement-item clickable" onClick={() => openDetail("statement", s.id, truncate(s.statement_text || s.text, 30))}>
+                        <div className="statement-text">{s.statement_text || s.text}</div>
+                        <div className="statement-meta">
+                            {formatDate(s.created_at)}
+                            {s.prev_statement_id && <span> &middot; Replaces previous</span>}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            {removed.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                    <div className="card-title" style={{ color: "var(--text-muted)" }}>Removed ({removed.length})</div>
+                    {removed.map(s => (
+                        <div key={s.id} className="statement-item removed clickable" onClick={() => openDetail("statement", s.id, truncate(s.statement_text || s.text, 30))}>
+                            <div className="statement-text">{s.statement_text || s.text}</div>
+                            <div className="statement-meta">{formatDate(s.created_at)}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Action Tree Tab ────────────────────────────────────
+function ActionTreeTab({ communityId, rootCommunityId, openDetail, onNavigate }) {
+    const [actions, setActions] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const rootId = rootCommunityId || communityId;
+
+    useEffect(() => {
+        if (!rootId) return;
+        setLoading(true);
+        API.getCached(`/communities/${rootId}/actions`).then(a => setActions(a)).catch(() => setActions([])).finally(() => setLoading(false));
+    }, [rootId]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading actions...</div>;
+
+    return (
+        <div className="card">
+            <div className="card-title">Action Tree</div>
+            <div className="action-tree">
+                <div className="tree-root clickable" onClick={() => onNavigate(null, "Root Community")}>
+                    🏠 Root Community
+                </div>
+                {actions.length === 0 && <div className="empty-state">No actions spawned yet</div>}
+                {actions.map(a => (
+                    <ActionTreeNode key={a.action_id} action={a} openDetail={openDetail} onNavigate={onNavigate} depth={1} />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ── Compact Sidebar Action Tree (always visible alongside main content) ────
+function ActionSidebar({ rootCommunityId, activeCommunityId, onNavigate, openDetail, round }) {
+    const [actions, setActions] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!rootCommunityId) return;
+        setLoading(true);
+        API.get(`/communities/${rootCommunityId}/actions`)
+            .then(a => setActions(a))
+            .catch(() => setActions([]))
+            .finally(() => setLoading(false));
+    }, [rootCommunityId, round]);
+
+    // Don't show sidebar if no actions exist
+    if (!loading && actions.length === 0) return null;
+
+    return (
+        <div className="action-sidebar">
+            <div className="action-sidebar-title">Communities</div>
+            <div
+                className={`action-sidebar-item ${!activeCommunityId ? "active" : ""}`}
+                onClick={() => onNavigate(null, null)}
+            >
+                🏠 Root
+            </div>
+            {loading && <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: "0.75rem" }}>Loading...</div>}
+            {actions.map(a => {
+                const isActive = activeCommunityId === a.action_id;
+                return (
+                    <div
+                        key={a.action_id}
+                        className={`action-sidebar-item ${isActive ? "active" : ""}`}
+                        onClick={() => onNavigate(a.action_id, a.name || a.action_id.slice(0, 8))}
+                        title={a.name || a.action_id}
+                    >
+                        <span className="action-sidebar-icon">⚡</span>
+                        <span className="action-sidebar-name">{a.name || a.action_id.slice(0, 8)}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function ActionTreeNode({ action, openDetail, onNavigate, depth }) {
+    const [expanded, setExpanded] = useState(false);
+    const [children, setChildren] = useState([]);
+    const [childCommunity, setChildCommunity] = useState(null);
+    const [loaded, setLoaded] = useState(false);
+
+    function handleExpand(e) {
+        e.stopPropagation();
+        if (!loaded) {
+            setLoaded(true);
+            Promise.all([
+                API.getCached(`/communities/${action.action_id}`).catch(() => null),
+                API.getCached(`/communities/${action.action_id}/actions`).catch(() => []),
+            ]).then(([comm, acts]) => {
+                setChildCommunity(comm);
+                setChildren(acts);
+            });
+        }
+        setExpanded(!expanded);
+    }
+
+    const statusLabel = action.status === 1 ? "Active" : "Ended";
+    const name = action.name || childCommunity?.name || action.action_id.slice(0, 12);
+
+    return (
+        <div className="tree-node" style={{ marginLeft: depth * 24 }}>
+            <div className="tree-node-header">
+                <span className="tree-expand" onClick={handleExpand}>{expanded ? "▾" : "▸"}</span>
+                <span className="tree-node-name clickable" onClick={() => onNavigate(action.action_id, name)}>
+                    {name}
+                </span>
+                <span className={`mini-badge ${statusLabel === "Active" ? "status-accepted" : "status-rejected"}`}>{statusLabel}</span>
+                {childCommunity && <span className="tree-node-info" style={{ marginLeft: 8 }}>({childCommunity.member_count || 0} members)</span>}
+            </div>
+            {expanded && (
+                <div className="tree-children">
+                    {children.map(c => (
+                        <ActionTreeNode key={c.action_id} action={c} openDetail={openDetail} onNavigate={onNavigate} depth={depth + 1} />
+                    ))}
+                    {loaded && children.length === 0 && <div className="tree-node-info">No sub-actions</div>}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Variable Detail ─────────────────────────────────────
+function VariableDetail({ id, openDetail, agentsByUserId }) {
+    // id is "communityId|varName"
+    const parts = id.split("|");
+    const varCommunityId = parts[0];
+    const varName = parts.slice(1).join("|");
+
+    const [currentValue, setCurrentValue] = useState(null);
+    const [history, setHistory] = useState([]);
+    const [communityName, setCommunityName] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        Promise.all([
+            API.getCached(`/communities/${varCommunityId}/variables`).catch(() => []),
+            API.getCached(`/communities/${varCommunityId}/proposals`).catch(() => []),
+            API.getCached(`/communities/${varCommunityId}`).catch(() => null),
+        ]).then(([vars, proposals, comm]) => {
+            const varObj = parseVariables(vars).find(v => v.name === varName);
+            setCurrentValue(varObj?.value ?? "—");
+            const hist = (proposals || []).filter(p =>
+                p.proposal_type === "ChangeVariable" &&
+                (p.proposal_text === varName || p.proposal_text.startsWith(varName + "\n"))
+            );
+            hist.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            setHistory(hist);
+            setCommunityName(comm?.name || null);
+        }).finally(() => setLoading(false));
+    }, [varCommunityId, varName]);
+
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading variable...</div>;
+
+    return (
+        <div className="detail-view">
+            <div className="detail-section">
+                <h2 className="detail-title">{varName}</h2>
+                <div className="detail-meta">
+                    Current Value: <span className="var-inline-value" style={{ fontSize: "1rem" }}>{currentValue}</span>
+                </div>
+                <div className="detail-meta">
+                    Community: <EntityLink type="community" id={varCommunityId} label={communityName || varCommunityId.slice(0, 8)} openDetail={openDetail} />
+                </div>
+                <div className="detail-meta" style={{ marginTop: 4, color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                    {categorizeVariable(varName)}
+                </div>
+            </div>
+            <div className="detail-section">
+                <div className="detail-section-title">Change History ({history.length} proposals)</div>
+                {history.length === 0 && (
+                    <div className="empty-state" style={{ padding: 16 }}>No ChangeVariable proposals for this variable yet</div>
+                )}
+                <div className="detail-list">
+                    {history.map(p => {
+                        const creator = agentsByUserId?.[p.user_id];
+                        const isAccepted = p.proposal_status === "Accepted";
+                        const isRejected = p.proposal_status === "Rejected";
+                        return (
+                            <div key={p.id} className="detail-list-item clickable"
+                                 onClick={() => openDetail("proposal", p.id, `ChangeVariable: ${varName}`)}>
+                                <span className={`mini-badge ${isAccepted ? "status-accepted" : isRejected ? "status-rejected" : ""}`}>
+                                    {p.proposal_status}
+                                </span>
+                                <span className="var-inline-value" style={{ margin: "0 8px" }}>→ {p.val_text || "?"}</span>
+                                {creator && <span className="detail-list-meta">by {creator.name}</span>}
+                                <span className="detail-list-meta" style={{ marginLeft: "auto" }}>{formatDate(p.created_at)}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Variables Tab ─────────────────────────────────────
+function VariablesTab({ communityId, openDetail }) {
+    const [variables, setVariables] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!communityId) return;
+        setLoading(true);
+        API.getCached(`/communities/${communityId}/variables`, 8000)
+            .then(v => setVariables(parseVariables(v)))
+            .catch(() => setVariables([]))
+            .finally(() => setLoading(false));
+    }, [communityId]);
+
+    if (!communityId) return <div className="loading-center">Waiting for community...</div>;
+    if (loading) return <div className="loading-center"><span className="spinner"></span> Loading variables...</div>;
+
+    const varGroups = {};
+    variables.forEach(v => {
+        const cat = categorizeVariable(v.name);
+        if (!varGroups[cat]) varGroups[cat] = [];
+        varGroups[cat].push(v);
+    });
+
+    return (
+        <div className="card">
+            <div className="card-title">Community Variables ({variables.length})</div>
+            {variables.length === 0 && <div className="empty-state">No variables loaded yet</div>}
+            {Object.entries(varGroups).map(([cat, vars]) => (
+                <div key={cat} className="var-group">
+                    <div className="var-group-title">{cat}</div>
+                    <div className="var-grid">
+                        {vars.map(v => (
+                            <div key={v.name} className="var-item clickable"
+                                 onClick={() => openDetail("variable", `${communityId}|${v.name}`, v.name)}>
+                                <span className="var-name">{v.name}</span>
+                                <span className="var-value">{v.value}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// ── Header ──────────────────────────────────────────────
+function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot }) {
+    const community = status?.community;
+    const isViewingAction = !!activeCommunityId;
+    return (
+        <div className="header">
+            <div className="header-title">
+                KBZ BIG BROTHER
+                {isViewingAction ? (
+                    <React.Fragment>
+                        <span
+                            className="entity-link"
+                            style={{ marginLeft: 8, opacity: 0.6 }}
+                            onClick={onBackToRoot}
+                        >
+                            {community?.name || "Root"}
+                        </span>
+                        <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>&rsaquo;</span>
+                        <span
+                            className="entity-link"
+                            style={{ fontWeight: 700 }}
+                            onClick={() => openDetail("community", activeCommunityId, activeCommunityName)}
+                        >
+                            {activeCommunityName || activeCommunityId?.slice(0, 8)}
+                        </span>
+                        <button
+                            className="back-to-root-btn"
+                            onClick={onBackToRoot}
+                            style={{
+                                marginLeft: 12, padding: "2px 10px", fontSize: "0.75rem",
+                                background: "var(--surface)", border: "1px solid var(--border)",
+                                color: "var(--text-secondary)", borderRadius: 4, cursor: "pointer",
+                            }}
+                        >
+                            ← Back to Root
+                        </button>
+                    </React.Fragment>
+                ) : (
+                    <span
+                        className="entity-link"
+                        style={{ marginLeft: 8 }}
+                        onClick={() => community && openDetail("community", community.id, community.name)}
+                    >
+                        {community?.name || "Loading..."}
+                    </span>
+                )}
+            </div>
+            <div className="header-stats">
+                <div className="header-stat">
+                    <span className="label">Round</span>
+                    <span className="value">{status?.round || 0}</span>
+                </div>
+                <div className="header-stat">
+                    <span className="label">Members</span>
+                    <span className="value">{community?.member_count || 0}</span>
+                </div>
+                <div className="header-stat">
+                    <span className="label">Events</span>
+                    <span className="value">{status?.total_events || 0}</span>
+                </div>
+                {status?.llm && (
+                    <div className="header-stat" title={`${status.llm.calls} calls, avg ${status.llm.avg_latency_s}s, ${status.llm.errors} errors`}>
+                        <span className="label">LLM</span>
+                        <span className="value" style={{ fontSize: "0.75rem" }}>
+                            {status.llm.model?.split(":")[0] || status.llm.backend}
+                            {status.llm.avg_latency_s > 0 ? ` (${status.llm.avg_latency_s}s)` : ""}
+                        </span>
+                    </div>
+                )}
+                {status?.paused && (
+                    <div className="header-stat">
+                        <span className="value" style={{ color: "var(--warning)" }}>PAUSED</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ── Tab Navigation ──────────────────────────────────────
+function TabNav({ activeTab, setActiveTab }) {
+    const tabs = [
+        { id: "dashboard", label: "Dashboard" },
+        { id: "agents", label: "Agents" },
+        { id: "variables", label: "Variables" },
+        { id: "statements", label: "Statements" },
+        { id: "pulses", label: "Pulses" },
+        { id: "actions", label: "Action Tree" },
+        { id: "interview", label: "Interview" },
+        { id: "timeline", label: "Timeline" },
+    ];
+    return (
+        <div className="tab-nav">
+            {tabs.map((t) => (
+                <button
+                    key={t.id}
+                    className={`tab-btn ${activeTab === t.id ? "active" : ""}`}
+                    onClick={() => setActiveTab(t.id)}
+                >
+                    {t.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// ── Variables Widget ────────────────────────────────────
+function VariablesWidget({ communityId, openDetail }) {
+    const [variables, setVariables] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [expanded, setExpanded] = useState(false);
+
+    useEffect(() => {
+        if (!communityId) return;
+        setLoading(true);
+        API.getCached(`/communities/${communityId}/variables`, 10000)
+            .then(v => setVariables(parseVariables(v)))
+            .catch(() => setVariables([]))
+            .finally(() => setLoading(false));
+    }, [communityId]);
+
+    if (!communityId) return null;
+    if (loading && variables.length === 0) return (
+        <div className="vars-widget">
+            <div className="vars-widget-header"><span className="vars-widget-title">Governance Variables</span></div>
+            <div style={{ padding: "8px 0", color: "var(--text-muted)", fontSize: "0.8rem" }}>Loading...</div>
+        </div>
+    );
+    if (!loading && variables.length === 0) return null;
+
+    // Key governance vars always shown
+    const KEY_VARS = ["PulseSupport", "ProposalSupport", "Membership", "ThrowOut", "MaxAge",
+                      "MembershipHandler", "proposalCooldown"];
+    const keyVars = variables.filter(v => KEY_VARS.includes(v.name));
+    const allVars = expanded ? variables : (keyVars.length > 0 ? keyVars : variables.slice(0, 6));
+
+    return (
+        <div className="vars-widget">
+            <div className="vars-widget-header">
+                <span className="vars-widget-title">Governance Variables</span>
+                <span className="vars-widget-action clickable"
+                      onClick={(e) => { e.stopPropagation(); communityId && openDetail("community", communityId, "Community"); }}>
+                    Full Detail ↗
+                </span>
+                <span className="vars-widget-action clickable" onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}>
+                    {expanded ? "Show Less" : `Show All (${variables.length})`}
+                </span>
+            </div>
+            <div className="vars-inline-grid">
+                {allVars.map(v => (
+                    <div key={v.name} className="var-inline-item clickable"
+                         onClick={(e) => { e.stopPropagation(); openDetail("variable", `${communityId}|${v.name}`, v.name); }}>
+                        <span className="var-inline-name">{v.name}</span>
+                        <span className="var-inline-value">{v.value}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ── Community Overview ──────────────────────────────────
+function CommunityOverview({ status, pulses, openDetail, communityId, overrideCommunity }) {
+    // When viewing an action, show its community data instead of root
+    const community = overrideCommunity || status?.community;
+    const nextPulse = pulses?.find((p) => p.status === 0);
+    const donePulses = pulses?.filter((p) => p.status === 2) || [];
+
+    const supportCount = nextPulse?.support_count || 0;
+    const threshold = nextPulse?.threshold || 1;
+    const pct = Math.min(100, Math.round((supportCount / threshold) * 100));
+
+    return (
+        <div className="card overview">
+            {overrideCommunity ? (
+                <div className="community-title-banner action">
+                    <div className="community-title-label">Action Community</div>
+                    <div className="community-title-name">{overrideCommunity.name}</div>
+                </div>
+            ) : (
+                <div className="community-title-banner root">
+                    <div className="community-title-label">Root Community</div>
+                    <div className="community-title-name">{community?.name || "Loading..."}</div>
+                </div>
+            )}
+            <div className="card-title">Community Overview</div>
+            <div className="overview-grid">
+                <div className="overview-stat clickable" onClick={() => community && openDetail("community", community.id, community.name)}>
+                    <div className="stat-value">{community?.member_count || 0}</div>
+                    <div className="stat-label">Members</div>
+                </div>
+                <div className="overview-stat">
+                    <div className="stat-value">{status?.round || 0}</div>
+                    <div className="stat-label">Round</div>
+                </div>
+                <div className="overview-stat clickable"
+                     onClick={() => nextPulse && openDetail("pulse", nextPulse.id, "Next Pulse")}>
+                    <div className="stat-value">{donePulses.length}</div>
+                    <div className="stat-label">Pulses Done</div>
+                </div>
+                <div className="overview-stat">
+                    <div className="stat-value">{status?.total_events || 0}</div>
+                    <div className="stat-label">Total Events</div>
+                </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 4 }}>
+                    Next Pulse Progress
+                </div>
+                <div className="pulse-bar" style={{ cursor: nextPulse ? "pointer" : "default" }}
+                     onClick={() => nextPulse && openDetail("pulse", nextPulse.id, "Next Pulse")}>
+                    <div className="pulse-bar-fill" style={{ width: `${pct}%` }}></div>
+                    <div className="pulse-bar-text">
+                        {supportCount} / {threshold} ({pct}%)
+                    </div>
+                </div>
+            </div>
+            <VariablesWidget communityId={communityId} openDetail={openDetail} />
+        </div>
+    );
+}
+
+// ── Activity Feed ───────────────────────────────────────
+function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, rootCommunityId }) {
+    const feedRef = useRef(null);
+    const [autoScroll, setAutoScroll] = useState(true);
+
+    useEffect(() => {
+        if (autoScroll && feedRef.current) {
+            feedRef.current.scrollTop = 0;
+        }
+    }, [events, autoScroll]);
+
+    function handleScroll() {
+        if (feedRef.current) {
+            setAutoScroll(feedRef.current.scrollTop < 10);
+        }
+    }
+
+    const byCommunity = activeCommunityId
+        ? (events || []).filter(ev => ev.community_id === activeCommunityId)
+        : (events || []).filter(ev => !ev.community_id || ev.community_id === rootCommunityId);
+    // Filter out noise: failed do_nothing events (guards, already-supported, etc.)
+    const filtered = byCommunity.filter(ev => !(ev.success === false && ev.action === "do_nothing"));
+    const reversed = [...filtered].reverse();
+
+    return (
+        <div className="card">
+            <div className="card-title">Activity Feed ({filtered.length} events)</div>
+            <div className="activity-feed" ref={feedRef} onScroll={handleScroll}>
+                {reversed.length === 0 && (
+                    <div className="empty-state">Waiting for simulation to start...</div>
+                )}
+                {reversed.map((ev, i) => (
+                    <div className="event-item" key={`${ev.time}-${i}`}>
+                        <span className="event-time">{formatTime(ev.time)}</span>
+                        <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
+                              onClick={() => {
+                                  // Find user_id for this agent name
+                                  const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
+                                  if (agent) openDetail("user", agent.user_id, ev.agent);
+                              }}>
+                            {ev.agent}
+                        </span>
+                        <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
+                        <div className="event-details">
+                            <LinkedDetails details={ev.details} refId={ev.ref_id} openDetail={openDetail} />
+                            {ev.reason && <div className="event-reason">{ev.reason}</div>}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ── Proposal Board ──────────────────────────────────────
+function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity }) {
+    const onTheAir = proposals?.filter((p) => p.proposal_status === "OnTheAir") || [];
+    const outThere = proposals?.filter((p) => p.proposal_status === "OutThere") || [];
+
+    // Find last executed pulse and its decided proposals
+    const donePulses = (pulses || []).filter(p => p.status === 2);
+    const lastDonePulse = donePulses.length > 0
+        ? donePulses.reduce((a, b) => new Date(a.created_at) > new Date(b.created_at) ? a : b)
+        : null;
+    const recent = lastDonePulse
+        ? (proposals || []).filter(p =>
+            p.pulse_id === lastDonePulse.id &&
+            (p.proposal_status === "Accepted" || p.proposal_status === "Rejected"))
+        : [];
+    const accepted = recent.filter(p => p.proposal_status === "Accepted");
+    const rejected = recent.filter(p => p.proposal_status === "Rejected");
+
+    // Fetch variables for the active community (action sub-community or root)
+    const [communityVars, setCommunityVars] = useState({});
+    const communityForThresholds = activeCommunity || status?.community;
+    const effectiveCommunityId = communityForThresholds?.id;
+
+    useEffect(() => {
+        if (!effectiveCommunityId) return;
+        // If activeCommunity is set, fetch its variables; otherwise use root's from status
+        if (activeCommunity) {
+            API.getCached(`/communities/${effectiveCommunityId}/variables`, 10000)
+                .then(v => {
+                    const parsed = typeof v === "object" && v.variables ? v.variables : v;
+                    setCommunityVars(typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+                })
+                .catch(() => setCommunityVars({}));
+        } else {
+            setCommunityVars(status?.community?.variables || {});
+        }
+    }, [effectiveCommunityId, activeCommunity, status]);
+
+    // Calculate support thresholds from the ACTIVE community (not always root)
+    const memberCount = communityForThresholds?.member_count || 0;
+    const vars = communityVars;
+    const proposalSupportPct = parseInt(vars["ProposalSupport"] || "25", 10);
+    // For OnTheAir: each proposal type has its own threshold variable
+    const getTypeThreshold = (pType) => {
+        const pct = parseInt(vars[pType] || vars["ProposalSupport"] || "25", 10);
+        return Math.max(1, Math.ceil(memberCount * pct / 100));
+    };
+    const proposalThreshold = Math.max(1, Math.ceil(memberCount * proposalSupportPct / 100));
+
+    function ProposalCard({ p }) {
+        const statusClass = p.proposal_status === "Accepted" ? "accepted" : p.proposal_status === "Rejected" ? "rejected" : "";
+        // Yellow highlight: proposal has enough support to pass/advance
+        const hasEnoughSupport = memberCount > 0 && (
+            p.proposal_status === "OutThere"
+                ? p.support_count >= proposalThreshold
+                : p.proposal_status === "OnTheAir"
+                    ? p.support_count >= getTypeThreshold(p.proposal_type)
+                    : false
+        );
+        const readyClass = hasEnoughSupport ? "ready-to-pass" : "";
+        return (
+            <div className={`proposal-card ${statusClass} ${readyClass} clickable`}
+                 onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
+                <div className="proposal-type">{p.proposal_type}</div>
+                <div className="proposal-text">{p.proposal_text}</div>
+                <div className="proposal-meta">
+                    <span>Support: {p.support_count}{memberCount > 0 && (
+                        p.proposal_status === "OutThere"
+                            ? `/${proposalThreshold}`
+                            : p.proposal_status === "OnTheAir"
+                                ? `/${getTypeThreshold(p.proposal_type)}`
+                                : ""
+                    )}</span>
+                    <span>Age: {p.age}</span>
+                    {hasEnoughSupport && <span className="ready-badge">Ready</span>}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="card">
+            <div className="card-title">Proposals</div>
+            <div className="proposal-columns">
+                <div>
+                    <div className="proposal-column-title">On The Air ({onTheAir.length})</div>
+                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} />)}
+                    {onTheAir.length === 0 && <div className="empty-state">None</div>}
+                </div>
+                <div>
+                    <div className="proposal-column-title">Out There ({outThere.length})</div>
+                    {outThere.map((p) => <ProposalCard key={p.id} p={p} />)}
+                    {outThere.length === 0 && <div className="empty-state">None</div>}
+                </div>
+                <div>
+                    <div className="proposal-column-title">Last Pulse Results ({recent.length})</div>
+                    {accepted.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                            <div className="results-sub accepted">Accepted ({accepted.length})</div>
+                            {accepted.map((p) => <ProposalCard key={p.id} p={p} />)}
+                        </div>
+                    )}
+                    {rejected.length > 0 && (
+                        <div>
+                            <div className="results-sub rejected">Rejected ({rejected.length})</div>
+                            {rejected.map((p) => <ProposalCard key={p.id} p={p} />)}
+                        </div>
+                    )}
+                    {recent.length === 0 && <div className="empty-state">No pulse results yet</div>}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Dashboard Tab ───────────────────────────────────────
+function DashboardTab({ status, events, proposals, pulses, onRunRound, runningRound, paused, onTogglePause, openDetail, agentsByUserId, communityId, activeCommunity, activeCommunityId, rootCommunityId }) {
+    return (
+        <div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8 }}>
+                <button
+                    className={`run-round-btn ${paused ? "paused" : ""}`}
+                    onClick={onTogglePause}
+                >
+                    {paused ? "Resume" : "Pause"}
+                </button>
+                <button className="run-round-btn" onClick={onRunRound} disabled={runningRound}>
+                    {runningRound ? <><span className="spinner"></span> Running...</> : "Run Round"}
+                </button>
+            </div>
+            <div className="dashboard-grid">
+                <CommunityOverview status={status} pulses={pulses} openDetail={openDetail} communityId={communityId} overrideCommunity={activeCommunity} />
+                <ActivityFeed events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />
+                <ProposalBoard proposals={proposals} openDetail={openDetail} pulses={pulses} status={status} activeCommunity={activeCommunity} />
+            </div>
+        </div>
+    );
+}
+
+// ── Eagerness Bar ──────────────────────────────────────
+function EagernessBar({ eagerness, eagerFront }) {
+    const colors = {
+        propose: "#e94560",
+        pulse: "#f0c040",
+        comment: "#90caf9",
+        support: "#4ecca3",
+        observe: "#555",
+    };
+    const color = colors[eagerFront] || "#555";
+    const pct = ((eagerness || 5) / 10) * 100;
+    return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", minWidth: 76 }}>
+            <div style={{ fontSize: "0.65rem", color, fontWeight: 700, marginBottom: 2, textTransform: "uppercase" }}>
+                {eagerFront || "observe"}
+            </div>
+            <div style={{ width: 76, height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 2, transition: "width 0.4s ease" }} />
+            </div>
+            <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginTop: 2 }}>
+                eagerness {eagerness || 5}/10
+            </div>
+        </div>
+    );
+}
+
+// ── Traits Radar Chart ──────────────────────────────────
+function TraitsRadarChart({ traits, agentName }) {
+    const canvasRef = useRef(null);
+    const chartRef = useRef(null);
+
+    useEffect(() => {
+        if (!canvasRef.current || !traits) return;
+
+        if (chartRef.current) {
+            chartRef.current.destroy();
+        }
+
+        const labels = Object.keys(traits);
+        const values = Object.values(traits).map((v) => Math.round(v * 100));
+
+        chartRef.current = new Chart(canvasRef.current, {
+            type: "radar",
+            data: {
+                labels: labels.map((l) => l.replace("_", " ")),
+                datasets: [
+                    {
+                        label: agentName,
+                        data: values,
+                        backgroundColor: "rgba(233, 69, 96, 0.2)",
+                        borderColor: "rgba(233, 69, 96, 0.8)",
+                        borderWidth: 2,
+                        pointBackgroundColor: "rgba(233, 69, 96, 1)",
+                        pointRadius: 3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            stepSize: 25,
+                            color: "#666",
+                            backdropColor: "transparent",
+                        },
+                        grid: { color: "rgba(255,255,255,0.1)" },
+                        angleLines: { color: "rgba(255,255,255,0.1)" },
+                        pointLabels: { color: "#ccc", font: { size: 11 } },
+                    },
+                },
+                plugins: {
+                    legend: { display: false },
+                },
+            },
+        });
+
+        return () => {
+            if (chartRef.current) chartRef.current.destroy();
+        };
+    }, [traits, agentName]);
+
+    return (
+        <div className="radar-container">
+            <canvas ref={canvasRef}></canvas>
+        </div>
+    );
+}
+
+// ── Agent Card ──────────────────────────────────────────
+function AgentCard({ agent, expanded, onToggle, openDetail }) {
+    return (
+        <div className={`agent-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
+            <div className="agent-header">
+                <div>
+                    <div className={`agent-name ${agentColor(agent.name)}`}>{agent.name}</div>
+                    <div className="agent-role">{agent.role}</div>
+                </div>
+                <EagernessBar eagerness={agent.eagerness} eagerFront={agent.eager_front} />
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div className="agent-actions-count">{agent.actions_taken} actions</div>
+                    <button className="mini-view-btn" onClick={(e) => { e.stopPropagation(); openDetail("user", agent.user_id, agent.name); }}>
+                        View
+                    </button>
+                </div>
+            </div>
+            <div className="agent-background">
+                {expanded ? agent.background : (agent.background || "").slice(0, 120) + "..."}
+            </div>
+            {expanded && (
+                <div className="agent-detail-grid">
+                    <TraitsRadarChart traits={agent.traits} agentName={agent.name} />
+                    <div>
+                        <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: 8, color: "var(--text-secondary)" }}>
+                            Recent Actions
+                        </div>
+                        <div className="action-list">
+                            {(agent.recent_actions || []).slice().reverse().map((a, i) => (
+                                <div className="action-item" key={i}>
+                                    <div>
+                                        <span className="action-type">{a.action}</span>
+                                        <span className="action-time" style={{ marginLeft: 8 }}>{formatTime(a.time)}</span>
+                                    </div>
+                                    <div className="action-detail">{a.details}</div>
+                                    {a.reason && <div className="action-detail" style={{ fontStyle: "italic" }}>{a.reason}</div>}
+                                </div>
+                            ))}
+                            {(!agent.recent_actions || agent.recent_actions.length === 0) && (
+                                <div className="empty-state">No actions yet</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Agents Tab ──────────────────────────────────────────
+function AgentsTab({ agents, openDetail, communityId, rootCommunityId }) {
+    const [expandedAgent, setExpandedAgent] = useState(null);
+    const [memberIds, setMemberIds] = useState(null);
+
+    useEffect(() => {
+        if (!communityId || communityId === rootCommunityId) {
+            setMemberIds(null);
+            return;
+        }
+        API.get(`/communities/${communityId}/members`)
+            .then(m => setMemberIds(new Set(m.map(x => x.user_id))))
+            .catch(() => setMemberIds(null));
+    }, [communityId, rootCommunityId]);
+
+    const filtered = memberIds
+        ? (agents || []).filter(a => memberIds.has(a.user_id))
+        : (agents || []);
+
+    return (
+        <div className="agent-grid">
+            {filtered.map((a) => (
+                <AgentCard
+                    key={a.name}
+                    agent={a}
+                    expanded={expandedAgent === a.name}
+                    onToggle={() => setExpandedAgent(expandedAgent === a.name ? null : a.name)}
+                    openDetail={openDetail}
+                />
+            ))}
+            {filtered.length === 0 && (
+                <div className="empty-state">{memberIds ? "No agents in this community" : "No agents registered yet"}</div>
+            )}
+        </div>
+    );
+}
+
+// ── Interview Tab ───────────────────────────────────────
+function InterviewTab({ agents }) {
+    const [selectedAgent, setSelectedAgent] = useState(null);
+    const [question, setQuestion] = useState("");
+    const [conversations, setConversations] = useState({});
+    const [loading, setLoading] = useState(false);
+    const chatEndRef = useRef(null);
+
+    useEffect(() => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [conversations, selectedAgent]);
+
+    const currentChat = selectedAgent ? (conversations[selectedAgent] || []) : [];
+
+    async function handleSend() {
+        if (!selectedAgent || !question.trim() || loading) return;
+
+        const q = question.trim();
+        setQuestion("");
+        setLoading(true);
+
+        setConversations((prev) => ({
+            ...prev,
+            [selectedAgent]: [...(prev[selectedAgent] || []), { type: "question", text: q }],
+        }));
+
+        try {
+            const res = await API.post("/simulation/interview", {
+                agent_name: selectedAgent,
+                question: q,
+            });
+            setConversations((prev) => ({
+                ...prev,
+                [selectedAgent]: [...(prev[selectedAgent] || []), { type: "answer", text: res.answer }],
+            }));
+        } catch (err) {
+            setConversations((prev) => ({
+                ...prev,
+                [selectedAgent]: [...(prev[selectedAgent] || []), { type: "answer", text: `Error: ${err.message}` }],
+            }));
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function handleKeyDown(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    }
+
+    return (
+        <div className="interview-container">
+            <div className="agent-selector">
+                <div className="card-title">Select Agent</div>
+                {(agents || []).map((a) => (
+                    <button
+                        key={a.name}
+                        className={`agent-select-btn ${selectedAgent === a.name ? "selected" : ""}`}
+                        onClick={() => setSelectedAgent(a.name)}
+                    >
+                        <div className={`name ${agentColor(a.name)}`}>{a.name}</div>
+                        <div className="role">{a.role}</div>
+                    </button>
+                ))}
+            </div>
+            <div className="chat-area">
+                <div className="chat-messages">
+                    {!selectedAgent && (
+                        <div className="empty-state">Select an agent to start an interview</div>
+                    )}
+                    {currentChat.map((msg, i) => (
+                        <div key={i} className={`chat-bubble ${msg.type}`}>
+                            <div className="bubble-label">
+                                {msg.type === "question" ? "You" : selectedAgent}
+                            </div>
+                            {msg.text}
+                        </div>
+                    ))}
+                    {loading && (
+                        <div className="chat-bubble answer">
+                            <div className="bubble-label">{selectedAgent}</div>
+                            <span className="spinner"></span> Thinking...
+                        </div>
+                    )}
+                    <div ref={chatEndRef} />
+                </div>
+                <div className="chat-input-row">
+                    <input
+                        className="chat-input"
+                        type="text"
+                        placeholder={selectedAgent ? `Ask ${selectedAgent} a question...` : "Select an agent first"}
+                        value={question}
+                        onChange={(e) => setQuestion(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        disabled={!selectedAgent || loading}
+                    />
+                    <button className="send-btn" onClick={handleSend} disabled={!selectedAgent || !question.trim() || loading}>
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Timeline Tab ────────────────────────────────────────
+function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, activeCommunityId, rootCommunityId }) {
+    // Merge events into one chronological stream
+    // Entries: pulse markers + proposal events + agent action events
+    const eventsByCommunity = activeCommunityId
+        ? (events || []).filter(ev => ev.community_id === activeCommunityId)
+        : (events || []).filter(ev => !ev.community_id || ev.community_id === rootCommunityId);
+    // Filter out noise: failed do_nothing events (guards, already-supported, etc.)
+    const filteredEvents = eventsByCommunity.filter(ev => !(ev.success === false && ev.action === "do_nothing"));
+
+    const entries = [];
+
+    (pulses || []).forEach(p => {
+        entries.push({ kind: "pulse", time: p.created_at, data: p });
+    });
+
+    (proposals || []).forEach(p => {
+        entries.push({ kind: "proposal", time: p.created_at, data: p });
+    });
+
+    filteredEvents.forEach(ev => {
+        entries.push({ kind: "event", time: ev.time, data: ev });
+    });
+
+    entries.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+    function pulseLabel(s) {
+        return s === 0 ? "Next" : s === 1 ? "Active" : "Executed";
+    }
+    function pulseClass(s) {
+        return s === 0 ? "next" : s === 2 ? "done" : "";
+    }
+
+    return (
+        <div className="card">
+            <div className="card-title">Full Timeline ({entries.length} entries)</div>
+            <div className="timeline">
+                {entries.length === 0 && <div className="empty-state">No activity yet</div>}
+                {entries.map((entry, i) => {
+                    if (entry.kind === "pulse") {
+                        const p = entry.data;
+                        return (
+                            <div key={`pulse-${p.id}`} className={`timeline-item ${pulseClass(p.status)} clickable`}
+                                 onClick={() => openDetail("pulse", p.id, `Pulse ${pulseLabel(p.status)}`)}>
+                                <div className="timeline-marker pulse-marker">PULSE</div>
+                                <div className="timeline-title">Pulse — {pulseLabel(p.status)}</div>
+                                <div className="timeline-meta">
+                                    Support: {p.support_count}/{p.threshold} · {formatTime(p.created_at)}
+                                </div>
+                            </div>
+                        );
+                    }
+                    if (entry.kind === "proposal") {
+                        const p = entry.data;
+                        const statusClass = p.proposal_status === "Accepted" ? "status-accepted"
+                                          : p.proposal_status === "Rejected" ? "status-rejected" : "";
+                        return (
+                            <div key={`prop-${p.id}`} className="timeline-item clickable"
+                                 onClick={() => openDetail("proposal", p.id, p.proposal_type)}>
+                                <div className="timeline-marker proposal-marker">PROP</div>
+                                <div className="timeline-title">
+                                    <span className={`mini-badge ${statusClass}`}>{p.proposal_status}</span>
+                                    {" "}<span className="detail-type-badge">{p.proposal_type}</span>
+                                </div>
+                                <div className="timeline-meta">{p.proposal_text?.slice(0, 80)}</div>
+                                <div className="timeline-meta">Support: {p.support_count} · {formatTime(p.created_at)}</div>
+                            </div>
+                        );
+                    }
+                    // agent event
+                    const ev = entry.data;
+                    const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
+                    return (
+                        <div key={`ev-${i}`} className="timeline-item timeline-event">
+                            <div className="timeline-event-row">
+                                <span className="event-time">{formatTime(ev.time)}</span>
+                                <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
+                                      onClick={() => agent && openDetail("user", agent.user_id, ev.agent)}>
+                                    {ev.agent}
+                                </span>
+                                <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
+                                <span className="timeline-event-detail">
+                                    <LinkedDetails details={ev.details} refId={ev.ref_id} openDetail={openDetail} />
+                                </span>
+                            </div>
+                            {ev.reason && <div className="event-reason" style={{ marginLeft: 8 }}>{ev.reason}</div>}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ── Pulses Tab ─────────────────────────────────────────
+function PulsesTab({ pulses, communityId, openDetail }) {
+    const [expandedPulseId, setExpandedPulseId] = useState(null);
+    const [pulseProposals, setPulseProposals] = useState([]);
+    const [loadingProposals, setLoadingProposals] = useState(false);
+
+    const sorted = [...(pulses || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    function handleExpandPulse(pulseId) {
+        if (expandedPulseId === pulseId) {
+            setExpandedPulseId(null);
+            setPulseProposals([]);
+            return;
+        }
+        setExpandedPulseId(pulseId);
+        setLoadingProposals(true);
+        API.get(`/communities/${communityId}/proposals?pulse_id=${pulseId}`)
+            .then(props => setPulseProposals(props))
+            .catch(() => setPulseProposals([]))
+            .finally(() => setLoadingProposals(false));
+    }
+
+    function statusLabel(s) {
+        return s === 0 ? "Next" : s === 1 ? "Active" : "Executed";
+    }
+
+    return (
+        <div className="card">
+            <div className="card-title">Pulse History ({sorted.length})</div>
+            {sorted.length === 0 && <div className="empty-state">No pulses yet</div>}
+            {sorted.map((p, idx) => {
+                const isExpanded = expandedPulseId === p.id;
+                const label = statusLabel(p.status);
+                const accepted = isExpanded ? pulseProposals.filter(pr => pr.proposal_status === "Accepted") : [];
+                const rejected = isExpanded ? pulseProposals.filter(pr => pr.proposal_status === "Rejected") : [];
+                const onTheAir = isExpanded ? pulseProposals.filter(pr => pr.proposal_status === "OnTheAir") : [];
+                const isClickable = p.status === 2;
+                const pulseNum = sorted.length - idx;
+
+                return (
+                    <div key={p.id} className="pulse-history-card">
+                        <div
+                            className={isClickable ? "clickable" : ""}
+                            style={{
+                                padding: "12px 16px", display: "flex",
+                                justifyContent: "space-between", alignItems: "center",
+                                background: isExpanded ? "var(--bg-card)" : "transparent",
+                            }}
+                            onClick={() => isClickable && handleExpandPulse(p.id)}
+                        >
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>
+                                    Pulse #{pulseNum}
+                                </span>
+                                <span className={`mini-badge ${p.status === 2 ? "status-accepted" : p.status === 1 ? "status-outthere" : ""}`}>
+                                    {label}
+                                </span>
+                            </div>
+                            <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", display: "flex", gap: 12 }}>
+                                <span>Support: {p.support_count}/{p.threshold}</span>
+                                <span>{formatDate(p.created_at)}</span>
+                                {isClickable && <span>{isExpanded ? "▾" : "▸"}</span>}
+                            </div>
+                        </div>
+                        {isExpanded && (
+                            <div style={{ padding: "8px 16px 16px", borderTop: "1px solid var(--border)" }}>
+                                {loadingProposals && <div><span className="spinner"></span> Loading proposals...</div>}
+                                {!loadingProposals && accepted.length === 0 && rejected.length === 0 && onTheAir.length === 0 && (
+                                    <div className="empty-state">No proposals linked to this pulse</div>
+                                )}
+                                {accepted.length > 0 && (
+                                    <div style={{ marginBottom: 8 }}>
+                                        <div className="results-sub accepted">Accepted ({accepted.length})</div>
+                                        {accepted.map(pr => (
+                                            <div key={pr.id} className="pulse-proposal-item accepted clickable"
+                                                 onClick={() => openDetail("proposal", pr.id, pr.proposal_type)}>
+                                                <span className="detail-type-badge">{pr.proposal_type}</span>
+                                                <span style={{ marginLeft: 8 }}>{pr.proposal_text?.slice(0, 80)}</span>
+                                                <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                                    Support: {pr.support_count}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {rejected.length > 0 && (
+                                    <div style={{ marginBottom: 8 }}>
+                                        <div className="results-sub rejected">Rejected ({rejected.length})</div>
+                                        {rejected.map(pr => (
+                                            <div key={pr.id} className="pulse-proposal-item rejected clickable"
+                                                 onClick={() => openDetail("proposal", pr.id, pr.proposal_type)}>
+                                                <span className="detail-type-badge">{pr.proposal_type}</span>
+                                                <span style={{ marginLeft: 8 }}>{pr.proposal_text?.slice(0, 80)}</span>
+                                                <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                                    Support: {pr.support_count}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {onTheAir.length > 0 && (
+                                    <div>
+                                        <div className="results-sub" style={{ color: "var(--warning)" }}>On The Air ({onTheAir.length})</div>
+                                        {onTheAir.map(pr => (
+                                            <div key={pr.id} className="pulse-proposal-item clickable"
+                                                 onClick={() => openDetail("proposal", pr.id, pr.proposal_type)}>
+                                                <span className="detail-type-badge">{pr.proposal_type}</span>
+                                                <span style={{ marginLeft: 8 }}>{pr.proposal_text?.slice(0, 80)}</span>
+                                                <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                                    Support: {pr.support_count}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Main App ────────────────────────────────────────────
+function App() {
+    const [activeTab, setActiveTab] = useState("dashboard");
+    const [status, setStatus] = useState(null);
+    const [agents, setAgents] = useState([]);
+    const [events, setEvents] = useState([]);
+    const [proposals, setProposals] = useState([]);
+    const [pulses, setPulses] = useState([]);
+    const [runningRound, setRunningRound] = useState(false);
+    const [paused, setPaused] = useState(false);
+    const [connected, setConnected] = useState(false);
+    const wsRef = useRef(null);
+
+    // Scoped community navigation (for action sub-communities)
+    const [activeCommunityId, setActiveCommunityId] = useState(null);
+    const [activeCommunityName, setActiveCommunityName] = useState(null);
+    const [activeCommunity, setActiveCommunity] = useState(null);  // full community object for the active action
+
+    // Detail panel navigation stack
+    const [detailStack, setDetailStack] = useState([]);
+    function openDetail(type, id, label) {
+        setDetailStack(prev => [...prev, { type, id, label: label || `${type}` }]);
+    }
+    function popToIndex(i) {
+        setDetailStack(prev => prev.slice(0, i + 1));
+    }
+    function closeDetail() {
+        setDetailStack([]);
+    }
+
+    // Agent lookup by user_id — includes AI agents AND newcomer applicants
+    const agentsByUserId = useMemo(() => {
+        const map = {};
+        (agents || []).forEach(a => { if (a.user_id) map[a.user_id] = a; });
+        // Include newcomers (non-agent members) so their names resolve
+        (status?.newcomers || []).forEach(n => {
+            if (n.id && !map[n.id]) map[n.id] = { name: n.name, user_id: n.id };
+        });
+        return map;
+    }, [agents, status]);
+
+    const rootCommunityId = status?.community?.id;
+    const effectiveCommunityId = activeCommunityId || rootCommunityId;
+    // For backward compat, keep communityId pointing to effective
+    const communityId = effectiveCommunityId;
+
+    // Fetch all data
+    const fetchData = useCallback(async () => {
+        try {
+            const [statusData, agentsData, eventsData] = await Promise.all([
+                API.get("/simulation/status"),
+                API.get("/simulation/agents"),
+                API.get("/simulation/events?limit=1000"),
+            ]);
+            setStatus(statusData);
+            setAgents(agentsData);
+            setEvents(eventsData.events || []);
+            if (statusData?.paused !== undefined) setPaused(statusData.paused);
+
+            // Fetch proposals/pulses for the effective community (could be root or action)
+            const cid = activeCommunityId || statusData?.community?.id;
+            if (cid) {
+                const [proposalsData, pulsesData] = await Promise.all([
+                    API.get(`/communities/${cid}/proposals`),
+                    API.get(`/communities/${cid}/pulses`),
+                ]);
+                setProposals(proposalsData);
+                setPulses(pulsesData);
+            }
+        } catch (err) {
+            console.log("Waiting for simulation...", err.message);
+        }
+    }, [activeCommunityId]);
+
+    // WebSocket connection
+    useEffect(() => {
+        function connectWS() {
+            const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const ws = new WebSocket(`${proto}//${window.location.host}/ws/events`);
+
+            ws.onopen = () => {
+                setConnected(true);
+                console.log("WebSocket connected");
+            };
+
+            ws.onmessage = (e) => {
+                try {
+                    const event = JSON.parse(e.data);
+                    // Only refresh on round.end — avoids rapid re-renders (and flickering when
+                    // viewing an action sub-community) caused by per-agent-action WS events.
+                    // The 5s polling handles incremental updates within a round.
+                    if (event.event_type === "round.end" || event.event_type === "pulse.executed") {
+                        fetchData();
+                    }
+                } catch (err) {
+                    console.warn("WS parse error:", err);
+                }
+            };
+
+            ws.onclose = () => {
+                setConnected(false);
+                console.log("WebSocket disconnected, reconnecting in 3s...");
+                setTimeout(connectWS, 3000);
+            };
+
+            ws.onerror = () => ws.close();
+            wsRef.current = ws;
+        }
+
+        connectWS();
+        return () => {
+            if (wsRef.current) wsRef.current.close();
+        };
+    }, [fetchData]);
+
+    // Fetch action community details when activeCommunityId changes
+    useEffect(() => {
+        if (!activeCommunityId) { setActiveCommunity(null); return; }
+        API.get(`/communities/${activeCommunityId}`)
+            .then(setActiveCommunity)
+            .catch(() => setActiveCommunity(null));
+    }, [activeCommunityId]);
+
+    // Initial data fetch + polling fallback
+    useEffect(() => {
+        fetchData();
+        const interval = setInterval(fetchData, 5000);
+        return () => clearInterval(interval);
+    }, [fetchData]);
+
+    // Pause / Resume
+    async function handleTogglePause() {
+        try {
+            if (paused) {
+                await API.post("/simulation/resume", {});
+                setPaused(false);
+            } else {
+                await API.post("/simulation/pause", {});
+                setPaused(true);
+            }
+        } catch (err) {
+            console.error("Pause/resume error:", err);
+        }
+    }
+
+    // Run round manually
+    async function handleRunRound() {
+        setRunningRound(true);
+        try {
+            await API.post("/simulation/run-round", {});
+            await fetchData();
+        } catch (err) {
+            console.error("Run round error:", err);
+        } finally {
+            setRunningRound(false);
+        }
+    }
+
+    // Navigate to an action's dashboard (or back to root)
+    function handleNavigateToAction(actionId, actionName) {
+        setActiveCommunityId(actionId);  // null = root
+        setActiveCommunityName(actionName || null);
+        setActiveTab("dashboard");
+        // Clear cached proposals/pulses so they refresh for new community
+        setProposals([]);
+        setPulses([]);
+    }
+
+    function handleBackToRoot() {
+        handleNavigateToAction(null, null);
+    }
+
+    return (
+        <div>
+            <Header
+                status={status}
+                openDetail={openDetail}
+                activeCommunityId={activeCommunityId}
+                activeCommunityName={activeCommunityName}
+                onBackToRoot={handleBackToRoot}
+            />
+            <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
+            <div className="app-body">
+                <ActionSidebar
+                    rootCommunityId={rootCommunityId}
+                    activeCommunityId={activeCommunityId}
+                    onNavigate={handleNavigateToAction}
+                    openDetail={openDetail}
+                    round={status?.round}
+                />
+                <div className="main-content">
+                    {activeTab === "dashboard" && (
+                        <DashboardTab
+                            status={status}
+                            events={events}
+                            proposals={proposals}
+                            pulses={pulses}
+                            onRunRound={handleRunRound}
+                            runningRound={runningRound}
+                            paused={paused}
+                            onTogglePause={handleTogglePause}
+                            openDetail={openDetail}
+                            agentsByUserId={agentsByUserId}
+                            communityId={communityId}
+                            activeCommunity={activeCommunity}
+                            activeCommunityId={activeCommunityId}
+                            rootCommunityId={rootCommunityId}
+                        />
+                    )}
+                    {activeTab === "agents" && <AgentsTab agents={agents} openDetail={openDetail} communityId={communityId} rootCommunityId={rootCommunityId} />}
+                    {activeTab === "variables" && <VariablesTab communityId={communityId} openDetail={openDetail} />}
+                    {activeTab === "statements" && <StatementsTab communityId={communityId} openDetail={openDetail} />}
+                    {activeTab === "pulses" && <PulsesTab pulses={pulses} communityId={communityId} openDetail={openDetail} />}
+                    {activeTab === "actions" && (
+                        <ActionTreeTab
+                            communityId={communityId}
+                            rootCommunityId={rootCommunityId}
+                            openDetail={openDetail}
+                            onNavigate={handleNavigateToAction}
+                        />
+                    )}
+                    {activeTab === "interview" && <InterviewTab agents={agents} />}
+                    {activeTab === "timeline" && <TimelineTab pulses={pulses} proposals={proposals} events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />}
+                </div>
+            </div>
+            <DetailPanel
+                stack={detailStack}
+                popToIndex={popToIndex}
+                closeDetail={closeDetail}
+                openDetail={openDetail}
+                agents={agents}
+                agentsByUserId={agentsByUserId}
+                communityId={communityId}
+                events={events}
+            />
+        </div>
+    );
+}
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);

@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""
+Run a KBZ simulation with the Big Brother viewer.
+
+Combines the KBZ API, simulation engine, and web viewer into a single server.
+
+Usage:
+    python -m agents.run_with_viewer [--rounds 10] [--backend anthropic] [--model claude-haiku-4-5-20251001]
+
+Then open http://localhost:8000/viewer/ in your browser.
+"""
+import os
+import sys
+
+# Auto-activate the local virtual environment if kbz is not importable.
+# This lets you run `python -m agents.run_with_viewer` without sourcing activate.sh first.
+def _ensure_venv():
+    try:
+        import kbz  # noqa: F401
+    except ModuleNotFoundError:
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        venv_python = os.path.join(root, ".venv", "bin", "python")
+        if os.path.isfile(venv_python):
+            print(f"[kbz] Re-launching with venv python: {venv_python}", flush=True)
+            os.execv(venv_python, [venv_python, "-m", "agents.run_with_viewer"] + sys.argv[1:])
+        else:
+            sys.exit(
+                "ERROR: 'kbz' module not found and no .venv found.\n"
+                "Run: cd /Users/uriee/claude/kbz && source .venv/bin/activate"
+            )
+
+_ensure_venv()
+
+import argparse
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from agents.orchestrator import Orchestrator
+from agents.persona import load_all_personas
+from agents.simulation_api import router as sim_router, set_orchestrator
+
+
+def setup_logging(verbose: bool = False):
+    level = logging.DEBUG if verbose else logging.INFO
+    fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+    datefmt = "%H:%M:%S"
+
+    # Console handler
+    console = logging.StreamHandler()
+    console.setLevel(level)
+    console.setFormatter(logging.Formatter(fmt, datefmt))
+
+    # File handler — always write full logs
+    log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "simulation.log")
+    file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(fmt, datefmt))
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.addHandler(console)
+    root.addHandler(file_handler)
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+    logging.getLogger("simulation").info(f"Logging to: {log_path}")
+
+
+async def run_simulation(orch: Orchestrator, rounds: int, delay: float):
+    """Run the simulation as a background task."""
+    logger = logging.getLogger("simulation")
+    try:
+        await orch.setup()
+        logger.info(f"Community '{orch.community_name}' ready with {len(orch.agents)} agents")
+        logger.info(f"Community ID: {orch.community_id}")
+        logger.info(f"Viewer: http://localhost:8000/viewer/")
+        await orch.run(rounds=rounds, delay=delay)
+
+        status = await orch.get_status()
+        logger.info(f"\nSimulation complete. {status['total_events']} total events over {status['round']} rounds.")
+    except asyncio.CancelledError:
+        logger.info("Simulation cancelled")
+    except Exception as e:
+        logger.error(f"Simulation error: {e}", exc_info=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run KBZ simulation with Big Brother viewer",
+        epilog="""
+Examples:
+  # Run 10 rounds with Anthropic (default)
+  python -m agents.run_with_viewer
+
+  # Long continuous simulation with local Ollama model
+  python -m agents.run_with_viewer --backend ollama --model gemma4:26b --rounds 0 --delay 3
+
+  # Ollama with custom context window and temperature
+  python -m agents.run_with_viewer --backend ollama --model gemma4:26b --rounds 100 \\
+      --ollama-ctx 16384 --ollama-temp 0.6
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--rounds", type=int, default=10,
+                        help="Number of rounds (0 = continuous/infinite)")
+    parser.add_argument("--delay", type=float, default=2.0,
+                        help="Delay between rounds in seconds (default: 2.0)")
+    parser.add_argument("--backend", default="anthropic", choices=["anthropic", "ollama"],
+                        help="LLM backend (default: anthropic)")
+    parser.add_argument("--model", default="claude-haiku-4-5-20251001",
+                        help="LLM model name (e.g. gemma4:26b for Ollama)")
+    parser.add_argument("--community-name", default="AI Kibbutz", help="Community name")
+    parser.add_argument("--host", default="0.0.0.0", help="Server host")
+    parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging (same as --log-level debug)")
+    parser.add_argument("--log-level", default=None,
+                        choices=["debug", "info", "warning", "error"],
+                        help="Override console log level (default: info)")
+
+    # Ollama-specific options
+    ollama_group = parser.add_argument_group("Ollama options (only used with --backend ollama)")
+    ollama_group.add_argument("--ollama-ctx", type=int, default=8192,
+                              help="Context window size (default: 8192)")
+    ollama_group.add_argument("--ollama-temp", type=float, default=0.7,
+                              help="Temperature (default: 0.7)")
+    ollama_group.add_argument("--ollama-timeout", type=float, default=300.0,
+                              help="Request timeout in seconds (default: 300)")
+    ollama_group.add_argument("--ollama-max-tokens", type=int, default=2048,
+                              help="Max output tokens (default: 2048)")
+    ollama_group.add_argument("--retries", type=int, default=3,
+                              help="Max retries per LLM call (default: 3)")
+    args = parser.parse_args()
+
+    verbose = args.verbose or (args.log_level == "debug")
+    setup_logging(verbose)
+    log = logging.getLogger("simulation")
+
+    if args.rounds == 0:
+        log.info("Running in CONTINUOUS mode (rounds=0). Press Ctrl+C to stop.")
+
+    personas = load_all_personas()
+    orch = Orchestrator(
+        community_name=args.community_name,
+        api_url=f"http://localhost:{args.port}",
+        llm_backend=args.backend,
+        llm_model=args.model,
+        personas=personas,
+        ollama_timeout=args.ollama_timeout,
+        ollama_num_ctx=args.ollama_ctx,
+        ollama_temperature=args.ollama_temp,
+        ollama_num_predict=args.ollama_max_tokens,
+        max_retries=args.retries,
+    )
+    set_orchestrator(orch)
+
+    viewer_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "viewer")
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
+        yield
+
+    # Build the combined app with lifespan
+    from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, ws
+    combined_app = FastAPI(
+        title="KBZ Big Brother",
+        description="KBZ Governance + AI Agents + Big Brother Viewer",
+        lifespan=lifespan,
+    )
+    combined_app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    combined_app.include_router(users.router, prefix="/users", tags=["users"])
+    combined_app.include_router(communities.router, prefix="/communities", tags=["communities"])
+    combined_app.include_router(members.router, tags=["members"])
+    combined_app.include_router(proposals.router, tags=["proposals"])
+    combined_app.include_router(pulses.router, tags=["pulses"])
+    combined_app.include_router(statements.router, tags=["statements"])
+    combined_app.include_router(actions.router, tags=["actions"])
+    combined_app.include_router(comments.router, tags=["comments"])
+    combined_app.include_router(ws.router, tags=["websocket"])
+    combined_app.include_router(sim_router)
+    combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")
+
+    @combined_app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    uvicorn.run(combined_app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
