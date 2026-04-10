@@ -104,6 +104,25 @@ body {
     border-bottom-color: var(--accent);
 }
 
+.refresh-btn {
+    padding: 4px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.refresh-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+.refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 /* App Body — sidebar + content flex layout */
 .app-body {
     display: flex;

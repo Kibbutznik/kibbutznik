@@ -1326,11 +1326,22 @@ function ScatterView({ data, agentsByUserId, openDetail }) {
 function GraphView({ data, agentsByUserId, openDetail }) {
     const containerRef = useRef(null);
     const networkRef = useRef(null);
+    const agentsRef = useRef(agentsByUserId);
+    const openDetailRef = useRef(openDetail);
+    agentsRef.current = agentsByUserId;
+    openDetailRef.current = openDetail;
+
+    // Stable fingerprint: only rebuild graph when actual data changes
+    const dataFingerprint = useMemo(() => {
+        const pairKey = data.pairs.map(p => `${p.user_id1}|${p.user_id2}|${p.score.toFixed(4)}`).join(";");
+        const memberKey = data.members.map(m => m.user_id).join(";");
+        return `${memberKey}||${pairKey}`;
+    }, [data]);
 
     useEffect(() => {
         if (!containerRef.current || !window.vis) return;
         const nodes = data.members.map((m) => {
-            const agent = agentsByUserId[m.user_id];
+            const agent = agentsRef.current[m.user_id];
             return {
                 id: m.user_id,
                 label: agent?.name || m.user_id.slice(0, 6),
@@ -1365,8 +1376,8 @@ function GraphView({ data, agentsByUserId, openDetail }) {
         networkRef.current.on("click", (params) => {
             if (params.nodes.length > 0) {
                 const uid = params.nodes[0];
-                const agent = agentsByUserId[uid];
-                openDetail("user", uid, agent?.name || uid.slice(0, 8));
+                const agent = agentsRef.current[uid];
+                openDetailRef.current("user", uid, agent?.name || uid.slice(0, 8));
             }
         });
         return () => {
@@ -1375,7 +1386,7 @@ function GraphView({ data, agentsByUserId, openDetail }) {
                 networkRef.current = null;
             }
         };
-    }, [data, agentsByUserId, openDetail]);
+    }, [dataFingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return <div ref={containerRef} style={{ height: 600, width: "100%", background: "#0f0f1e", borderRadius: 6 }}></div>;
 }
@@ -1384,18 +1395,23 @@ function GraphView({ data, agentsByUserId, openDetail }) {
 function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
     const [data, setData] = useState({ members: [], pairs: [] });
     const [loading, setLoading] = useState(true);
-    const [viewMode, setViewMode] = useState("heatmap"); // "heatmap" | "scatter" | "graph"
+    const [refreshing, setRefreshing] = useState(false);
+    const [viewMode, setViewMode] = useState("heatmap"); // "heatmap" | "graph"
+
+    const fetchCloseness = useCallback(() => {
+        if (!communityId) return;
+        setRefreshing(true);
+        API.get(`/communities/${communityId}/closeness`)
+            .then((d) => setData(d))
+            .catch(() => setData({ members: [], pairs: [] }))
+            .finally(() => { setLoading(false); setRefreshing(false); });
+    }, [communityId]);
 
     useEffect(() => {
         if (!communityId) return;
-        let cancelled = false;
         setLoading(true);
-        API.get(`/communities/${communityId}/closeness`)
-            .then((d) => { if (!cancelled) setData(d); })
-            .catch(() => { if (!cancelled) setData({ members: [], pairs: [] }); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, [communityId]);
+        fetchCloseness();
+    }, [communityId, fetchCloseness]);
 
     if (loading) return <div className="loading-center"><span className="spinner"></span> Loading relationships...</div>;
     if (data.pairs.length === 0) return <div className="empty-state">No relationships yet — members need to support proposals first</div>;
@@ -1413,10 +1429,17 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
                 <span>
                     Member Relationships ({data.members.length} members · {positive} positive · {negative} negative)
                 </span>
-                <div style={{ display: "flex", gap: 4 }}>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <button
+                        className="refresh-btn"
+                        onClick={fetchCloseness}
+                        disabled={refreshing}
+                        title="Refresh relationship data"
+                    >
+                        {refreshing ? "..." : "Refresh"}
+                    </button>
                     {[
                         { id: "heatmap", label: "Heatmap" },
-                        { id: "scatter", label: "Map" },
                         { id: "graph", label: "Graph" },
                     ].map((m) => (
                         <button
@@ -1430,10 +1453,9 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
                 </div>
             </div>
             {viewMode === "heatmap" && <HeatmapView {...viewProps} />}
-            {viewMode === "scatter" && <ScatterView {...viewProps} />}
             {viewMode === "graph"   && <GraphView   {...viewProps} />}
             <div style={{ marginTop: 8, fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                Closeness uses per-proposal covariance: agreement on niche proposals scores high, agreement on unanimous proposals scores ≈ 0. Positive = aligned, negative = opposed.
+                Closeness uses per-proposal covariance: agreement on niche proposals scores high, agreement on unanimous proposals scores = 0. Positive = aligned, negative = opposed.
             </div>
         </div>
     );

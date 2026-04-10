@@ -247,11 +247,10 @@ class CommunitySnapshot:
         # Artifact containers (the productive layer — what this community is BUILDING)
         if self.containers:
             lines.append(f"\n### Artifact Containers ({len(self.containers)}) — what this community is producing:")
-            lines.append("  (CreateArtifact adds a new artifact to a container; EditArtifact replaces one;")
-            lines.append("   RemoveArtifact retires one; DelegateArtifact hands an artifact to a child Action")
-            lines.append("   to expand; CommitArtifact closes the container by uniting its artifacts in a")
-            lines.append("   chosen order — at the root that ships the community's mission, in a sub-Action")
-            lines.append("   it bubbles up as an EditArtifact proposal in the parent.)")
+            lines.append("  (CreateArtifact = plan a SLOT (title only, empty body);")
+            lines.append("   EditArtifact = FILL the body of an existing artifact;")
+            lines.append("   DelegateArtifact = hand an artifact to a child Action to work on;")
+            lines.append("   CommitArtifact = seal the container and ship its contents upward.)")
             status_label = {1: "OPEN", 2: "PENDING_PARENT (frozen)", 3: "COMMITTED"}
             for c in self.containers:
                 cid = c["id"]
@@ -262,9 +261,8 @@ class CommunitySnapshot:
                 if mission:
                     lines.append(f"    >>> MISSION: {mission}")
                     lines.append(
-                        "    >>> This container is NOT a place for slogans, mission statements, "
-                        "or abstract principles — those belong in AddStatement. Each CreateArtifact "
-                        "here must be a concrete, detailed building block of the deliverable above."
+                        "    >>> CreateArtifact here = title-only slot for a section of the deliverable. "
+                        "EditArtifact fills the body. Slogans/principles belong in AddStatement."
                     )
                 else:
                     lines.append(
@@ -286,6 +284,12 @@ class CommunitySnapshot:
                             f"\"{deleg['action_name']}\" "
                             f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
                         )
+                    elif not (a.get("content") or "").strip():
+                        # In root containers, nudge toward delegation; in child containers, nudge toward EditArtifact
+                        if not c.get("delegated_from_artifact_id"):
+                            lines.append(f"    [{aid}] \"{title}\" by {author} — EMPTY (needs DelegateArtifact to an Action, or AddAction first)")
+                        else:
+                            lines.append(f"    [{aid}] \"{title}\" by {author} — EMPTY (needs EditArtifact to fill body)")
                     else:
                         lines.append(f"    [{aid}] \"{title}\" by {author} — {preview}")
                 if c.get("status") == 1 and arts:
