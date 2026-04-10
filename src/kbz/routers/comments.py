@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
@@ -17,9 +18,15 @@ async def add_comment(entity_type: str, entity_id: uuid.UUID, data: CommentCreat
 
 
 @router.get("/entities/{entity_type}/{entity_id}/comments", response_model=list[CommentResponse])
-async def get_comments(entity_type: str, entity_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_comments(
+    entity_type: str,
+    entity_id: uuid.UUID,
+    limit: int | None = Query(None, ge=1, le=500),
+    after: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     svc = CommentService(db)
-    return await svc.get_comments(entity_id, entity_type)
+    return await svc.get_comments(entity_id, entity_type, limit=limit, after=after)
 
 
 @router.post("/comments/{comment_id}/score")

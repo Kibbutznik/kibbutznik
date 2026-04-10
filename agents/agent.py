@@ -62,6 +62,8 @@ class Agent:
         self.eager_front: str = "observe" # current eager front
         self.rounds_since_acted: int = 0  # for orchestrator starvation prevention
         self.interview_history: list[tuple[str, str]] = []  # (question, answer) from viewer
+        self._chat_this_round: int = 0  # rate limit: max 2 send_chat per round
+        self._last_chat_read: datetime | None = None  # track when we last read chat for diff
 
     async def register(self) -> None:
         """Create the user account in the KBZ system."""
@@ -87,7 +89,10 @@ class Agent:
         """Browse and understand the current community state."""
         if not self.community_id:
             raise ValueError("Agent has no community")
-        snapshot = await observe_community(self.client, self.community_id)
+        chat_after = self._last_chat_read.isoformat() if self._last_chat_read else None
+        snapshot = await observe_community(self.client, self.community_id, chat_after=chat_after)
+        # Update last-read timestamp to now so next round gets only new messages.
+        self._last_chat_read = datetime.now(timezone.utc)
 
         # Update users cache with member info
         for m in snapshot.members:
@@ -105,6 +110,8 @@ class Agent:
         The main agent loop: observe → think → act (multiple actions per turn).
         Returns a list of logs for every action taken this turn.
         """
+        self._chat_this_round = 0  # reset per-round chat rate limit
+
         # 1. OBSERVE — browse the community
         snapshot = await self.observe()
         community_summary = snapshot.summarize(
@@ -403,6 +410,16 @@ class Agent:
                     direction = "upvoted" if delta > 0 else "downvoted"
                     return ActionLog(now, "vote_comment", decision.reason, f"{direction} comment {cid[:8]}", True)
                 return ActionLog(now, "vote_comment", decision.reason, "Missing comment_id", False)
+
+            elif decision.action_type == "send_chat":
+                if self._chat_this_round >= 2:
+                    return ActionLog(now, "send_chat", decision.reason, "Rate limited (max 2 per round)", False)
+                text = decision.params.get("message_text", "")
+                if text and self.community_id:
+                    await self.client.add_comment("community", self.community_id, self.user_id, text)
+                    self._chat_this_round += 1
+                    return ActionLog(now, "send_chat", decision.reason, f"Chat: \"{text[:80]}\"", True)
+                return ActionLog(now, "send_chat", decision.reason, "Missing message_text", False)
 
             elif decision.action_type == "do_nothing":
                 return ActionLog(now, "do_nothing", decision.reason, "Chose to observe", True)

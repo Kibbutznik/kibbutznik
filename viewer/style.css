@@ -1647,3 +1647,57 @@ body {
     background: rgba(233, 69, 96, 0.1);
     border-left: 3px solid var(--accent);
 }
+
+/* ── Chat Tab ──────────────────────────────────────── */
+
+.chat-tab {
+    padding: 16px;
+    max-width: 800px;
+}
+
+.chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.chat-message {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    border-left: 3px solid var(--border);
+}
+
+.chat-message:hover {
+    border-left-color: var(--accent);
+}
+
+.chat-message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+}
+
+.chat-author {
+    font-weight: 600;
+}
+
+.chat-time {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.chat-score {
+    color: var(--success);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.chat-text {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}

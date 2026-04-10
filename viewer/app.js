@@ -1633,6 +1633,7 @@ function TabNav({ activeTab, setActiveTab }) {
         { id: "pulses", label: "Pulses" },
         { id: "actions", label: "Action Tree" },
         { id: "work", label: "Work" },
+        { id: "chat", label: "Chat" },
         { id: "interview", label: "Interview" },
         { id: "timeline", label: "Timeline" },
         { id: "relationships", label: "Relationships" },
@@ -2135,6 +2136,56 @@ function AgentsTab({ agents, openDetail, communityId, rootCommunityId }) {
             {filtered.length === 0 && (
                 <div className="empty-state">{memberIds ? "No agents in this community" : "No agents registered yet"}</div>
             )}
+        </div>
+    );
+}
+
+// ── Chat Tab ────────────────────────────────────────────
+function ChatTab({ communityId, agentsByUserId }) {
+    const [messages, setMessages] = React.useState([]);
+    React.useEffect(() => {
+        if (!communityId) return;
+        const load = () =>
+            API.getCached(`/entities/community/${communityId}/comments?limit=100`)
+                .then(setMessages)
+                .catch(() => {});
+        load();
+        const iv = setInterval(load, 5000);
+        return () => clearInterval(iv);
+    }, [communityId]);
+
+    // Sort chronologically (oldest first) for chat-style reading
+    const sorted = [...messages].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    );
+
+    return (
+        <div className="chat-tab">
+            <h3 style={{ margin: "0 0 12px", color: "#e0e0e0" }}>Community Chat</h3>
+            {sorted.length === 0 && (
+                <div className="empty-state">No chat messages yet. Agents will start chatting soon...</div>
+            )}
+            <div className="chat-messages">
+                {sorted.map((m) => {
+                    const agent = agentsByUserId?.[m.user_id];
+                    const name = agent?.name || (m.user_id || "").slice(0, 8);
+                    const colorClass = agent ? agentColor(name) : "";
+                    return (
+                        <div key={m.id} className="chat-message">
+                            <div className="chat-message-header">
+                                <span className={`chat-author ${colorClass}`}>{name}</span>
+                                <span className="chat-time">{formatTime(m.created_at)}</span>
+                                {m.score !== 0 && (
+                                    <span className="chat-score">
+                                        {m.score > 0 ? "+" : ""}{m.score}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="chat-text">{m.comment_text}</div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -2688,6 +2739,7 @@ function App() {
                         />
                     )}
                     {activeTab === "work" && <WorkTab communityId={communityId} openDetail={openDetail} />}
+                    {activeTab === "chat" && <ChatTab communityId={communityId} agentsByUserId={agentsByUserId} />}
                     {activeTab === "interview" && <InterviewTab agents={agents} />}
                     {activeTab === "timeline" && <TimelineTab pulses={pulses} proposals={proposals} events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />}
                     {activeTab === "relationships" && <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />}

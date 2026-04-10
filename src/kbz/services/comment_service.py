@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,17 +30,29 @@ class CommentService:
         return comment
 
     async def get_comments(
-        self, entity_id: uuid.UUID, entity_type: str
+        self,
+        entity_id: uuid.UUID,
+        entity_type: str,
+        *,
+        limit: int | None = None,
+        after: datetime | None = None,
     ) -> list[Comment]:
-        result = await self.db.execute(
-            select(Comment)
-            .where(
-                Comment.entity_id == entity_id,
-                Comment.entity_type == entity_type,
-                Comment.parent_comment_id.is_(None),
-            )
-            .order_by(Comment.score.desc(), Comment.created_at.desc())
+        query = select(Comment).where(
+            Comment.entity_id == entity_id,
+            Comment.entity_type == entity_type,
+            Comment.parent_comment_id.is_(None),
         )
+        if after is not None:
+            query = query.where(Comment.created_at > after)
+        # Chat (community entity_type) uses chronological order;
+        # proposal comments keep the existing score-based order.
+        if entity_type == "community":
+            query = query.order_by(Comment.created_at.desc())
+        else:
+            query = query.order_by(Comment.score.desc(), Comment.created_at.desc())
+        if limit is not None:
+            query = query.limit(limit)
+        result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def get_replies(self, comment_id: uuid.UUID) -> list[Comment]:

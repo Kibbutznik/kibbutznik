@@ -29,6 +29,7 @@ class CommunitySnapshot:
     action_names: dict[str, str] = field(default_factory=dict)    # action_id -> community name
     action_members: dict[str, list[dict]] = field(default_factory=dict)  # action_id -> members
     action_activity: dict[str, dict] = field(default_factory=dict)  # action_id -> {pulses, active_proposals, accepted, rejected}
+    chat_messages: list[dict] = field(default_factory=list)  # recent community chat (newest first)
     containers: list[dict] = field(default_factory=list)  # ArtifactContainer dicts owned by THIS community
     container_artifacts: dict[str, list[dict]] = field(default_factory=dict)  # container_id -> list of active artifacts
     delegations_out: dict[str, dict] = field(default_factory=dict)  # artifact_id -> {action_community_id, action_name, child_container_id, child_status, child_artifact_count} for artifacts of THIS community delegated to a child Action
@@ -233,6 +234,16 @@ class CommunitySnapshot:
                 me_marker = " ← you" if m["user_id"] == my_user_id else ""
                 lines.append(f"  - {name} (user_id={m['user_id']}, seniority={seniority}){me_marker}")
 
+        # Community chat — recent messages (or new since last read)
+        if self.chat_messages:
+            lines.append(f"\n### Recent Chat ({len(self.chat_messages)} new messages)")
+            # Show in chronological order (oldest first); the list arrives newest-first
+            for m in reversed(self.chat_messages):
+                author = users_cache.get(m.get("user_id", ""), m.get("user_id", "")[:8])
+                text = (m.get("comment_text") or "")[:200]
+                lines.append(f"  {author}: {text}")
+            lines.append("  (Use send_chat to participate in the community discussion.)")
+
         # Artifact containers (the productive layer — what this community is BUILDING)
         if self.containers:
             lines.append(f"\n### Artifact Containers ({len(self.containers)}) — what this community is producing:")
@@ -301,8 +312,16 @@ class CommunitySnapshot:
         return "\n".join(lines)
 
 
-async def observe_community(client: KBZClient, community_id: str) -> CommunitySnapshot:
-    """Fetch the full state of a community — the agent's 'eyes'."""
+async def observe_community(
+    client: KBZClient,
+    community_id: str,
+    chat_after: str | None = None,
+) -> CommunitySnapshot:
+    """Fetch the full state of a community — the agent's 'eyes'.
+
+    `chat_after` is an ISO timestamp; only chat messages newer than this
+    are returned. Pass None to get the last 15 messages (initial read).
+    """
     snapshot = CommunitySnapshot()
 
     snapshot.community = await client.get_community(community_id)
@@ -438,5 +457,16 @@ async def observe_community(client: KBZClient, community_id: str) -> CommunitySn
             snapshot.container_artifacts[c["id"]] = artifacts_flat
     except Exception as e:
         logger.warning("observe_community: failed to fetch work_tree for %s: %s", community_id, e)
+
+    # Community chat — fetch recent messages (diff since last read, or last 15).
+    try:
+        chat_url = f"/entities/community/{community_id}/comments?limit=15"
+        if chat_after:
+            chat_url += f"&after={chat_after}"
+        resp = await client._client.get(chat_url)
+        resp.raise_for_status()
+        snapshot.chat_messages = resp.json()
+    except Exception as e:
+        logger.debug("observe_community: failed to fetch chat for %s: %s", community_id, e)
 
     return snapshot

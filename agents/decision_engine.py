@@ -122,14 +122,15 @@ The community doesn't need 30 "Audit Committees" — it needs ONE that actually 
 2. **support_proposal** — back a proposal you agree with
 3. **support_pulse** — push the pulse forward (STRATEGIC — think first!)
 4. **comment** — discuss a proposal (one comment per proposal max)
-5. **do_nothing** — only if nothing useful to do
+5. **send_chat** — post an informal message to the community chat (max 2 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that.
+6. **do_nothing** — only if nothing useful to do
 """
 
 
 @dataclass
 class AgentAction:
     """A structured action the agent decides to take."""
-    action_type: str  # support_pulse, support_proposal, create_proposal, comment, vote_comment, do_nothing
+    action_type: str  # support_pulse, support_proposal, create_proposal, comment, vote_comment, send_chat, do_nothing
     reason: str       # Why the agent chose this action (for logging/viewer)
     params: dict[str, Any] = None
     eagerness: int = 5           # 1-10: how eager the agent is to act NEXT round
@@ -246,13 +247,14 @@ Available actions:
 - **support_proposal** — back a proposal (use EXACT id from state)
 - **support_pulse** — STRATEGIC: advance the pulse when it serves your interests
 - **comment** — ONE brief comment per proposal (never repeat)
+- **send_chat** — informal community-wide message (max 2 per round)
 - **do_nothing** — only if truly nothing useful to do (use alone)
 
 Rules:
 - Combine actions freely in one turn.
-- ONE comment per proposal maximum.
+- ONE comment per proposal maximum. Max 2 send_chat per round.
 - do_nothing must be alone if used.
-- Include "eagerness" (1-10) and "eager_front" (propose/pulse/comment/support/observe) in EACH item.
+- Include "eagerness" (1-10) and "eager_front" (propose/pulse/comment/support/observe/produce) in EACH item.
 
 Respond with a JSON ARRAY, no other text:
 [{{"action": "...", "reason": "...", "eagerness": N, "eager_front": "...", ...params}}]
@@ -269,6 +271,10 @@ Examples:
 ]
 [
   {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "Join Education Committee", "val_uuid": "<full action_id from 'Actions You Can Join' in state>", "reason": "I want to contribute to this working group", "eagerness": 8, "eager_front": "propose"}}
+]
+[
+  {{"action": "send_chat", "message_text": "Hey everyone — the container has 4 artifacts now. Should we think about commit order soon?", "reason": "Coordinating next steps informally", "eagerness": 5, "eager_front": "comment"}},
+  {{"action": "support_proposal", "proposal_id": "<id>", "reason": "Great handbook section", "eagerness": 7, "eager_front": "support"}}
 ]
 [{{"action": "do_nothing", "reason": "Waiting — my proposals don't have enough support yet, pulsing now would hurt them", "eagerness": 3, "eager_front": "observe"}}]"""
 
