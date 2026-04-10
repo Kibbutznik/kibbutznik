@@ -11,6 +11,23 @@ from agents.api_client import KBZClient
 logger = logging.getLogger(__name__)
 
 
+def _proposal_display_text(p: dict) -> str:
+    """Return a human-readable description for a proposal.
+
+    For artifact proposals (CreateArtifact, EditArtifact, etc.) the meaningful
+    text is often in val_text (the title) rather than proposal_text (which may
+    be empty for title-only CreateArtifact).  Fall back gracefully.
+    """
+    ptype = p.get("proposal_type", "")
+    text = (p.get("proposal_text") or "").strip()
+    val = (p.get("val_text") or "").strip()
+    if ptype == "CreateArtifact":
+        return val or text or "(untitled artifact)"
+    if ptype in ("EditArtifact", "DelegateArtifact", "CommitArtifact", "RemoveArtifact"):
+        return val or text or f"({ptype})"
+    return text or val or "(no description)"
+
+
 @dataclass
 class CommunitySnapshot:
     """Everything an agent needs to know about a community's current state."""
@@ -168,8 +185,9 @@ class CommunitySnapshot:
                 age = p.get("age", 0)
                 will_promote = "WILL promote to OnTheAir" if support >= promote_threshold else f"needs {promote_threshold - support} more to promote"
                 age_warn = f" !! age {age}/{max_age} — will be CANCELED if pulse fires!" if age >= int(max_age) else f" age {age}/{max_age}"
+                desc = _proposal_display_text(p)
                 lines.append(
-                    f"  - [{p['proposal_type']}] \"{p['proposal_text']}\" "
+                    f"  - [{p['proposal_type']}] \"{desc}\" "
                     f"by {creator} | support: {support}/{accept_threshold} | {will_promote} |{age_warn}"
                     f" | id: {p['id']}"
                 )
@@ -191,8 +209,9 @@ class CommunitySnapshot:
                     will_pass.append(p["proposal_type"])
                 else:
                     will_fail.append(p["proposal_type"])
+                desc = _proposal_display_text(p)
                 lines.append(
-                    f"  - [{p['proposal_type']}] \"{p['proposal_text']}\" "
+                    f"  - [{p['proposal_type']}] \"{desc}\" "
                     f"by {creator} | support: {support}/{threshold} needed → **{verdict}**"
                     f" | id: {p['id']}"
                 )
@@ -202,12 +221,12 @@ class CommunitySnapshot:
         if self.recent_accepted:
             lines.append(f"\n### Recently Accepted ({len(self.recent_accepted)}):")
             for p in self.recent_accepted[:5]:
-                lines.append(f"  - [{p['proposal_type']}] \"{p['proposal_text']}\"")
+                lines.append(f"  - [{p['proposal_type']}] \"{_proposal_display_text(p)}\"")
 
         if self.recent_rejected:
             lines.append(f"\n### Recently Rejected ({len(self.recent_rejected)}):")
             for p in self.recent_rejected[:3]:
-                lines.append(f"  - [{p['proposal_type']}] \"{p['proposal_text']}\"")
+                lines.append(f"  - [{p['proposal_type']}] \"{_proposal_display_text(p)}\"")
 
         # Actions the agent can still join (not already a member)
         if my_user_id and self.actions:

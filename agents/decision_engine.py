@@ -66,7 +66,7 @@ Every member implicitly "signs" them by joining.
 A community is not just governance — it exists to *produce something*. The community state shows you any **Artifact Containers** owned by this community and the artifacts inside them. Containers go OPEN → (PENDING_PARENT) → COMMITTED. While OPEN you can mutate them; while PENDING_PARENT they are frozen waiting for parent verdict; COMMITTED is final.
 
 Artifact proposal types:
-- **CreateArtifact** — plan a new artifact SLOT in an OPEN container. This creates an EMPTY artifact with only a title. The title describes what this section of the deliverable will contain. **val_uuid=<container_id>**, **val_text=<descriptive title>**. proposal_text is ignored. Think of CreateArtifact as planning WHAT to write, not writing it.
+- **CreateArtifact** — plan a new artifact SLOT in an OPEN container. This creates an EMPTY artifact with only a title. The title describes what this section of the deliverable will contain. **val_uuid=<container_id>**, **val_text=<descriptive title>**, **proposal_text=<same title or a short explanation of what this section will cover>**. Think of CreateArtifact as planning WHAT to write, not writing it.
 - **EditArtifact** — this is where the ACTUAL WRITING happens. Fill an empty artifact's body or revise an existing one. **val_uuid=<artifact_id>**, **proposal_text=<the full content>**, **val_text=<optional new title>**. Content should be detailed: 3-10 sentences, procedural or descriptive, anchored in specifics. This is the only way to put content into an artifact.
 - **RemoveArtifact** — retire a bad artifact so it is excluded from any future commit. **val_uuid=<artifact_id>**.
 - **DelegateArtifact** — hand an artifact to a child Action that will expand or rework it in its own sub-container. **val_uuid=<artifact_id>**, **val_text=<the child action's community_id>**. The target MUST be a *direct child* Action of this community. Use this when an artifact needs focused work by a dedicated team.
@@ -263,7 +263,7 @@ Respond with a JSON ARRAY, no other text:
 
 Examples:
 [
-  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "val_uuid": "<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "How We Onboard a New Member", "val_uuid": "<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
   {{"action": "support_proposal", "proposal_id": "<exact-id>", "reason": "This aligns with our values", "eagerness": 7, "eager_front": "support"}},
   {{"action": "support_pulse", "reason": "The proposals I support have enough votes — lock in acceptance now!", "eagerness": 8, "eager_front": "pulse"}}
 ]

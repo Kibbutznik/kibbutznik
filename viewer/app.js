@@ -66,6 +66,14 @@ function truncate(s, n = 80) {
     return s.length > n ? s.slice(0, n) + "..." : s;
 }
 
+/** For artifact proposals, val_text (title) is the meaningful text when proposal_text is empty. */
+function proposalDisplayText(p) {
+    const ARTIFACT_TYPES = ["CreateArtifact","EditArtifact","DelegateArtifact","CommitArtifact","RemoveArtifact"];
+    if (p.proposal_text) return p.proposal_text;
+    if (ARTIFACT_TYPES.includes(p.proposal_type)) return p.val_text || `(${p.proposal_type})`;
+    return "";
+}
+
 // ── EntityLink ─────────────────────────────────────────
 function EntityLink({ type, id, label, openDetail }) {
     return (
@@ -210,7 +218,11 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
             {/* Pitch / Description — the agent's persuasive text */}
             <div className="detail-section proposal-pitch-section">
                 <div className="detail-section-title">Proposal Description</div>
-                <div className="proposal-pitch-text">{proposal.proposal_text || "(no description)"}</div>
+                <div className="proposal-pitch-text">{proposal.proposal_text || (
+                    ["CreateArtifact","EditArtifact","DelegateArtifact","CommitArtifact","RemoveArtifact"].includes(proposal.proposal_type)
+                        ? (proposal.val_text || "(no description)")
+                        : "(no description)"
+                )}</div>
             </div>
             {proposal.proposal_type === "ChangeVariable" && proposal.proposal_text && (
                 <div className="detail-section">
@@ -459,7 +471,7 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
                                 {p.proposal_status}
                             </span>
                             <span className="detail-type-badge">{p.proposal_type}</span>
-                            <span className="detail-list-text">{truncate(p.proposal_text, 60)}</span>
+                            <span className="detail-list-text">{truncate(proposalDisplayText(p), 60)}</span>
                         </div>
                     ))}
                 </div>
@@ -640,7 +652,7 @@ function PulseDetail({ id, openDetail, agentsByUserId, communityId }) {
                                     {p.proposal_status}
                                 </span>
                                 <span className="detail-type-badge">{p.proposal_type}</span>
-                                <span className="detail-list-text">{truncate(p.proposal_text, 50)}</span>
+                                <span className="detail-list-text">{truncate(proposalDisplayText(p), 50)}</span>
                                 {creator && <span className="detail-list-meta">by {creator.name}</span>}
                             </div>
                         );
@@ -2385,7 +2397,7 @@ function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, ac
                                     <span className={`mini-badge ${statusClass}`}>{p.proposal_status}</span>
                                     {" "}<span className="detail-type-badge">{p.proposal_type}</span>
                                 </div>
-                                <div className="timeline-meta">{p.proposal_text?.slice(0, 80)}</div>
+                                <div className="timeline-meta">{truncate(proposalDisplayText(p), 80)}</div>
                                 <div className="timeline-meta">Support: {p.support_count} · {formatTime(p.created_at)}</div>
                             </div>
                         );
@@ -2492,7 +2504,7 @@ function PulsesTab({ pulses, communityId, openDetail }) {
                                             <div key={pr.id} className="pulse-proposal-item accepted clickable"
                                                  onClick={() => openDetail("proposal", pr.id, pr.proposal_type)}>
                                                 <span className="detail-type-badge">{pr.proposal_type}</span>
-                                                <span style={{ marginLeft: 8 }}>{pr.proposal_text?.slice(0, 80)}</span>
+                                                <span style={{ marginLeft: 8 }}>{truncate(proposalDisplayText(pr), 80)}</span>
                                                 <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                                                     Support: {pr.support_count}
                                                 </span>
@@ -2507,7 +2519,7 @@ function PulsesTab({ pulses, communityId, openDetail }) {
                                             <div key={pr.id} className="pulse-proposal-item rejected clickable"
                                                  onClick={() => openDetail("proposal", pr.id, pr.proposal_type)}>
                                                 <span className="detail-type-badge">{pr.proposal_type}</span>
-                                                <span style={{ marginLeft: 8 }}>{pr.proposal_text?.slice(0, 80)}</span>
+                                                <span style={{ marginLeft: 8 }}>{truncate(proposalDisplayText(pr), 80)}</span>
                                                 <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                                                     Support: {pr.support_count}
                                                 </span>
@@ -2522,7 +2534,7 @@ function PulsesTab({ pulses, communityId, openDetail }) {
                                             <div key={pr.id} className="pulse-proposal-item clickable"
                                                  onClick={() => openDetail("proposal", pr.id, pr.proposal_type)}>
                                                 <span className="detail-type-badge">{pr.proposal_type}</span>
-                                                <span style={{ marginLeft: 8 }}>{pr.proposal_text?.slice(0, 80)}</span>
+                                                <span style={{ marginLeft: 8 }}>{truncate(proposalDisplayText(pr), 80)}</span>
                                                 <span style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                                                     Support: {pr.support_count}
                                                 </span>
