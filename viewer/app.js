@@ -171,14 +171,99 @@ function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agent
 }
 
 // ── ProposalDetail ─────────────────────────────────────
+
+/** Resolve val_uuid and val_text to human-readable names (artifact title, community name, member name). */
+async function resolveProposalRefs(proposal, agentsByUserId) {
+    const result = { valUuid: "", valText: "" };
+    if (!proposal) return result;
+    const pt = proposal.proposal_type;
+
+    // Resolve val_uuid → name
+    if (proposal.val_uuid) {
+        // Member names
+        if (["Membership", "ThrowOut"].includes(pt)) {
+            const agent = agentsByUserId?.[proposal.val_uuid];
+            if (agent) result.valUuid = agent.name;
+            else try { const u = await API.getCached(`/users/${proposal.val_uuid}`); result.valUuid = u.name; } catch {}
+        }
+        // Artifact title (EditArtifact, RemoveArtifact, DelegateArtifact)
+        else if (["EditArtifact", "RemoveArtifact", "DelegateArtifact"].includes(pt)) {
+            try { const hist = await API.getCached(`/artifacts/${proposal.val_uuid}/history`); if (hist.length) result.valUuid = hist[hist.length-1].title || "(untitled)"; } catch {}
+        }
+        // Container (CreateArtifact, CommitArtifact) — show container title
+        else if (["CreateArtifact", "CommitArtifact"].includes(pt)) {
+            try { const c = await API.getCached(`/artifacts/containers/${proposal.val_uuid}`); result.valUuid = c?.container?.title || "Container"; } catch {}
+        }
+        // Action (JoinAction, EndAction) — show community name
+        else if (["JoinAction", "EndAction"].includes(pt)) {
+            try { const c = await API.getCached(`/communities/${proposal.val_uuid}`); result.valUuid = c.name || c.description || proposal.val_uuid.slice(0, 12); } catch {}
+        }
+        // Statement (RemoveStatement, ReplaceStatement)
+        else if (["RemoveStatement", "ReplaceStatement"].includes(pt)) {
+            try { const s = await API.getCached(`/statements/${proposal.val_uuid}`); result.valUuid = truncate(s.statement_text, 40); } catch {}
+        }
+    }
+
+    // Resolve val_text → name (for DelegateArtifact: val_text is the target action community_id)
+    if (proposal.val_text && pt === "DelegateArtifact") {
+        try { const c = await API.getCached(`/communities/${proposal.val_text}`); result.valText = c.name || c.description || proposal.val_text.slice(0, 12); } catch {}
+    }
+
+    return result;
+}
+
+/** Build a human-readable title for a proposal based on its type and fields. */
+function buildProposalTitle(proposal, resolvedNames) {
+    const pt = proposal.proposal_type;
+    const text = proposal.proposal_text || "";
+    const val = proposal.val_text || "";
+    const refName = resolvedNames.valUuid || "";
+    const valName = resolvedNames.valText || "";
+
+    switch (pt) {
+        case "AddStatement":
+            return truncate(text, 60) || "New Statement";
+        case "ChangeVariable":
+            return text ? `Change ${text}${val ? ` → ${val}` : ""}` : "Change Variable";
+        case "AddAction":
+            return val ? `New Action: ${val}` : truncate(text, 50) || "New Action";
+        case "JoinAction":
+            return refName ? `Join "${refName}"` : "Join Action";
+        case "EndAction":
+            return refName ? `End Action: ${refName}` : "End Action";
+        case "Membership":
+            return refName ? `Add Member: ${refName}` : "New Member";
+        case "ThrowOut":
+            return refName ? `Throw Out: ${refName}` : "Throw Out Member";
+        case "RemoveStatement":
+            return "Remove Statement";
+        case "ReplaceStatement":
+            return val ? `Replace Statement → ${truncate(val, 40)}` : "Replace Statement";
+        case "CreateArtifact":
+            return val || text || "Create Artifact";
+        case "EditArtifact":
+            return `Edit: ${refName || val || "Artifact"}`;
+        case "RemoveArtifact":
+            return `Remove: ${refName || "Artifact"}`;
+        case "DelegateArtifact":
+            return `Delegate "${refName || "Artifact"}" → ${valName || "Action"}`;
+        case "CommitArtifact":
+            return "Commit Container";
+        default:
+            return `${pt} Proposal`;
+    }
+}
+
 function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
     const [proposal, setProposal] = useState(null);
     const [comments, setComments] = useState([]);
     const [supporters, setSupporters] = useState([]);
+    const [resolvedNames, setResolvedNames] = useState({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         setLoading(true);
+        setResolvedNames({});
         Promise.all([
             API.getCached(`/proposals/${id}`),
             API.getCached(`/entities/proposal/${id}/comments`).catch(() => []),
@@ -187,6 +272,8 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
             setProposal(p);
             setComments(c);
             setSupporters(s || []);
+            // Resolve human-readable names for val_uuid and val_text UUIDs
+            resolveProposalRefs(p, agentsByUserId).then(setResolvedNames);
         }).finally(() => setLoading(false));
     }, [id]);
 
@@ -199,6 +286,8 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                         proposal.proposal_status === "Rejected" ? "status-rejected" :
                         proposal.proposal_status === "OnTheAir" ? "status-ontheair" : "status-outthere";
 
+    const title = buildProposalTitle(proposal, resolvedNames);
+
     return (
         <div className="detail-view">
             <div className="detail-section">
@@ -206,7 +295,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                     <span className={`detail-badge ${statusClass}`}>{proposal.proposal_status}</span>
                     <span className="detail-type-badge">{proposal.proposal_type}</span>
                 </div>
-                <h2 className="detail-title">{proposal.proposal_type} Proposal</h2>
+                <h2 className="detail-title">{title}</h2>
                 <div className="detail-meta">
                     Created by <EntityLink type="user" id={proposal.user_id} label={creatorName} openDetail={openDetail} />
                     {" "}&middot; Age: {proposal.age} &middot; Support: {proposal.support_count}
@@ -216,14 +305,12 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                 </div>
             </div>
             {/* Pitch / Description — the agent's persuasive text */}
-            <div className="detail-section proposal-pitch-section">
-                <div className="detail-section-title">Proposal Description</div>
-                <div className="proposal-pitch-text">{proposal.proposal_text || (
-                    ["CreateArtifact","EditArtifact","DelegateArtifact","CommitArtifact","RemoveArtifact"].includes(proposal.proposal_type)
-                        ? (proposal.val_text || "(no description)")
-                        : "(no description)"
-                )}</div>
-            </div>
+            {proposal.proposal_text && (
+                <div className="detail-section proposal-pitch-section">
+                    <div className="detail-section-title">Proposal Description</div>
+                    <div className="proposal-pitch-text">{proposal.proposal_text}</div>
+                </div>
+            )}
             {proposal.proposal_type === "ChangeVariable" && proposal.proposal_text && (
                 <div className="detail-section">
                     <div className="detail-section-title">Variable Change</div>
@@ -244,14 +331,43 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
             )}
             {proposal.proposal_type !== "ChangeVariable" && proposal.val_text && (
                 <div className="detail-section">
-                    <div className="detail-section-title">Short Name</div>
-                    <div className="detail-text-block">{proposal.val_text}</div>
+                    <div className="detail-section-title">
+                        {proposal.proposal_type === "DelegateArtifact" ? "Target Action" :
+                         proposal.proposal_type === "CreateArtifact" ? "Artifact Title" :
+                         proposal.proposal_type === "EditArtifact" ? "New Title" :
+                         "Short Name"}
+                    </div>
+                    <div className="detail-text-block">
+                        {resolvedNames.valText || proposal.val_text}
+                        {resolvedNames.valText && resolvedNames.valText !== proposal.val_text && (
+                            <span className="mono" style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginLeft: 8 }}>
+                                ({proposal.val_text.slice(0, 12)})
+                            </span>
+                        )}
+                    </div>
                 </div>
             )}
             {proposal.val_uuid && (
                 <div className="detail-section">
-                    <div className="detail-section-title">Referenced Entity</div>
-                    <EntityLink type="user" id={proposal.val_uuid} label={agentsByUserId?.[proposal.val_uuid]?.name || proposal.val_uuid.slice(0, 12)} openDetail={openDetail} />
+                    <div className="detail-section-title">
+                        {["CreateArtifact"].includes(proposal.proposal_type) ? "Container" :
+                         ["EditArtifact","RemoveArtifact","DelegateArtifact"].includes(proposal.proposal_type) ? "Artifact" :
+                         ["CommitArtifact"].includes(proposal.proposal_type) ? "Container" :
+                         ["JoinAction","EndAction"].includes(proposal.proposal_type) ? "Action" :
+                         ["Membership","ThrowOut"].includes(proposal.proposal_type) ? "Member" :
+                         "Referenced Entity"}
+                    </div>
+                    <div>
+                        {resolvedNames.valUuid && (
+                            <span style={{ fontWeight: 600, marginRight: 8 }}>{resolvedNames.valUuid}</span>
+                        )}
+                        <EntityLink
+                            type={["Membership","ThrowOut"].includes(proposal.proposal_type) ? "user" : "entity"}
+                            id={proposal.val_uuid}
+                            label={resolvedNames.valUuid ? proposal.val_uuid.slice(0, 12) : proposal.val_uuid.slice(0, 12)}
+                            openDetail={["Membership","ThrowOut"].includes(proposal.proposal_type) ? openDetail : () => {}}
+                        />
+                    </div>
                 </div>
             )}
             {/* Full data dump — ID, community, pulse */}
@@ -1921,7 +2037,7 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
             <div className={`proposal-card ${statusClass} ${readyClass} clickable`}
                  onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
                 <div className="proposal-type">{p.proposal_type}</div>
-                <div className="proposal-text">{p.proposal_text}</div>
+                <div className="proposal-text">{proposalDisplayText(p) || p.proposal_type}</div>
                 <div className="proposal-meta">
                     <span>Support: {p.support_count}{memberCount > 0 && (
                         p.proposal_status === "OutThere"
