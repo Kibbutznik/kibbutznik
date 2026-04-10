@@ -565,6 +565,7 @@ function CommunityDetail({ id, openDetail, agentsByUserId }) {
 
 function categorizeVariable(name) {
     const n = name.toLowerCase();
+    if (n.includes("artifact")) return "Artifacts";
     if (n.includes("threshold") || n.includes("quorum") || n.includes("majority")) return "Thresholds";
     if (n.includes("age") || n.includes("cooldown") || n.includes("pulse")) return "Governance";
     if (n.includes("member") || n.includes("handler")) return "Membership";
@@ -1438,6 +1439,190 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
     );
 }
 
+// ── Work Tab (Artifact containers / artifacts) ─────────
+const CONTAINER_STATUS_LABEL = { 1: "OPEN", 2: "PENDING_PARENT", 3: "COMMITTED" };
+const ARTIFACT_STATUS_LABEL = { 1: "ACTIVE", 2: "SUPERSEDED", 3: "RETIRED" };
+
+function ArtifactNode({ artifact, openDetail, depth }) {
+    const [open, setOpen] = useState(false);
+    const indent = { marginLeft: `${depth * 1.2}rem` };
+    const children = artifact.delegated_to || [];
+    return (
+        <div style={{ ...indent, marginBottom: "0.4rem", borderLeft: "2px solid #444", paddingLeft: "0.6rem" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
+                <button
+                    className="link-btn"
+                    onClick={() => setOpen(!open)}
+                    style={{ fontSize: "0.7rem" }}
+                >
+                    {open ? "▼" : "▶"}
+                </button>
+                <strong style={{ color: "#cfd" }}>{artifact.title || "(untitled)"}</strong>
+                <span style={{ fontSize: "0.7rem", color: "#888" }}>
+                    [{ARTIFACT_STATUS_LABEL[artifact.status] || artifact.status}]
+                </span>
+                {artifact.proposal_id && (
+                    <button
+                        className="link-btn"
+                        style={{ fontSize: "0.7rem" }}
+                        onClick={() => openDetail({ type: "proposal", id: artifact.proposal_id })}
+                    >
+                        proposal
+                    </button>
+                )}
+            </div>
+            {open && (
+                <pre style={{
+                    whiteSpace: "pre-wrap",
+                    background: "#1a1a1a",
+                    padding: "0.5rem",
+                    fontSize: "0.75rem",
+                    color: "#ddd",
+                    margin: "0.3rem 0",
+                }}>{artifact.content}</pre>
+            )}
+            {children.map((c) => (
+                <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={depth + 1} />
+            ))}
+        </div>
+    );
+}
+
+function ContainerNode({ container, openDetail, depth }) {
+    const [open, setOpen] = useState(true);
+    const indent = { marginLeft: `${depth * 0.6}rem` };
+    const arts = container.artifacts || [];
+    if (container.cycle) {
+        return <div style={indent}>↻ cycle to {container.title}</div>;
+    }
+    return (
+        <div style={{ ...indent, marginBottom: "0.6rem", border: "1px solid #333", borderRadius: 4, padding: "0.5rem", background: "#181818" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+                <button className="link-btn" onClick={() => setOpen(!open)} style={{ fontSize: "0.75rem" }}>
+                    {open ? "▼" : "▶"}
+                </button>
+                <strong>📦 {container.title}</strong>
+                <span style={{ fontSize: "0.7rem", color: "#fa0" }}>
+                    {CONTAINER_STATUS_LABEL[container.status] || container.status}
+                </span>
+                <span style={{ fontSize: "0.7rem", color: "#888" }}>
+                    {arts.length} artifact{arts.length === 1 ? "" : "s"}
+                </span>
+            </div>
+            {open && (
+                <div style={{ marginTop: "0.4rem" }}>
+                    {arts.length === 0 && <div style={{ color: "#666", fontSize: "0.75rem" }}>(empty)</div>}
+                    {arts.map((a) => (
+                        <ArtifactNode key={a.id} artifact={a} openDetail={openDetail} depth={depth + 1} />
+                    ))}
+                    {container.committed_content && container.status === 3 && (
+                        <details style={{ marginTop: "0.4rem" }}>
+                            <summary style={{ fontSize: "0.75rem", color: "#9c9" }}>committed content</summary>
+                            <pre style={{
+                                whiteSpace: "pre-wrap",
+                                background: "#0e1a0e",
+                                padding: "0.5rem",
+                                fontSize: "0.75rem",
+                                color: "#cfc",
+                            }}>{container.committed_content}</pre>
+                        </details>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function WorkTab({ communityId, openDetail }) {
+    const [tree, setTree] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [view, setView] = useState("tree");
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (!communityId) return;
+        setLoading(true);
+        setError(null);
+        API.get(`/artifacts/communities/${communityId}/work_tree`)
+            .then((d) => setTree(Array.isArray(d) ? d : []))
+            .catch((e) => { setError(String(e)); setTree([]); })
+            .finally(() => setLoading(false));
+    }, [communityId]);
+
+    // Manuscript view: flatten the FIRST root container's artifacts (in stored order).
+    const manuscript = useMemo(() => {
+        if (!tree.length) return "";
+        const root = tree[0];
+        const arts = root.artifacts || [];
+        return arts.map((a) => `## ${a.title || "(untitled)"}\n\n${a.content}`).join("\n\n---\n\n");
+    }, [tree]);
+
+    // Open work view: collect all OPEN containers recursively.
+    const openContainers = useMemo(() => {
+        const out = [];
+        const walk = (c) => {
+            if (!c || c.cycle) return;
+            if (c.status === 1) out.push(c);
+            (c.artifacts || []).forEach((a) => (a.delegated_to || []).forEach(walk));
+        };
+        tree.forEach(walk);
+        return out;
+    }, [tree]);
+
+    return (
+        <div className="card">
+            <div style={{ display: "flex", gap: "0.4rem", marginBottom: "0.6rem" }}>
+                {[
+                    { id: "tree", label: "Tree" },
+                    { id: "manuscript", label: "Manuscript" },
+                    { id: "open", label: "Open Work" },
+                ].map((m) => (
+                    <button
+                        key={m.id}
+                        className={`tab-btn ${view === m.id ? "active" : ""}`}
+                        onClick={() => setView(m.id)}
+                    >
+                        {m.label}
+                    </button>
+                ))}
+            </div>
+            {loading && <div>Loading…</div>}
+            {error && <div style={{ color: "#f88" }}>Error: {error}</div>}
+            {!loading && !error && tree.length === 0 && (
+                <div style={{ color: "#888" }}>No artifact containers in this community.</div>
+            )}
+            {view === "tree" && tree.map((c) => (
+                <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={0} />
+            ))}
+            {view === "manuscript" && (
+                <pre style={{
+                    whiteSpace: "pre-wrap",
+                    background: "#0e0e0e",
+                    padding: "1rem",
+                    fontSize: "0.85rem",
+                    color: "#eee",
+                    lineHeight: 1.5,
+                }}>{manuscript || "(no content yet)"}</pre>
+            )}
+            {view === "open" && (
+                <div>
+                    <div style={{ marginBottom: "0.5rem", color: "#9c9" }}>
+                        {openContainers.length} open container{openContainers.length === 1 ? "" : "s"}
+                    </div>
+                    {openContainers.map((c) => (
+                        <div key={c.id} style={{ padding: "0.4rem", borderBottom: "1px solid #222" }}>
+                            <strong>{c.title}</strong>{" "}
+                            <span style={{ color: "#888", fontSize: "0.75rem" }}>
+                                ({(c.artifacts || []).length} artifacts)
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Tab Navigation ──────────────────────────────────────
 function TabNav({ activeTab, setActiveTab }) {
     const tabs = [
@@ -1447,6 +1632,7 @@ function TabNav({ activeTab, setActiveTab }) {
         { id: "statements", label: "Statements" },
         { id: "pulses", label: "Pulses" },
         { id: "actions", label: "Action Tree" },
+        { id: "work", label: "Work" },
         { id: "interview", label: "Interview" },
         { id: "timeline", label: "Timeline" },
         { id: "relationships", label: "Relationships" },
@@ -2501,6 +2687,7 @@ function App() {
                             onNavigate={handleNavigateToAction}
                         />
                     )}
+                    {activeTab === "work" && <WorkTab communityId={communityId} openDetail={openDetail} />}
                     {activeTab === "interview" && <InterviewTab agents={agents} />}
                     {activeTab === "timeline" && <TimelineTab pulses={pulses} proposals={proposals} events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />}
                     {activeTab === "relationships" && <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />}

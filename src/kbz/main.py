@@ -1,7 +1,27 @@
+import asyncio
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, closeness, ws
+from kbz.database import async_session
+from kbz.routers import (
+    actions,
+    artifacts,
+    closeness,
+    comments,
+    communities,
+    members,
+    proposals,
+    pulses,
+    statements,
+    users,
+    ws,
+)
+from kbz.services.artifact_service import ArtifactService
+from kbz.services.event_bus import event_bus
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="KBZ - Kibutznik Governance Platform",
@@ -25,9 +45,61 @@ app.include_router(statements.router, tags=["statements"])
 app.include_router(actions.router, tags=["actions"])
 app.include_router(comments.router, tags=["comments"])
 app.include_router(closeness.router, tags=["closeness"])
+app.include_router(artifacts.router)
 app.include_router(ws.router, tags=["websocket"])
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ---- Artifact cascade subscriber ----
+# Listens on the event bus for proposal.accepted / proposal.rejected events.
+# When the proposal is the auto-generated parent EditArtifact for some
+# sub-action's pending container, flips that container accordingly.
+
+async def _artifact_cascade_loop() -> None:
+    queue = event_bus.subscribe()
+    try:
+        while True:
+            event = await queue.get()
+            if event.event_type not in ("proposal.accepted", "proposal.rejected"):
+                continue
+            proposal_id_str = event.data.get("proposal_id")
+            if not proposal_id_str:
+                continue
+            try:
+                import uuid as _uuid
+                proposal_id = _uuid.UUID(str(proposal_id_str))
+            except (ValueError, TypeError):
+                continue
+            try:
+                async with async_session() as session:
+                    svc = ArtifactService(session)
+                    if event.event_type == "proposal.accepted":
+                        await svc.on_parent_proposal_accepted(proposal_id)
+                    else:
+                        await svc.on_parent_proposal_rejected(proposal_id)
+                    await session.commit()
+            except Exception as e:
+                logger.exception("Artifact cascade handler failed: %s", e)
+    except asyncio.CancelledError:
+        event_bus.unsubscribe(queue)
+        raise
+
+
+@app.on_event("startup")
+async def _start_artifact_cascade() -> None:
+    app.state._artifact_cascade_task = asyncio.create_task(_artifact_cascade_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_artifact_cascade() -> None:
+    task = getattr(app.state, "_artifact_cascade_task", None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass

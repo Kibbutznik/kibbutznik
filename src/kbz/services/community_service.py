@@ -54,6 +54,15 @@ class CommunityService:
         )
         self.db.add(pulse)
 
+        # 5. If this is a root community (no parent), seed the primordial ArtifactContainer.
+        ZERO_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+        if data.parent_id == ZERO_UUID:
+            from kbz.services.artifact_service import ArtifactService
+            await ArtifactService(self.db).create_root_container(
+                community_id,
+                mission=data.initial_artifact_mission,
+            )
+
         await self.db.commit()
         await self.db.refresh(community)
         return community

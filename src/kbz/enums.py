@@ -26,6 +26,11 @@ class ProposalType(str, enum.Enum):
     PAY_BACK = "payBack"
     DIVIDEND = "Dividend"
     SET_MEMBERSHIP_HANDLER = "SetMembershipHandler"
+    CREATE_ARTIFACT = "CreateArtifact"
+    EDIT_ARTIFACT = "EditArtifact"
+    REMOVE_ARTIFACT = "RemoveArtifact"
+    DELEGATE_ARTIFACT = "DelegateArtifact"
+    COMMIT_ARTIFACT = "CommitArtifact"
 
 
 class ProposalStatus(str, enum.Enum):
@@ -48,6 +53,18 @@ class StatementStatus(int, enum.Enum):
     REMOVED = 2
 
 
+class ContainerStatus(int, enum.Enum):
+    OPEN = 1
+    PENDING_PARENT = 2
+    COMMITTED = 3
+
+
+class ArtifactStatus(int, enum.Enum):
+    ACTIVE = 1
+    SUPERSEDED = 2
+    RETIRED = 3
+
+
 # Maps proposal types to their threshold variable names
 PROPOSAL_TYPE_THRESHOLDS: dict[ProposalType, str] = {
     ProposalType.MEMBERSHIP: "Membership",
@@ -64,6 +81,11 @@ PROPOSAL_TYPE_THRESHOLDS: dict[ProposalType, str] = {
     ProposalType.PAY_BACK: "payBack",
     ProposalType.DIVIDEND: "Dividend",
     ProposalType.SET_MEMBERSHIP_HANDLER: "SetMembershipHandler",
+    ProposalType.CREATE_ARTIFACT: "CreateArtifact",
+    ProposalType.EDIT_ARTIFACT: "EditArtifact",
+    ProposalType.REMOVE_ARTIFACT: "RemoveArtifact",
+    ProposalType.DELEGATE_ARTIFACT: "DelegateArtifact",
+    ProposalType.COMMIT_ARTIFACT: "CommitArtifact",
 }
 
 
@@ -84,6 +106,11 @@ DEFAULT_VARIABLES: dict[str, str] = {
     "payBack": "50",
     "Dividend": "50",
     "SetMembershipHandler": "50",
+    "CreateArtifact": "50",
+    "EditArtifact": "50",
+    "RemoveArtifact": "60",
+    "DelegateArtifact": "50",
+    "CommitArtifact": "60",
     "MinCommittee": "2",
     "MaxAge": "2",
     "Name": "No Name",

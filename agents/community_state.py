@@ -2,10 +2,13 @@
 Community state observer — agents use this to "browse" and understand
 what's happening in their community before making decisions.
 """
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from agents.api_client import KBZClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,6 +28,10 @@ class CommunitySnapshot:
     proposal_comments: dict[str, list[dict]] = field(default_factory=dict)
     action_names: dict[str, str] = field(default_factory=dict)    # action_id -> community name
     action_members: dict[str, list[dict]] = field(default_factory=dict)  # action_id -> members
+    action_activity: dict[str, dict] = field(default_factory=dict)  # action_id -> {pulses, active_proposals, accepted, rejected}
+    containers: list[dict] = field(default_factory=list)  # ArtifactContainer dicts owned by THIS community
+    container_artifacts: dict[str, list[dict]] = field(default_factory=dict)  # container_id -> list of active artifacts
+    delegations_out: dict[str, dict] = field(default_factory=dict)  # artifact_id -> {action_community_id, action_name, child_container_id, child_status, child_artifact_count} for artifacts of THIS community delegated to a child Action
 
     @property
     def member_count(self) -> int:
@@ -100,22 +107,54 @@ class CommunitySnapshot:
         if self.statements:
             lines.append(f"\n### Community Rules / Disclaimer ({len(self.statements)} statements):")
             lines.append("  (Every member implicitly agrees to follow these rules by joining.")
-            lines.append("   Violating them is grounds for a ThrowOut proposal!)")
+            lines.append("   Violating them is grounds for a ThrowOut proposal!")
+            lines.append("   Outdated or harmful rules can be retired via RemoveStatement,")
+            lines.append("   or rewritten in place via ReplaceStatement — both target the rule by id.)")
             for i, s in enumerate(self.statements, 1):
-                lines.append(f"  {i}. {s['statement_text']}")
+                lines.append(f"  {i}. [id={s['id']}] {s['statement_text']}")
         else:
             lines.append("\n### Community Rules: None yet — consider proposing AddStatement to establish community values!")
 
         if self.actions:
-            lines.append(f"\n### Active Actions ({len(self.actions)}):")
-            for a in self.actions:
-                aid = a['action_id']
-                name = self.action_names.get(aid, "Unnamed")
-                status_label = "Active" if a.get("status") == 1 else "Ended"
-                members = self.action_members.get(aid, [])
-                lines.append(
-                    f"  - [{name}] id={aid} ({status_label}, {len(members)} members)"
-                )
+            active_actions = [a for a in self.actions if a.get("status") == 1]
+            ended_actions = [a for a in self.actions if a.get("status") != 1]
+            if active_actions:
+                lines.append(f"\n### Active Actions ({len(active_actions)}):")
+                for a in active_actions:
+                    aid = a['action_id']
+                    name = self.action_names.get(aid, "Unnamed")
+                    members = self.action_members.get(aid, [])
+                    activity = self.action_activity.get(aid, {})
+                    pulses = activity.get("pulses", 0)
+                    active_props = activity.get("active_proposals", 0)
+                    accepted = activity.get("accepted", 0)
+                    rejected = activity.get("rejected", 0)
+                    # Flag as idle if there's no current work AND either some
+                    # history exists (so it's not just freshly created) or the
+                    # action is a zombie shell (no pulses ever, no proposals,
+                    # only the founder still in it).
+                    has_history = pulses >= 1 or accepted >= 1 or rejected >= 1
+                    is_zombie = pulses == 0 and accepted == 0 and rejected == 0 and len(members) <= 1
+                    idle = active_props == 0 and (has_history or is_zombie)
+                    status_tag = (
+                        " 💤 IDLE — consider proposing EndAction to close it"
+                        if idle else ""
+                    )
+                    lines.append(
+                        f"  - [{name}] id={aid} ({len(members)} members, "
+                        f"{pulses} pulses fired, {active_props} active proposals, "
+                        f"{accepted} accepted / {rejected} rejected){status_tag}"
+                    )
+                    if idle:
+                        lines.append(
+                            f"    → To close: create EndAction proposal with val_uuid={aid}"
+                        )
+            if ended_actions:
+                lines.append(f"\n### Ended Actions ({len(ended_actions)}): (already closed, no action needed)")
+                for a in ended_actions:
+                    aid = a['action_id']
+                    name = self.action_names.get(aid, "Unnamed")
+                    lines.append(f"  - [{name}] id={aid}")
 
         promote_threshold = self._proposal_support_threshold()
 
@@ -194,6 +233,58 @@ class CommunitySnapshot:
                 me_marker = " ← you" if m["user_id"] == my_user_id else ""
                 lines.append(f"  - {name} (user_id={m['user_id']}, seniority={seniority}){me_marker}")
 
+        # Artifact containers (the productive layer — what this community is BUILDING)
+        if self.containers:
+            lines.append(f"\n### Artifact Containers ({len(self.containers)}) — what this community is producing:")
+            lines.append("  (CreateArtifact adds a new artifact to a container; EditArtifact replaces one;")
+            lines.append("   RemoveArtifact retires one; DelegateArtifact hands an artifact to a child Action")
+            lines.append("   to expand; CommitArtifact closes the container by uniting its artifacts in a")
+            lines.append("   chosen order — at the root that ships the community's mission, in a sub-Action")
+            lines.append("   it bubbles up as an EditArtifact proposal in the parent.)")
+            status_label = {1: "OPEN", 2: "PENDING_PARENT (frozen)", 3: "COMMITTED"}
+            for c in self.containers:
+                cid = c["id"]
+                st = status_label.get(c.get("status"), str(c.get("status")))
+                origin = " (root)" if not c.get("delegated_from_artifact_id") else f" (delegated from artifact {c['delegated_from_artifact_id'][:8]} in parent)"
+                lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid}] — {st}{origin}")
+                mission = (c.get("mission") or "").strip()
+                if mission:
+                    lines.append(f"    >>> MISSION: {mission}")
+                    lines.append(
+                        "    >>> This container is NOT a place for slogans, mission statements, "
+                        "or abstract principles — those belong in AddStatement. Each CreateArtifact "
+                        "here must be a concrete, detailed building block of the deliverable above."
+                    )
+                else:
+                    lines.append(
+                        "    >>> MISSION: (none set — ask the community what concrete deliverable "
+                        "this container is for, then fill it with real sections, not slogans.)"
+                    )
+                arts = self.container_artifacts.get(cid, [])
+                if not arts:
+                    lines.append("    (empty — no artifacts yet, propose CreateArtifact to add one)")
+                for a in arts:
+                    aid = a["id"]
+                    author = users_cache.get(a["author_user_id"], a["author_user_id"][:8])
+                    title = a.get("title") or "(untitled)"
+                    preview = (a.get("content") or "").replace("\n", " ")[:120]
+                    deleg = self.delegations_out.get(aid)
+                    if deleg:
+                        lines.append(
+                            f"    [{aid}] \"{title}\" by {author} — DELEGATED to action "
+                            f"\"{deleg['action_name']}\" "
+                            f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
+                        )
+                    else:
+                        lines.append(f"    [{aid}] \"{title}\" by {author} — {preview}")
+                if c.get("status") == 1 and arts:
+                    lines.append(
+                        f"    → To commit: CommitArtifact with val_uuid={cid} "
+                        f"and val_text=JSON list of artifact ids in chosen order"
+                    )
+                if c.get("status") == 2:
+                    lines.append("    → Frozen pending parent verdict — no mutations allowed.")
+
         # Key variables
         important_vars = ["PulseSupport", "ProposalSupport", "Membership", "ThrowOut", "MaxAge"]
         var_str = ", ".join(f"{k}={self.variables.get(k, '?')}" for k in important_vars)
@@ -243,8 +334,20 @@ async def observe_community(client: KBZClient, community_id: str) -> CommunitySn
         except Exception:
             pass
 
-    # Fetch action community names and member lists so agents can reason about joining
-    for a in snapshot.actions:
+    # Fetch action community names, member lists, and activity stats so agents can
+    # reason about joining and about whether an action is finished/idle and ready
+    # to be ended via an EndAction proposal in the parent community.
+    #
+    # PERF: cap the number of actions we fetch details for. With hundreds of
+    # actions, doing 3-4 HTTP calls per action per agent per round grinds the
+    # system to a halt.  We fetch the first MAX_ACTION_DETAIL actions and
+    # only store names (1 HTTP call) for the rest.
+    MAX_ACTION_DETAIL = 10
+    active_actions = [a for a in snapshot.actions if a.get("status") == 1]
+    detail_actions = active_actions[:MAX_ACTION_DETAIL]
+    name_only_actions = active_actions[MAX_ACTION_DETAIL:]
+
+    for a in detail_actions:
         aid = a["action_id"]
         try:
             comm = await client.get_community(aid)
@@ -256,5 +359,84 @@ async def observe_community(client: KBZClient, community_id: str) -> CommunitySn
             snapshot.action_members[aid] = members
         except Exception:
             pass
+        try:
+            child_proposals = await client.get_proposals(aid)
+            child_pulses = await client.get_pulses(aid)
+            active = sum(
+                1 for p in child_proposals
+                if p.get("proposal_status") in ("OutThere", "OnTheAir")
+            )
+            accepted = sum(
+                1 for p in child_proposals
+                if p.get("proposal_status") == "Accepted"
+            )
+            rejected = sum(
+                1 for p in child_proposals
+                if p.get("proposal_status") == "Rejected"
+            )
+            # Pulses that have actually fired (Active=1 or Done=2). Next-pulses (status=0)
+            # are pending and don't represent elapsed time.
+            pulses_fired = sum(1 for p in child_pulses if p.get("status", 0) >= 1)
+            snapshot.action_activity[aid] = {
+                "pulses": pulses_fired,
+                "active_proposals": active,
+                "accepted": accepted,
+                "rejected": rejected,
+            }
+        except Exception:
+            pass
+
+    # For remaining actions, only fetch the name (1 HTTP call each, no proposals/pulses).
+    for a in name_only_actions:
+        aid = a["action_id"]
+        try:
+            comm = await client.get_community(aid)
+            snapshot.action_names[aid] = comm.get("name", "Unnamed")
+        except Exception:
+            pass
+
+    # Artifact containers — load the work tree for this community.
+    # The endpoint returns each container with its artifacts; each artifact
+    # carries any child containers it has been delegated to (recursive).
+    try:
+        tree = await client.get_work_tree(community_id)
+        logger.debug("observe_community: work_tree returned %d containers", len(tree))
+        for c in tree:
+            container_dict = {
+                "id": c["id"],
+                "community_id": c.get("community_id"),
+                "title": c.get("title"),
+                "mission": c.get("mission"),
+                "status": c.get("status"),
+                "delegated_from_artifact_id": c.get("delegated_from_artifact_id"),
+                "committed_content": c.get("committed_content"),
+            }
+            snapshot.containers.append(container_dict)
+            artifacts_flat: list[dict] = []
+            for a in c.get("artifacts", []):
+                artifacts_flat.append({
+                    "id": a["id"],
+                    "title": a.get("title"),
+                    "content": a.get("content", ""),
+                    "author_user_id": a.get("author_user_id"),
+                    "proposal_id": a.get("proposal_id"),
+                    "status": a.get("status"),
+                })
+                # Record any delegations OUT of this artifact.
+                children = a.get("delegated_to") or []
+                if children:
+                    child = children[0]
+                    child_action_id = child.get("community_id")
+                    child_name = snapshot.action_names.get(child_action_id, "Unnamed")
+                    snapshot.delegations_out[a["id"]] = {
+                        "action_community_id": child_action_id,
+                        "action_name": child_name,
+                        "child_container_id": child.get("id"),
+                        "child_status": child.get("status"),
+                        "child_artifact_count": len(child.get("artifacts", [])),
+                    }
+            snapshot.container_artifacts[c["id"]] = artifacts_flat
+    except Exception as e:
+        logger.warning("observe_community: failed to fetch work_tree for %s: %s", community_id, e)
 
     return snapshot

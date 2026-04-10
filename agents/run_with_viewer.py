@@ -47,6 +47,19 @@ from agents.persona import load_all_personas
 from agents.simulation_api import router as sim_router, set_orchestrator
 
 
+DEFAULT_MISSION = (
+    "This community is writing a Kibbutznik Handbook: a concrete, practical "
+    "document a newcomer can read to understand how this community actually "
+    "works — what its values look like in practice, how decisions get made, "
+    "and what daily life looks like. Each artifact is ONE SECTION of that "
+    "handbook, e.g. \"How we resolve disagreements\", \"The morning stand-up "
+    "ritual\", \"What happens when someone wants to leave\", \"How we onboard "
+    "a new member\". Sections must be specific, procedural, and written for a "
+    "real reader to follow. Do NOT write mission statements, slogans, or "
+    "abstract principles — those belong in Community Rules (AddStatement)."
+)
+
+
 def setup_logging(verbose: bool = False):
     level = logging.DEBUG if verbose else logging.INFO
     fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
@@ -119,6 +132,15 @@ Examples:
     parser.add_argument("--model", default="claude-haiku-4-5-20251001",
                         help="LLM model name (e.g. gemma4:26b for Ollama)")
     parser.add_argument("--community-name", default="AI Kibbutz", help="Community name")
+    parser.add_argument(
+        "--mission",
+        default=None,
+        help=(
+            "Concrete briefing written onto the root ArtifactContainer so "
+            "agents know what kind of content they should be producing. "
+            "Defaults to the Kibbutznik Handbook briefing (see DEFAULT_MISSION)."
+        ),
+    )
     parser.add_argument("--host", default="0.0.0.0", help="Server host")
     parser.add_argument("--port", type=int, default=8000, help="Server port")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging (same as --log-level debug)")
@@ -148,8 +170,10 @@ Examples:
         log.info("Running in CONTINUOUS mode (rounds=0). Press Ctrl+C to stop.")
 
     personas = load_all_personas()
+    mission = args.mission if args.mission is not None else DEFAULT_MISSION
     orch = Orchestrator(
         community_name=args.community_name,
+        mission=mission,
         api_url=f"http://localhost:{args.port}",
         llm_backend=args.backend,
         llm_model=args.model,
@@ -164,13 +188,71 @@ Examples:
 
     viewer_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "viewer")
 
+    # Import the artifact cascade machinery so accepted/rejected parent
+    # EditArtifact proposals flip their originating sub-action container
+    # back to COMMITTED/OPEN the same way main.py does.
+    from kbz.database import async_session
+    from kbz.services.artifact_service import ArtifactService
+    from kbz.services.event_bus import event_bus
+
+    async def _artifact_cascade_loop() -> None:
+        import uuid as _uuid
+        queue = event_bus.subscribe()
+        try:
+            while True:
+                event = await queue.get()
+                if event.event_type not in ("proposal.accepted", "proposal.rejected"):
+                    continue
+                proposal_id_str = event.data.get("proposal_id")
+                if not proposal_id_str:
+                    continue
+                try:
+                    proposal_id = _uuid.UUID(str(proposal_id_str))
+                except (ValueError, TypeError):
+                    continue
+                try:
+                    async with async_session() as session:
+                        svc = ArtifactService(session)
+                        if event.event_type == "proposal.accepted":
+                            await svc.on_parent_proposal_accepted(proposal_id)
+                        else:
+                            await svc.on_parent_proposal_rejected(proposal_id)
+                        await session.commit()
+                except Exception as e:
+                    logging.getLogger("simulation").exception(
+                        "Artifact cascade handler failed: %s", e
+                    )
+        except asyncio.CancelledError:
+            event_bus.unsubscribe(queue)
+            raise
+
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        cascade_task = asyncio.create_task(_artifact_cascade_loop())
         asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
-        yield
+        try:
+            yield
+        finally:
+            cascade_task.cancel()
+            try:
+                await cascade_task
+            except asyncio.CancelledError:
+                pass
 
     # Build the combined app with lifespan
-    from kbz.routers import communities, users, members, proposals, pulses, statements, actions, comments, closeness, ws
+    from kbz.routers import (
+        actions,
+        artifacts,
+        closeness,
+        comments,
+        communities,
+        members,
+        proposals,
+        pulses,
+        statements,
+        users,
+        ws,
+    )
     combined_app = FastAPI(
         title="KBZ Big Brother",
         description="KBZ Governance + AI Agents + Big Brother Viewer",
@@ -186,6 +268,7 @@ Examples:
     combined_app.include_router(actions.router, tags=["actions"])
     combined_app.include_router(comments.router, tags=["comments"])
     combined_app.include_router(closeness.router, tags=["closeness"])
+    combined_app.include_router(artifacts.router)
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

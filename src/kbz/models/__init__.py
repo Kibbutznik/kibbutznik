@@ -10,6 +10,8 @@ from kbz.models.support import Support, PulseSupport
 from kbz.models.comment import Comment
 from kbz.models.closeness import Closeness
 from kbz.models.variable import Variable
+from kbz.models.artifact_container import ArtifactContainer
+from kbz.models.artifact import Artifact
 
 __all__ = [
     "Base",
@@ -25,4 +27,6 @@ __all__ = [
     "Comment",
     "Closeness",
     "Variable",
+    "ArtifactContainer",
+    "Artifact",
 ]

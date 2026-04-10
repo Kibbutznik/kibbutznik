@@ -57,6 +57,7 @@ class Orchestrator:
     def __init__(
         self,
         community_name: str = "AI Kibbutz",
+        mission: str | None = None,
         api_url: str = "http://localhost:8000",
         llm_backend: str = "anthropic",
         llm_model: str = "claude-haiku-4-5-20251001",
@@ -71,6 +72,7 @@ class Orchestrator:
         max_retries: int = 3,
     ):
         self.community_name = community_name
+        self.mission = mission
         self.api_url = api_url
         self.client = KBZClient(api_url)
         self.engine = DecisionEngine(
@@ -96,6 +98,11 @@ class Orchestrator:
         self.newcomer_users: list[dict] = []  # users who applied but aren't members yet
         self._newcomer_name_idx: int = 0   # monotonic counter — never decreases even when newcomers are promoted
         self._newcomer_prob: float = 0.8   # ~80% chance per round — frequent membership activity
+        # Cached community data refreshed during rounds, used by get_status()
+        # to avoid self-referencing HTTP calls that cause httpx.ReadError.
+        self._cached_community: dict | None = None
+        self._cached_members: list[dict] | None = None
+        self._cached_variables: dict | None = None
 
     async def setup(self) -> None:
         """Create the community and register all agents."""
@@ -115,7 +122,9 @@ class Orchestrator:
         founder = self.agents[0]
         self.founder_id = founder.user_id
         community = await self.client.create_community(
-            self.community_name, founder.user_id
+            self.community_name,
+            founder.user_id,
+            initial_artifact_mission=self.mission,
         )
         self.community_id = community["id"]
         founder.community_id = self.community_id
@@ -129,6 +138,9 @@ class Orchestrator:
             await self._bootstrap_member(agent)
 
         logger.info(f"All {len(self.agents)} agents registered and added to community")
+
+        # Prime the status cache so /simulation/status works immediately.
+        await self.refresh_status_cache()
 
     async def _bootstrap_member(self, agent: Agent) -> None:
         """Add an agent to the community during setup (fast-track membership)."""
@@ -215,6 +227,10 @@ class Orchestrator:
         """Run one round: selected agents observe and act (eagerness-weighted)."""
         self._round += 1
         round_events = []
+
+        # Refresh cached community data for the viewer's /simulation/status
+        # endpoint so it doesn't need to make self-referencing HTTP calls.
+        await self.refresh_status_cache()
 
         acting_agents = self._select_agents_for_round()
         acting_ids = {id(a) for a in acting_agents}
@@ -591,14 +607,37 @@ class Orchestrator:
         except Exception as e:
             return f"Interview error: {e}"
 
-    async def get_status(self) -> dict:
-        """Get current simulation status for the viewer."""
-        community = await self.client.get_community(self.community_id)
-        members = await self.client.get_members(self.community_id)
+    async def refresh_status_cache(self) -> None:
+        """Refresh cached community data from the API.
+
+        Called once per round from the simulation loop so get_status() can
+        serve the viewer without making self-referencing HTTP calls (which
+        cause httpx.ReadError under uvicorn's single-worker concurrency).
+        """
         try:
-            variables = await self.client.get_variables(self.community_id)
+            self._cached_community = await self.client.get_community(self.community_id)
         except Exception:
-            variables = {}
+            pass  # keep stale cache
+        try:
+            self._cached_members = await self.client.get_members(self.community_id)
+        except Exception:
+            pass
+        try:
+            self._cached_variables = await self.client.get_variables(self.community_id)
+        except Exception:
+            pass
+
+    async def get_status(self) -> dict:
+        """Get current simulation status for the viewer.
+
+        Uses cached data from refresh_status_cache() to avoid self-referencing
+        HTTP calls that cause httpx.ReadError.
+        """
+        community = self._cached_community or {
+            "id": self.community_id, "name": self.community_name, "member_count": len(self.agents)
+        }
+        members = self._cached_members or []
+        variables = self._cached_variables or {}
         community["variables"] = variables
 
         return {

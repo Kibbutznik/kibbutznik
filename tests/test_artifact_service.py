@@ -1,0 +1,294 @@
+"""Unit tests for ArtifactService — the productive layer.
+
+Tests exercise the service directly against the test DB session, sidestepping
+the HTTP/proposal/pulse pipeline so we can isolate lifecycle invariants.
+"""
+import json
+import uuid
+
+import pytest
+
+from kbz.enums import (
+    ArtifactStatus,
+    ContainerStatus,
+    ProposalStatus,
+    ProposalType,
+)
+from kbz.models.action import Action
+from kbz.models.community import Community
+from kbz.models.proposal import Proposal
+from kbz.services.artifact_service import (
+    ArtifactService,
+    ArtifactServiceError,
+    parse_ordered_uuid_list,
+)
+
+
+async def _mk_community(db, name="Root") -> Community:
+    c = Community(
+        id=uuid.uuid4(),
+        parent_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name=name,
+        status=1,
+        member_count=1,
+    )
+    db.add(c)
+    await db.flush()
+    return c
+
+
+async def _mk_child_action(db, parent: Community, name="Child") -> Community:
+    child = Community(
+        id=uuid.uuid4(),
+        parent_id=parent.id,
+        name=name,
+        status=1,
+        member_count=1,
+    )
+    db.add(child)
+    db.add(Action(action_id=child.id, parent_community_id=parent.id, status=1))
+    await db.flush()
+    return child
+
+
+async def _mk_proposal(db, community_id, user_id, ptype=ProposalType.CREATE_ARTIFACT) -> Proposal:
+    p = Proposal(
+        id=uuid.uuid4(),
+        community_id=community_id,
+        user_id=user_id,
+        proposal_type=ptype,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="",
+        val_text="",
+        age=0,
+        support_count=0,
+    )
+    db.add(p)
+    await db.flush()
+    return p
+
+
+@pytest.mark.asyncio
+async def test_create_root_container(db):
+    community = await _mk_community(db)
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    assert container.community_id == community.id
+    assert container.status == ContainerStatus.OPEN
+    assert container.delegated_from_artifact_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_artifact_happy_path(db):
+    community = await _mk_community(db)
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    user = uuid.uuid4()
+    proposal = await _mk_proposal(db, community.id, user)
+
+    artifact = await svc.create_artifact(
+        container_id=container.id,
+        content="Hello world",
+        title="Greeting",
+        author_user_id=user,
+        proposal_id=proposal.id,
+    )
+    assert artifact.status == ArtifactStatus.ACTIVE
+    assert artifact.prev_artifact_id is None
+    assert artifact.community_id == community.id
+
+    arts = await svc.list_artifacts(container.id)
+    assert len(arts) == 1
+
+
+@pytest.mark.asyncio
+async def test_edit_artifact_creates_new_revision_supersedes_old(db):
+    community = await _mk_community(db)
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    user = uuid.uuid4()
+    p1 = await _mk_proposal(db, community.id, user)
+    p2 = await _mk_proposal(db, community.id, user, ProposalType.EDIT_ARTIFACT)
+
+    a1 = await svc.create_artifact(container.id, "v1", "T", user, p1.id)
+    a2 = await svc.edit_artifact(a1.id, "v2", "T2", user, p2.id)
+
+    await db.refresh(a1)
+    assert a1.status == ArtifactStatus.SUPERSEDED
+    assert a2.status == ArtifactStatus.ACTIVE
+    assert a2.prev_artifact_id == a1.id
+
+    history = await svc.get_history(a2.id)
+    assert [h.id for h in history] == [a1.id, a2.id]
+
+    actives = await svc.list_artifacts(container.id)
+    assert [a.id for a in actives] == [a2.id]
+
+
+@pytest.mark.asyncio
+async def test_remove_artifact_marks_retired(db):
+    community = await _mk_community(db)
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, community.id, user)
+    a = await svc.create_artifact(container.id, "x", "", user, p.id)
+
+    await svc.remove_artifact(a.id)
+    await db.refresh(a)
+    assert a.status == ArtifactStatus.RETIRED
+    assert await svc.list_artifacts(container.id) == []
+
+
+@pytest.mark.asyncio
+async def test_delegate_requires_direct_child_action(db):
+    parent = await _mk_community(db, "Parent")
+    child = await _mk_child_action(db, parent, "Child")
+    stranger = await _mk_community(db, "Stranger")  # not a child
+
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(parent.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, parent.id, user)
+    artifact = await svc.create_artifact(container.id, "delegate me", "T", user, p.id)
+
+    delegating_proposal = await _mk_proposal(db, parent.id, user, ProposalType.DELEGATE_ARTIFACT)
+
+    # Happy path: direct child works.
+    new_container = await svc.delegate(artifact.id, child.id, delegating_proposal)
+    assert new_container.community_id == child.id
+    assert new_container.delegated_from_artifact_id == artifact.id
+    assert new_container.status == ContainerStatus.OPEN
+
+    # Negative: stranger community is not a child Action.
+    with pytest.raises(ArtifactServiceError):
+        await svc.delegate(artifact.id, stranger.id, delegating_proposal)
+
+
+@pytest.mark.asyncio
+async def test_commit_root_container_seals_directly(db):
+    community = await _mk_community(db)
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, community.id, user)
+    a1 = await svc.create_artifact(container.id, "first", "", user, p.id)
+    a2 = await svc.create_artifact(container.id, "second", "", user, p.id)
+
+    result = await svc.commit_container(container.id, [a1.id, a2.id], user)
+    assert result is None  # root commit -> no parent proposal
+    await db.refresh(container)
+    assert container.status == ContainerStatus.COMMITTED
+    assert container.committed_content == "first\n\nsecond"
+
+
+@pytest.mark.asyncio
+async def test_commit_delegated_container_creates_parent_proposal(db):
+    parent = await _mk_community(db, "Parent")
+    child = await _mk_child_action(db, parent, "Child")
+    svc = ArtifactService(db)
+    parent_container = await svc.create_root_container(parent.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, parent.id, user)
+    parent_artifact = await svc.create_artifact(parent_container.id, "stub", "Chapter", user, p.id)
+
+    delegating = await _mk_proposal(db, parent.id, user, ProposalType.DELEGATE_ARTIFACT)
+    child_container = await svc.delegate(parent_artifact.id, child.id, delegating)
+
+    cp = await _mk_proposal(db, child.id, user)
+    a1 = await svc.create_artifact(child_container.id, "alpha", "", user, cp.id)
+    a2 = await svc.create_artifact(child_container.id, "beta", "", user, cp.id)
+
+    parent_proposal = await svc.commit_container(child_container.id, [a1.id, a2.id], user)
+    assert parent_proposal is not None
+    assert parent_proposal.community_id == parent.id
+    assert parent_proposal.proposal_type == ProposalType.EDIT_ARTIFACT
+    assert parent_proposal.proposal_status == ProposalStatus.DRAFT
+    assert parent_proposal.val_uuid == parent_artifact.id
+    assert parent_proposal.proposal_text == "alpha\n\nbeta"
+
+    await db.refresh(child_container)
+    assert child_container.status == ContainerStatus.PENDING_PARENT
+    assert child_container.pending_parent_proposal_id == parent_proposal.id
+
+    # While PENDING_PARENT, mutations are frozen.
+    with pytest.raises(ArtifactServiceError):
+        await svc.create_artifact(child_container.id, "nope", "", user, cp.id)
+    with pytest.raises(ArtifactServiceError):
+        await svc.edit_artifact(a1.id, "nope", None, user, cp.id)
+    with pytest.raises(ArtifactServiceError):
+        await svc.remove_artifact(a1.id)
+    with pytest.raises(ArtifactServiceError):
+        await svc.commit_container(child_container.id, [a1.id], user)
+
+
+@pytest.mark.asyncio
+async def test_cascade_accept_seals_child_container(db):
+    parent = await _mk_community(db, "Parent")
+    child = await _mk_child_action(db, parent, "Child")
+    svc = ArtifactService(db)
+    parent_container = await svc.create_root_container(parent.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, parent.id, user)
+    parent_artifact = await svc.create_artifact(parent_container.id, "stub", "T", user, p.id)
+    delegating = await _mk_proposal(db, parent.id, user, ProposalType.DELEGATE_ARTIFACT)
+    child_container = await svc.delegate(parent_artifact.id, child.id, delegating)
+    cp = await _mk_proposal(db, child.id, user)
+    a = await svc.create_artifact(child_container.id, "x", "", user, cp.id)
+    parent_proposal = await svc.commit_container(child_container.id, [a.id], user)
+
+    await svc.on_parent_proposal_accepted(parent_proposal.id)
+    await db.refresh(child_container)
+    assert child_container.status == ContainerStatus.COMMITTED
+
+
+@pytest.mark.asyncio
+async def test_cascade_reject_reopens_child_container(db):
+    parent = await _mk_community(db, "Parent")
+    child = await _mk_child_action(db, parent, "Child")
+    svc = ArtifactService(db)
+    parent_container = await svc.create_root_container(parent.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, parent.id, user)
+    parent_artifact = await svc.create_artifact(parent_container.id, "stub", "T", user, p.id)
+    delegating = await _mk_proposal(db, parent.id, user, ProposalType.DELEGATE_ARTIFACT)
+    child_container = await svc.delegate(parent_artifact.id, child.id, delegating)
+    cp = await _mk_proposal(db, child.id, user)
+    a = await svc.create_artifact(child_container.id, "x", "", user, cp.id)
+    parent_proposal = await svc.commit_container(child_container.id, [a.id], user)
+
+    await svc.on_parent_proposal_rejected(parent_proposal.id)
+    await db.refresh(child_container)
+    assert child_container.status == ContainerStatus.OPEN
+    assert child_container.pending_parent_proposal_id is None
+    # Members can now mutate again.
+    a2 = await svc.create_artifact(child_container.id, "redo", "", user, cp.id)
+    assert a2.status == ArtifactStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_commit_rejects_artifact_not_in_container(db):
+    community = await _mk_community(db)
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, community.id, user)
+    a = await svc.create_artifact(container.id, "valid", "", user, p.id)
+
+    bogus = uuid.uuid4()
+    with pytest.raises(ArtifactServiceError):
+        await svc.commit_container(container.id, [a.id, bogus], user)
+
+
+def test_parse_ordered_uuid_list():
+    a, b = uuid.uuid4(), uuid.uuid4()
+    raw = json.dumps([str(a), str(b)])
+    assert parse_ordered_uuid_list(raw) == [a, b]
+    with pytest.raises(ArtifactServiceError):
+        parse_ordered_uuid_list("")
+    with pytest.raises(ArtifactServiceError):
+        parse_ordered_uuid_list("not json")
+    with pytest.raises(ArtifactServiceError):
+        parse_ordered_uuid_list(json.dumps({"not": "list"}))
+    with pytest.raises(ArtifactServiceError):
+        parse_ordered_uuid_list(json.dumps(["not-a-uuid"]))

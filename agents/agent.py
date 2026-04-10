@@ -251,6 +251,8 @@ class Agent:
     _PROPOSAL_TYPES = frozenset({
         "AddStatement", "RemoveStatement", "ReplaceStatement", "ChangeVariable",
         "AddAction", "EndAction", "Membership", "ThrowOut", "JoinAction",
+        "CreateArtifact", "EditArtifact", "RemoveArtifact",
+        "DelegateArtifact", "CommitArtifact",
     })
     # Valid UUID prefix: only hex chars and dashes
     _UUID_PREFIX_RE = re.compile(r'^[0-9a-fA-F\-]+$')
@@ -336,10 +338,13 @@ class Agent:
                 # Append the agent's reason/pitch to the proposal text so it's
                 # persisted and visible when viewers zoom into the proposal.
                 # BUT: for types where proposal_text is a key/name (ChangeVariable uses
-                # it as the variable name, RemoveStatement as the statement text),
-                # appending the pitch would corrupt the semantic value.
+                # it as the variable name, ReplaceStatement falls back to proposal_text
+                # as the new statement body when val_text is empty), appending the
+                # pitch would corrupt the semantic value. RemoveStatement targets via
+                # val_uuid only and ignores proposal_text, so it's safe.
                 pitch_safe_types = {"AddStatement", "AddAction", "Membership",
-                                    "ThrowOut", "JoinAction", "EndAction"}
+                                    "ThrowOut", "JoinAction", "EndAction",
+                                    "RemoveStatement"}
                 pitch = decision.reason or ""
                 if ptype in pitch_safe_types and pitch and pitch.lower() not in ptext.lower():
                     ptext = f"{ptext}\n\n{pitch}" if ptext else pitch
@@ -413,6 +418,7 @@ class Agent:
         Build context for when a viewer asks this agent a question.
         Used in the Big Brother "ask the bot" feature.
         """
+        from agents.decision_engine import KBZ_RULES
         recent_actions = "\n".join(
             f"- {log.action_type}: {log.details} ({log.reason})"
             for log in self.action_history[-20:]
@@ -424,6 +430,8 @@ class Agent:
 
 ## Your Communication Style
 {self.persona.communication_style}
+
+{KBZ_RULES}
 
 ## Your Recent Actions in the Community
 {recent_actions or "No actions yet."}

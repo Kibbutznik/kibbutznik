@@ -41,11 +41,19 @@ class KBZClient:
 
     # --- Communities ---
 
-    async def create_community(self, name: str, founder_user_id: str) -> dict:
-        resp = await self._client.post("/communities", json={
+    async def create_community(
+        self,
+        name: str,
+        founder_user_id: str,
+        initial_artifact_mission: str | None = None,
+    ) -> dict:
+        payload: dict = {
             "name": name,
             "founder_user_id": founder_user_id,
-        })
+        }
+        if initial_artifact_mission is not None:
+            payload["initial_artifact_mission"] = initial_artifact_mission
+        resp = await self._client.post("/communities", json=payload)
         resp.raise_for_status()
         return resp.json()
 
@@ -160,6 +168,20 @@ class KBZClient:
 
     async def get_actions(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/communities/{community_id}/actions")
+        resp.raise_for_status()
+        return resp.json()
+
+    # --- Artifacts ---
+
+    async def get_artifact_containers(self, community_id: str) -> list[dict]:
+        resp = await self._client.get(
+            f"/artifacts/containers/community/{community_id}?include_history=0"
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_work_tree(self, community_id: str) -> list[dict]:
+        resp = await self._client.get(f"/artifacts/communities/{community_id}/work_tree")
         resp.raise_for_status()
         return resp.json()
 

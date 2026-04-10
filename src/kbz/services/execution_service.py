@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from sqlalchemy import update
@@ -9,7 +10,10 @@ from kbz.models.community import Community
 from kbz.models.proposal import Proposal
 from kbz.models.statement import Statement
 from kbz.models.variable import Variable
+from kbz.services.artifact_service import ArtifactService, ArtifactServiceError, parse_ordered_uuid_list
 from kbz.services.member_service import MemberService
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionService:
@@ -160,6 +164,86 @@ class ExecutionService:
         # Placeholder for dividend logic
         pass
 
+    # ---------- Artifact / ArtifactContainer handlers ----------
+
+    async def _exec_create_artifact(self, proposal: Proposal) -> None:
+        if not proposal.val_uuid:
+            logger.warning("CreateArtifact %s missing val_uuid (container_id)", proposal.id)
+            return
+        try:
+            await ArtifactService(self.db).create_artifact(
+                container_id=proposal.val_uuid,
+                content=proposal.proposal_text or "",
+                title=proposal.val_text or "",
+                author_user_id=proposal.user_id,
+                proposal_id=proposal.id,
+            )
+        except ArtifactServiceError as e:
+            logger.warning("CreateArtifact %s failed: %s", proposal.id, e)
+
+    async def _exec_edit_artifact(self, proposal: Proposal) -> None:
+        if not proposal.val_uuid:
+            logger.warning("EditArtifact %s missing val_uuid (artifact_id)", proposal.id)
+            return
+        try:
+            await ArtifactService(self.db).edit_artifact(
+                artifact_id=proposal.val_uuid,
+                new_content=proposal.proposal_text or "",
+                new_title=proposal.val_text if proposal.val_text else None,
+                author_user_id=proposal.user_id,
+                proposal_id=proposal.id,
+            )
+        except ArtifactServiceError as e:
+            logger.warning("EditArtifact %s failed: %s", proposal.id, e)
+
+    async def _exec_remove_artifact(self, proposal: Proposal) -> None:
+        if not proposal.val_uuid:
+            logger.warning("RemoveArtifact %s missing val_uuid (artifact_id)", proposal.id)
+            return
+        try:
+            await ArtifactService(self.db).remove_artifact(proposal.val_uuid)
+        except ArtifactServiceError as e:
+            logger.warning("RemoveArtifact %s failed: %s", proposal.id, e)
+
+    async def _exec_delegate_artifact(self, proposal: Proposal) -> None:
+        if not proposal.val_uuid or not proposal.val_text:
+            logger.warning(
+                "DelegateArtifact %s missing val_uuid (artifact_id) or val_text (action_community_id)",
+                proposal.id,
+            )
+            return
+        try:
+            target = uuid.UUID(proposal.val_text.strip())
+        except ValueError:
+            logger.warning(
+                "DelegateArtifact %s val_text is not a valid UUID: %r",
+                proposal.id,
+                proposal.val_text,
+            )
+            return
+        try:
+            await ArtifactService(self.db).delegate(
+                source_artifact_id=proposal.val_uuid,
+                target_action_community_id=target,
+                delegating_proposal=proposal,
+            )
+        except ArtifactServiceError as e:
+            logger.warning("DelegateArtifact %s failed: %s", proposal.id, e)
+
+    async def _exec_commit_artifact(self, proposal: Proposal) -> None:
+        if not proposal.val_uuid:
+            logger.warning("CommitArtifact %s missing val_uuid (container_id)", proposal.id)
+            return
+        try:
+            ordered_ids = parse_ordered_uuid_list(proposal.val_text or "")
+            await ArtifactService(self.db).commit_container(
+                container_id=proposal.val_uuid,
+                ordered_artifact_ids=ordered_ids,
+                committer_user_id=proposal.user_id,
+            )
+        except ArtifactServiceError as e:
+            logger.warning("CommitArtifact %s failed: %s", proposal.id, e)
+
     _handlers = {
         ProposalType.MEMBERSHIP: _exec_membership,
         ProposalType.THROW_OUT: _exec_throw_out,
@@ -175,4 +259,9 @@ class ExecutionService:
         ProposalType.PAY_BACK: _exec_pay_back,
         ProposalType.DIVIDEND: _exec_dividend,
         ProposalType.SET_MEMBERSHIP_HANDLER: _exec_set_membership_handler,
+        ProposalType.CREATE_ARTIFACT: _exec_create_artifact,
+        ProposalType.EDIT_ARTIFACT: _exec_edit_artifact,
+        ProposalType.REMOVE_ARTIFACT: _exec_remove_artifact,
+        ProposalType.DELEGATE_ARTIFACT: _exec_delegate_artifact,
+        ProposalType.COMMIT_ARTIFACT: _exec_commit_artifact,
     }

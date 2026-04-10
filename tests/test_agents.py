@@ -159,7 +159,7 @@ class TestCommunitySnapshot:
                 {"user_id": "u2", "seniority": 2},
                 {"user_id": "u3", "seniority": 0},
             ],
-            statements=[{"statement_text": "We are transparent"}],
+            statements=[{"id": "s1", "statement_text": "We are transparent"}],
             pulses=[{"status": 0, "support_count": 1, "threshold": 2}],
             proposals_out_there=[
                 {

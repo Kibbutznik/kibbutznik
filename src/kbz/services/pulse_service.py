@@ -83,7 +83,7 @@ class PulseService:
                 threshold_var = PROPOSAL_TYPE_THRESHOLDS.get(
                     ProposalType(proposal.proposal_type)
                 )
-                threshold_pct = int(await self._get_variable_value(community_id, threshold_var))
+                threshold_pct = int(float(await self._get_variable_value(community_id, threshold_var)))
                 threshold = math.ceil(member_count * threshold_pct / 100)
 
                 if proposal.support_count >= threshold:
@@ -106,8 +106,8 @@ class PulseService:
         await self.db.flush()
 
         # --- Step 3: Move qualified OutThere proposals to the new Active pulse ---
-        max_age = int(await self._get_variable_value(community_id, "MaxAge"))
-        proposal_support_pct = int(await self._get_variable_value(community_id, "ProposalSupport"))
+        max_age = int(float(await self._get_variable_value(community_id, "MaxAge")))
+        proposal_support_pct = int(float(await self._get_variable_value(community_id, "ProposalSupport")))
 
         out_there_proposals = await self._get_proposals_by_status(
             community_id, ProposalStatus.OUT_THERE
@@ -135,7 +135,7 @@ class PulseService:
         # --- Step 5: Create new Next pulse ---
         # Refresh community for updated member count
         await self.db.refresh(community)
-        pulse_support_pct = int(await self._get_variable_value(community_id, "PulseSupport"))
+        pulse_support_pct = int(float(await self._get_variable_value(community_id, "PulseSupport")))
         new_threshold = max(1, math.ceil(community.member_count * pulse_support_pct / 100))
 
         new_pulse = Pulse(
