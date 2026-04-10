@@ -173,8 +173,8 @@ class ExecutionService:
         try:
             await ArtifactService(self.db).create_artifact(
                 container_id=proposal.val_uuid,
-                content=proposal.proposal_text or "",
-                title=proposal.val_text or "",
+                content="",
+                title=proposal.val_text or proposal.proposal_text or "Untitled",
                 author_user_id=proposal.user_id,
                 proposal_id=proposal.id,
             )

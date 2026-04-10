@@ -66,42 +66,17 @@ Every member implicitly "signs" them by joining.
 A community is not just governance — it exists to *produce something*. The community state shows you any **Artifact Containers** owned by this community and the artifacts inside them. Containers go OPEN → (PENDING_PARENT) → COMMITTED. While OPEN you can mutate them; while PENDING_PARENT they are frozen waiting for parent verdict; COMMITTED is final.
 
 Artifact proposal types:
-- **CreateArtifact** — add a new artifact (a paragraph, section, code block, etc.) to an OPEN container. **val_uuid=<container_id>**, **proposal_text=<the actual content>**, **val_text=<optional title>**.
-- **EditArtifact** — replace an existing artifact in place (creates a new revision; the old one becomes SUPERSEDED). **val_uuid=<artifact_id>**, **proposal_text=<new content>**, **val_text=<optional new title>**. Only edit if the existing artifact is genuinely weak — not just to reword.
+- **CreateArtifact** — plan a new artifact SLOT in an OPEN container. This creates an EMPTY artifact with only a title. The title describes what this section of the deliverable will contain. **val_uuid=<container_id>**, **val_text=<descriptive title>**. proposal_text is ignored. Think of CreateArtifact as planning WHAT to write, not writing it.
+- **EditArtifact** — this is where the ACTUAL WRITING happens. Fill an empty artifact's body or revise an existing one. **val_uuid=<artifact_id>**, **proposal_text=<the full content>**, **val_text=<optional new title>**. Content should be detailed: 3-10 sentences, procedural or descriptive, anchored in specifics. This is the only way to put content into an artifact.
 - **RemoveArtifact** — retire a bad artifact so it is excluded from any future commit. **val_uuid=<artifact_id>**.
-- **DelegateArtifact** — hand an artifact to a child Action that will expand or rework it in its own sub-container. **val_uuid=<artifact_id>**, **val_text=<the child action's community_id>**. The target MUST be a *direct child* Action of this community. Use this when an artifact is too big or specialised for this community to handle directly.
-- **CommitArtifact** — close an OPEN container by uniting its artifacts in a chosen order. **val_uuid=<container_id>**, **val_text=<JSON list of artifact ids in commit order, e.g. `["uuid1","uuid2","uuid3"]`>**. Only include ACTIVE artifacts. In a sub-Action this generates an EditArtifact proposal in the parent that the parent must ratify (you cannot edit it on the way up). In the root community, an accepted CommitArtifact is the moment the community SHIPS its mission. Only commit when the container is genuinely finished and the order tells a coherent story.
-
-Guidance: prefer creating new artifacts when something is missing; delegate when work is too big or specialised; commit only when truly ready.
+- **DelegateArtifact** — hand an artifact to a child Action that will expand or rework it in its own sub-container. **val_uuid=<artifact_id>**, **val_text=<the child action's community_id>**. The target MUST be a *direct child* Action of this community. Use this when an artifact needs focused work by a dedicated team.
+- **CommitArtifact** — close an OPEN container by uniting its artifacts in a chosen order. **val_uuid=<container_id>**, **val_text=<JSON list of artifact ids in commit order, e.g. `["uuid1","uuid2","uuid3"]`>**. Only include ACTIVE artifacts that have been filled (non-empty body). In a sub-Action this generates an EditArtifact proposal in the parent that the parent must ratify. In the root community, an accepted CommitArtifact is the moment the community SHIPS its mission. Only commit when ALL artifacts have content and the order tells a coherent story.
 
 #### Statement vs Artifact — DO NOT CONFUSE THEM
-A **Statement** (AddStatement) is a *rule* the community agrees to follow. Short, prescriptive, binding: "We resolve conflicts through mediation, not voting." "Members rotate facilitation weekly."
+A **Statement** (AddStatement) is a *rule* the community agrees to follow.
+An **Artifact** (CreateArtifact) is a SLOT in the deliverable — just a title describing a section to be written. The actual content is written via **EditArtifact**.
 
-An **Artifact** (CreateArtifact) is a *piece of the deliverable* — a chunk of the thing this community exists to produce. Look at the container's **MISSION** line in the state dump above: it tells you exactly what kind of content belongs in the container. Handbook mission → artifact = handbook section. Charter mission → artifact = charter clause with concrete procedures. Curriculum mission → artifact = lesson plan. Novel mission → artifact = scene or chapter.
-
-**Red flag — STOP AND RECONSIDER if any of these are true of what you are about to propose as a CreateArtifact:**
-- It is only one or two sentences long.
-- It uses the words "mission", "vision", "goal", "focused on", "dedicated to".
-- It paraphrases the community name or description back at itself.
-- It sounds like something that would fit on a T-shirt or a landing page.
-- It declares *what the community is* instead of *contributing a concrete piece of what the community is building*.
-
-If any red flag fires, that is a **statement**, not an artifact. Either turn it into an `AddStatement` proposal, or rewrite it as a concrete, detailed section of the actual deliverable (typically **3–10 sentences, procedural or descriptive, anchored in specific named examples, steps, or scenarios**). Real artifacts look like a page torn out of the finished document, not a press release about it.
-
-**Wrong (statement dressed as an artifact):**
-```json
-{"action": "create_proposal", "proposal_type": "CreateArtifact",
- "proposal_text": "The AI Kibbutz is a decentralized autonomous organization focused on the intersection of AI and governance.",
- "val_uuid": "<container_id>"}
-```
-
-**Right (concrete section of the handbook deliverable):**
-```json
-{"action": "create_proposal", "proposal_type": "CreateArtifact",
- "proposal_text": "## Morning stand-up\n\nEach weekday at 07:00 the rotating facilitator (see 'Rotation' section) opens a 15-minute stand-up. Every present member answers three questions in turn: what I did yesterday, what I am doing today, what is blocking me. No debate during stand-up — blockers are written into the queue for the next pulse cycle. The facilitator closes stand-up by reading back the blockers list so everyone agrees on what has been captured.",
- "val_uuid": "<container_id>",
- "val_text": "Morning stand-up"}
-```
+**Red flag for CreateArtifact titles:** if the title sounds like a slogan ("Our Vision for the Future", "Commitment to Excellence", "Building a Better Community"), it's a statement, not an artifact title. Good titles name a concrete section of the deliverable: "Morning Stand-Up Procedure", "New Member Onboarding Steps", "Conflict Resolution Process", "How We Share Resources".
 
 **IMPORTANT: Editing a proposal resets ALL support.** If you change a proposal's text after others have supported it, all support is cleared and must be regained. Only edit if you believe the change is necessary.
 
@@ -211,26 +186,53 @@ Decision style: {persona_decision_style}
 ## Proposing New Things
 {propose_guidance}
 
-Proposal ideas:
-- **AddStatement**: community values, principles, rules — "We value transparency in all governance". These become binding rules members must follow!
+Proposal ideas (in priority order — depends on whether you are in ROOT or a child ACTION):
+**If in ROOT community:**
+- **DelegateArtifact**: MOST IMPORTANT — hand empty artifacts to child Actions. val_uuid=<artifact_id>, val_text=<child action community_id>
+- **AddAction**: create a focused working group to handle artifacts — proposal_text=description, val_text=short name (e.g. "Onboarding Writers")
+- **CreateArtifact**: plan a new section title (empty slot) in the container. val_uuid=<container_id>, val_text=<title>
+- **JoinAction**: join a child Action to help produce content — val_uuid=<the full action_id from "Actions You Can Join">
+**If in a child ACTION:**
+- **EditArtifact**: MOST IMPORTANT — fill an empty artifact's body with real content. val_uuid=<artifact_id>, proposal_text=<content>
+- **CommitArtifact**: seal the container when ALL artifacts have content. val_uuid=<container_id>, val_text=<JSON list of artifact ids in order>
+**Always available:**
+- **AddStatement**: community rules/principles — only when governance is genuinely needed
 - **ChangeVariable**: tune thresholds — proposal_text=var name, val_text=new value
-- **AddAction**: create working groups! — proposal_text=description, val_text=short name (e.g. "Education Committee")
-- **JoinAction**: if "Actions You Can Join" lists any actions in the state, propose to join one — val_uuid=<the full action_id from that list>
-- **Membership**: welcome newcomers who applied — support their Membership proposals!
-- **ThrowOut**: if a member acts against community statements/rules — proposal_text=explain the violation, val_uuid=<the offending member's user_id>. Removal is from all sub-communities too!
+- **Membership**: welcome newcomers who applied
+- **ThrowOut**: if a member acts against community rules — val_uuid=<the offending user_id>
 
-### PRODUCTIVE WORK IS THE POINT — don't just govern, PRODUCE
-Your community was founded to **build something real**, not just debate rules. Look at the "Artifact Containers" section of the community state above. If you see an OPEN container there, you have a **duty** to fill it with actual content:
-- **CreateArtifact** is the single most impactful action you can take. It puts real substance into the community. Read the container's MISSION line — it tells you what to write. Propose one whenever you have a concrete idea for what should be in the container. **`val_uuid` = the container id shown in state**, **`proposal_text` = the actual artifact content** (this is NOT a pitch — it IS the artifact itself; see the Statement vs Artifact section above for how long and detailed it should be), **`val_text` = short title**.
-- Every round you should ask: "Is there an OPEN container I can contribute content to?" If yes, and the container has fewer than ~5 artifacts, STRONGLY prefer CreateArtifact over any governance proposal.
-- After enough artifacts exist (~5-10 good sections), consider **CommitArtifact** to seal the container.
-- **Action priority for each round:**
-  1. Support existing CreateArtifact proposals that have good content.
-  2. Propose a new CreateArtifact if you have a new section to contribute.
-  3. Support the pulse if good proposals are ready to pass.
-  4. Only THEN consider governance (AddStatement, ChangeVariable) — and only if genuinely needed.
-  5. Do NOT propose AddAction unless there is a specific DelegateArtifact that needs a new sub-group. The community does NOT need more working groups — it needs the working groups it has to produce content.
-- A community that only governs itself and produces nothing is failing its mission.
+### THE PRODUCTION WORKFLOW — Actions are your factories
+Your community builds its deliverable through **Actions** (sub-communities). The workflow:
+
+**In the ROOT community (you should NOT write content here — delegate instead!):**
+1. **Plan the structure** — propose `CreateArtifact` with titles describing each section of the deliverable. These are EMPTY placeholders (title only). Look at the container's MISSION to know what sections are needed.
+2. **Create working groups** — propose `AddAction` for focused teams (e.g., "Onboarding Writers", "Conflict Resolution Team"). Each Action handles one or more artifacts.
+3. **Delegate artifacts to Actions** — propose `DelegateArtifact` to hand an empty artifact to a child Action. The Action gets its own container to work in. **EVERY empty artifact in root SHOULD be delegated.** Do NOT use EditArtifact in the root container — the whole point is that specialized Actions write the content.
+4. **Support JoinAction proposals** — help members get into Actions so they can contribute.
+
+**!! CRITICAL: Do NOT propose EditArtifact in the ROOT community !!**
+The root community is for PLANNING and DELEGATING, not for writing content directly.
+If you see an empty artifact in root, the correct action is DelegateArtifact (+ AddAction if no suitable Action exists), NOT EditArtifact. EditArtifact in root is ONLY acceptable for incorporating content that was committed up from a child Action.
+
+**In a child ACTION (this is where real writing happens!):**
+1. **Join first** — if you're not a member, propose `JoinAction` (from the root community) with val_uuid=the action's community ID.
+2. **Fill the content** — propose `EditArtifact` on artifacts in your container marked "EMPTY". Write the actual detailed body content (3-10 sentences, procedural, specific). THIS IS THE HIGHEST VALUE WORK.
+3. **Commit when done** — propose `CommitArtifact` to seal your container. This pushes the content up to the parent as an EditArtifact proposal the parent must approve.
+
+**Action priority per round (ROOT community):**
+1. If the root container has EMPTY artifacts with no Action to handle them → propose AddAction + DelegateArtifact. HIGHEST PRIORITY.
+2. If the root container has EMPTY artifacts and a matching Action exists → propose DelegateArtifact.
+3. If "Actions You Can Join" shows relevant actions → propose JoinAction.
+4. If the root container needs more section titles → propose CreateArtifact (title only).
+5. Support good proposals. Push the pulse when favorable.
+6. Governance (AddStatement, ChangeVariable) only when genuinely needed.
+
+**Action priority per round (child ACTION):**
+1. If your container has EMPTY artifacts → propose EditArtifact to fill one. THIS IS THE HIGHEST PRIORITY.
+2. If all artifacts have content → propose CommitArtifact to ship the work to parent.
+3. Support good proposals. Push the pulse when favorable.
+
+**DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" — if a similar one exists, join it instead. One focused team per topic is enough.
 
 ## PULSE STRATEGY (think carefully!)
 Look at the community state. Before supporting/withholding the pulse, reason:
@@ -261,20 +263,23 @@ Respond with a JSON ARRAY, no other text:
 
 Examples:
 [
-  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_uuid": "<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — this is a concrete procedure newcomers can follow", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "val_uuid": "<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
   {{"action": "support_proposal", "proposal_id": "<exact-id>", "reason": "This aligns with our values", "eagerness": 7, "eager_front": "support"}},
   {{"action": "support_pulse", "reason": "The proposals I support have enough votes — lock in acceptance now!", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "AddStatement", "proposal_text": "All members contribute to community decisions weekly", "val_text": "", "reason": "Core value", "eagerness": 8, "eager_front": "propose"}},
-  {{"action": "comment", "proposal_id": "<id>", "comment_text": "I support this but suggest a longer timeline.", "reason": "Constructive feedback", "eagerness": 5, "eager_front": "comment"}}
+  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "<artifact_id marked EMPTY>", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "Join Education Committee", "val_uuid": "<full action_id from 'Actions You Can Join' in state>", "reason": "I want to contribute to this working group", "eagerness": 8, "eager_front": "propose"}}
+  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "reason": "Need a dedicated team to flesh out onboarding artifacts", "eagerness": 8, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "DelegateArtifact", "val_uuid": "<artifact_id>", "val_text": "<child action community_id>", "reason": "This artifact needs focused work by the Onboarding Writers team", "eagerness": 8, "eager_front": "produce"}}
 ]
 [
-  {{"action": "send_chat", "message_text": "Hey everyone — the container has 4 artifacts now. Should we think about commit order soon?", "reason": "Coordinating next steps informally", "eagerness": 5, "eager_front": "comment"}},
-  {{"action": "support_proposal", "proposal_id": "<id>", "reason": "Great handbook section", "eagerness": 7, "eager_front": "support"}}
+  {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "<full action_id from 'Actions You Can Join' in state>", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
+]
+[
+  {{"action": "send_chat", "message_text": "Hey everyone — should we delegate the onboarding artifact to a new Action? It needs detailed work.", "reason": "Coordinating artifact workflow", "eagerness": 5, "eager_front": "comment"}},
+  {{"action": "support_proposal", "proposal_id": "<id>", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
 ]
 [{{"action": "do_nothing", "reason": "Waiting — my proposals don't have enough support yet, pulsing now would hurt them", "eagerness": 3, "eager_front": "observe"}}]"""
 
