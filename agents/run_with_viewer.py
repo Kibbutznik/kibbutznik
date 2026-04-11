@@ -146,7 +146,7 @@ Examples:
                         help="Number of rounds (0 = continuous/infinite)")
     parser.add_argument("--delay", type=float, default=2.0,
                         help="Delay between rounds in seconds (default: 2.0)")
-    parser.add_argument("--backend", default="anthropic", choices=["anthropic", "ollama"],
+    parser.add_argument("--backend", default="anthropic", choices=["anthropic", "ollama", "openrouter"],
                         help="LLM backend (default: anthropic)")
     parser.add_argument("--model", default="claude-haiku-4-5-20251001",
                         help="LLM model name (e.g. gemma4:26b for Ollama)")
