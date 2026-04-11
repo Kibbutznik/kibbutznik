@@ -9,3 +9,7 @@ build/
 *.db
 .env
 config.ini
+simulation.log
+simulation_stdout.log
+.claude/
+kbz_starter/

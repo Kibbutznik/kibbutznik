@@ -14,6 +14,8 @@ router = APIRouter()
 async def create_community(data: CommunityCreate, db: AsyncSession = Depends(get_db)):
     svc = CommunityService(db)
     community = await svc.create(data)
+    await db.commit()
+    await db.refresh(community)
     return community
 
 

@@ -1,10 +1,10 @@
 import logging
 import uuid
 
-from sqlalchemy import update
+from sqlalchemy import update, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kbz.enums import ProposalType, CommunityStatus, DEFAULT_VARIABLES, StatementStatus
+from kbz.enums import ProposalType, CommunityStatus, DEFAULT_VARIABLES, StatementStatus, ProposalStatus
 from kbz.models.action import Action
 from kbz.models.community import Community
 from kbz.models.proposal import Proposal
@@ -118,18 +118,49 @@ class ExecutionService:
         await self.db.flush()
 
     async def _exec_end_action(self, proposal: Proposal) -> None:
-        if proposal.val_uuid:
-            await self.db.execute(
-                update(Action)
-                .where(Action.action_id == proposal.val_uuid)
-                .values(status=CommunityStatus.INACTIVE)
+        if not proposal.val_uuid:
+            return
+        ended_action_id = str(proposal.val_uuid)
+
+        # Mark the action and its sub-community as inactive
+        await self.db.execute(
+            update(Action)
+            .where(Action.action_id == proposal.val_uuid)
+            .values(status=CommunityStatus.INACTIVE)
+        )
+        await self.db.execute(
+            update(Community)
+            .where(Community.id == proposal.val_uuid)
+            .values(status=CommunityStatus.INACTIVE)
+        )
+
+        # Cancel any active DelegateArtifact proposals in the PARENT community
+        # that target this now-ended action (val_text = action community_id).
+        # Also cancel any JoinAction proposals for this action (val_uuid = action community_id).
+        active_statuses = (ProposalStatus.OUT_THERE.value, ProposalStatus.ON_THE_AIR.value)
+        orphan_result = await self.db.execute(
+            select(Proposal).where(
+                Proposal.community_id == proposal.community_id,
+                Proposal.proposal_status.in_(active_statuses),
+                or_(
+                    # DelegateArtifact → val_text is the target action community_id
+                    (Proposal.proposal_type == ProposalType.DELEGATE_ARTIFACT.value) &
+                    (Proposal.val_text == ended_action_id),
+                    # JoinAction → val_uuid is the target action community_id
+                    (Proposal.proposal_type == ProposalType.JOIN_ACTION.value) &
+                    (Proposal.val_uuid == proposal.val_uuid),
+                )
             )
-            await self.db.execute(
-                update(Community)
-                .where(Community.id == proposal.val_uuid)
-                .values(status=CommunityStatus.INACTIVE)
+        )
+        orphans = orphan_result.scalars().all()
+        for orphan in orphans:
+            orphan.proposal_status = ProposalStatus.CANCELED.value
+            logger.info(
+                "Auto-canceled %s proposal %s targeting ended action %s",
+                orphan.proposal_type, orphan.id, ended_action_id,
             )
-            await self.db.flush()
+
+        await self.db.flush()
 
     async def _exec_join_action(self, proposal: Proposal) -> None:
         if proposal.val_uuid:
@@ -228,7 +259,7 @@ class ExecutionService:
                 delegating_proposal=proposal,
             )
         except ArtifactServiceError as e:
-            logger.warning("DelegateArtifact %s failed: %s", proposal.id, e)
+            logger.error("DelegateArtifact %s failed: %s", proposal.id, e, exc_info=True)
 
     async def _exec_commit_artifact(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:

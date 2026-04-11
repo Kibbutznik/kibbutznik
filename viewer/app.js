@@ -10,11 +10,14 @@ function agentColor(name) {
     return `agent-color-${AGENT_COLORS[name] % 6}`;
 }
 
+// Detect base path — works both at root (/viewer/) and under a prefix (/kbz/viewer/)
+const BASE = window.location.pathname.split('/viewer')[0] || '';
+
 // API helpers with caching
 const _cache = {};
 const API = {
     async get(path) {
-        const res = await fetch(path);
+        const res = await fetch(BASE + path);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.json();
     },
@@ -28,7 +31,7 @@ const API = {
         return data;
     },
     async post(path, body) {
-        const res = await fetch(path, {
+        const res = await fetch(BASE + path, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),

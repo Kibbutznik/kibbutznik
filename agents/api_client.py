@@ -185,6 +185,12 @@ class KBZClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_artifact_history(self, artifact_id: str) -> list[dict]:
+        """Return the version history of an artifact (newest last)."""
+        resp = await self._client.get(f"/artifacts/{artifact_id}/history")
+        resp.raise_for_status()
+        return resp.json()
+
     # --- Comments ---
 
     async def add_comment(

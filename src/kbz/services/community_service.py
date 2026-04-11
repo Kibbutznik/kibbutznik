@@ -63,7 +63,7 @@ class CommunityService:
                 mission=data.initial_artifact_mission,
             )
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(community)
         return community
 

@@ -64,6 +64,7 @@ class Agent:
         self.interview_history: list[tuple[str, str]] = []  # (question, answer) from viewer
         self._chat_this_round: int = 0  # rate limit: max 2 send_chat per round
         self._last_chat_read: datetime | None = None  # track when we last read chat for diff
+        self.rounds_since_pulse: int = 0  # set by orchestrator before each round
 
     async def register(self) -> None:
         """Create the user account in the KBZ system."""
@@ -90,7 +91,11 @@ class Agent:
         if not self.community_id:
             raise ValueError("Agent has no community")
         chat_after = self._last_chat_read.isoformat() if self._last_chat_read else None
-        snapshot = await observe_community(self.client, self.community_id, chat_after=chat_after)
+        snapshot = await observe_community(
+            self.client, self.community_id,
+            chat_after=chat_after,
+            rounds_since_pulse=self.rounds_since_pulse,
+        )
         # Update last-read timestamp to now so next round gets only new messages.
         self._last_chat_read = datetime.now(timezone.utc)
 

@@ -140,7 +140,7 @@ class TestDecisionEngine:
             action_history=["[10:00] do_nothing: Observing"],
         )
         assert "KBZ Governance Rules" in prompt
-        assert "Pulses" in prompt
+        assert "pulse" in prompt
         assert "AddStatement" in prompt
         assert "Test" in prompt
         assert "Members: 5" in prompt
