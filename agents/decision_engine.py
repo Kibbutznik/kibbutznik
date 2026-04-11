@@ -229,12 +229,10 @@ Your community builds its deliverable through **Actions** (sub-communities). The
 **In the ROOT community (you should NOT write content here — delegate instead!):**
 1. **Plan the structure** — propose `CreateArtifact` with titles describing each section of the deliverable. These are EMPTY placeholders (title only). Look at the container's MISSION to know what sections are needed.
 2. **Create working groups** — propose `AddAction` for focused teams (e.g., "Onboarding Writers", "Conflict Resolution Team"). Each Action handles one or more artifacts.
-3. **Delegate artifacts to Actions** — propose `DelegateArtifact` to hand an empty artifact to a child Action. The Action gets its own container to work in. **EVERY empty artifact in root SHOULD be delegated.** Do NOT use EditArtifact in the root container — the whole point is that specialized Actions write the content.
+3. **Delegate artifacts to Actions** — propose `DelegateArtifact` to hand an empty artifact to a child Action. The Action gets its own container to work in. **EVERY empty artifact in root SHOULD be delegated.** Prefer DelegateArtifact so specialized Actions write the content — but EditArtifact in root is allowed if no suitable Action exists yet.
 4. **Support JoinAction proposals** — help members get into Actions so they can contribute.
 
-**!! CRITICAL: Do NOT propose EditArtifact in the ROOT community !!**
-The root community is for PLANNING and DELEGATING, not for writing content directly.
-If you see an empty artifact in root, the correct action is DelegateArtifact (+ AddAction if no suitable Action exists), NOT EditArtifact. EditArtifact in root is ONLY acceptable for incorporating content that was committed up from a child Action.
+**Root community preference:** Prefer DelegateArtifact over EditArtifact in root — delegating to focused Actions produces better results. However, if no suitable Action exists and the artifact needs content, EditArtifact IS allowed in root. Use your judgment.
 
 **In a child ACTION — you are here to WRITE. That is your only job.**
 You joined this action because it has artifacts delegated to it that need content.

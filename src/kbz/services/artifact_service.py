@@ -160,9 +160,11 @@ class ArtifactService:
                 f"Artifact {artifact_id} is not ACTIVE — cannot edit a non-head version"
             )
         container = await self.get_container(old.container_id)
-        if not container or container.status != ContainerStatus.OPEN:
+        if not container:
+            raise ArtifactServiceError(f"Container {old.container_id} not found")
+        if container.status == ContainerStatus.PENDING_PARENT:
             raise ArtifactServiceError(
-                f"Container {old.container_id} is not OPEN — edits are frozen"
+                f"Container {old.container_id} is PENDING_PARENT — wait for parent community verdict before editing"
             )
         new = Artifact(
             id=uuid.uuid4(),
@@ -178,6 +180,11 @@ class ArtifactService:
         self.db.add(new)
         old.status = ArtifactStatus.SUPERSEDED
         await self.db.flush()
+        # If the container was COMMITTED, reopen it so the community can re-commit
+        # with the updated content.
+        if container.status == ContainerStatus.COMMITTED:
+            container.status = ContainerStatus.OPEN
+            await self.db.flush()
         return new
 
     async def remove_artifact(self, artifact_id: uuid.UUID) -> None:

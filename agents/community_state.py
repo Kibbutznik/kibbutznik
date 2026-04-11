@@ -368,9 +368,16 @@ class CommunitySnapshot:
                                 f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid}"
                             )
                         else:
-                            lines.append(f"    [{aid}] \"{title}\" by {author} — EMPTY (needs DelegateArtifact to an Action, or AddAction first)")
+                            lines.append(
+                                f"    [{aid}] \"{title}\" by {author} — "
+                                f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={aid}, val_text=<action_id>), "
+                                f"or EditArtifact directly if no suitable Action exists (val_uuid={aid})"
+                            )
                     else:
-                        lines.append(f"    [{aid}] \"{title}\" by {author} — {preview}")
+                        full_content = (a.get("content") or "").strip()
+                        lines.append(f"    [{aid}] \"{title}\" by {author} — current content:")
+                        lines.append(f"      {full_content}")
+                        lines.append(f"      → To improve: EditArtifact val_uuid={aid}")
                 if c.get("status") == 1 and arts:
                     all_filled = all((a.get("content") or "").strip() for a in arts if not self.delegations_out.get(a["id"]))
                     if all_filled and is_delegated_container:

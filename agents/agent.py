@@ -361,6 +361,43 @@ class Agent:
                 if ptype in pitch_safe_types and pitch and pitch.lower() not in ptext.lower():
                     ptext = f"{ptext}\n\n{pitch}" if ptext else pitch
 
+                # --- DelegateArtifact pre-flight validation ---
+                if ptype == "DelegateArtifact":
+                    artifact_id = val_uuid or ""
+                    action_community_id = (val_text or "").strip()
+
+                    # Guard 1: artifact must exist in this community
+                    all_artifact_ids = {
+                        a["id"]
+                        for arts in snapshot.container_artifacts.values()
+                        for a in arts
+                    }
+                    if not artifact_id or artifact_id not in all_artifact_ids:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"DelegateArtifact skipped: artifact {artifact_id[:8] if artifact_id else '?'} not found in community", False)
+
+                    # Guard 2: target action must exist and be approved in this community
+                    valid_action_ids = {a["action_id"] for a in snapshot.actions}
+                    if not action_community_id or action_community_id not in valid_action_ids:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"DelegateArtifact skipped: action {action_community_id[:8] if action_community_id else '?'} does not exist or is not yet approved", False)
+
+                    # Guard 3: no existing pending/accepted DelegateArtifact for same artifact+action
+                    all_proposals = (
+                        snapshot.proposals_out_there
+                        + snapshot.proposals_on_the_air
+                        + snapshot.proposals_draft
+                        + snapshot.recent_accepted
+                    )
+                    if any(
+                        p.get("proposal_type") == "DelegateArtifact"
+                        and p.get("val_uuid") == artifact_id
+                        and (p.get("val_text") or "").strip() == action_community_id
+                        for p in all_proposals
+                    ):
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"DelegateArtifact skipped: delegation of {artifact_id[:8]} → {action_community_id[:8]} already exists", False)
+
                 proposal = await self.client.create_proposal(
                     community_id=self.community_id,
                     user_id=self.user_id,
