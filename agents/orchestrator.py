@@ -70,6 +70,7 @@ class Orchestrator:
         ollama_temperature: float = 0.7,
         ollama_num_predict: int = 2048,
         max_retries: int = 3,
+        ollama_think: bool = False,
     ):
         self.community_name = community_name
         self.mission = mission
@@ -83,6 +84,7 @@ class Orchestrator:
             ollama_temperature=ollama_temperature,
             ollama_num_predict=ollama_num_predict,
             max_retries=max_retries,
+            ollama_think=ollama_think,
         )
         self.personas = personas or load_all_personas()
         self.agents: list[Agent] = []
@@ -103,6 +105,28 @@ class Orchestrator:
         self._cached_community: dict | None = None
         self._cached_members: list[dict] | None = None
         self._cached_variables: dict | None = None
+        # Pulse deadlock detection: count rounds since a pulse last fired
+        self._rounds_since_pulse: int = 0
+        # After this many stuck rounds, nudge agents to support the pulse
+        self._pulse_deadlock_threshold: int = 5
+        # "Big Brother" observer user — created during setup, used to post
+        # admin messages into the community chat from the viewer.
+        self._bb_user_id: str | None = None
+
+    async def post_chat(self, message: str, community_id: str | None = None) -> dict:
+        """Post a message to a community chat as Big Brother.
+
+        If *community_id* is None, the message goes to the root community.
+        """
+        if not self._bb_user_id:
+            raise RuntimeError("Big Brother user not initialised — call setup() first")
+        target = community_id or self.community_id
+        return await self.client.add_comment(
+            entity_type="community",
+            entity_id=target,
+            user_id=self._bb_user_id,
+            comment_text=message,
+        )
 
     async def setup(self) -> None:
         """Create the community and register all agents."""
@@ -131,6 +155,16 @@ class Orchestrator:
 
         logger.info(f"Community created: {self.community_name} ({self.community_id})")
         logger.info(f"Founder: {founder.persona.name}")
+
+        # Create the Big Brother observer account used by the viewer operator
+        # to inject messages into the community chat.
+        bb = await self.client.create_user(
+            user_name="Big Brother",
+            password="bb-observer",
+            about="Viewer operator — can send messages to guide the community.",
+        )
+        self._bb_user_id = str(bb.get("user_id") or bb.get("id"))
+        logger.info(f"Big Brother user created: {self._bb_user_id}")
 
         # Add remaining agents as members through governance
         # For bootstrap, we add them directly via membership proposals that the founder approves
@@ -249,6 +283,7 @@ class Orchestrator:
         )
 
         for agent in acting_agents:
+            agent.rounds_since_pulse = self._rounds_since_pulse
             try:
                 agent_logs = await agent.think_and_act()
                 # think_and_act resets rounds_since_acted to 0 internally
@@ -323,6 +358,7 @@ class Orchestrator:
                             original_cid = agent.community_id
                             try:
                                 agent.community_id = aid
+                                agent.rounds_since_pulse = self._rounds_since_pulse
                                 action_logs = await agent.think_and_act()
                                 for log in action_logs:
                                     event = SimulationEvent(
@@ -365,7 +401,58 @@ class Orchestrator:
             event_count=len(round_events),
         )
 
+        # --- Pulse deadlock detection & forced nudge ---
+        # Check if a pulse fired this round (look for pulse.executed events in the bus)
+        pulse_fired = any(
+            ev.action_type in ("pulse_support", "support_pulse")
+            and ev.success
+            and "pulse fired" in ev.details.lower()
+            for ev in round_events
+        )
+        # Simpler: check if any round_event mentions pulse being triggered
+        pulse_triggered = any(
+            "pulse" in ev.details.lower() and ("trigger" in ev.details.lower() or "fired" in ev.details.lower())
+            for ev in round_events
+        )
+        if pulse_fired or pulse_triggered:
+            self._rounds_since_pulse = 0
+        else:
+            self._rounds_since_pulse += 1
+
+        if self._rounds_since_pulse >= self._pulse_deadlock_threshold:
+            await self._break_pulse_deadlock()
+
         return round_events
+
+    async def _break_pulse_deadlock(self) -> None:
+        """Force 2-3 random agents to support the pulse when it has been stuck too long."""
+        if not self.agents or not self.community_id:
+            return
+        n_nudge = min(3, len(self.agents))
+        nudge_agents = random.sample(self.agents, n_nudge)
+        nudged = 0
+        for agent in nudge_agents:
+            if not agent.user_id:
+                continue
+            try:
+                result = await self.client.support_pulse(self.community_id, agent.user_id)
+                if result.get("pulse_triggered"):
+                    self._rounds_since_pulse = 0
+                    logger.info(
+                        f"[Deadlock-Breaker] Pulse forced by {agent.persona.name} after "
+                        f"{self._rounds_since_pulse + 1} stuck rounds → FIRED!"
+                    )
+                    nudged += 1
+                    break
+                nudged += 1
+            except Exception as e:
+                logger.debug(f"[Deadlock-Breaker] support_pulse failed for {agent.persona.name}: {e}")
+        if nudged:
+            logger.warning(
+                f"[Deadlock-Breaker] Pulse stuck for {self._rounds_since_pulse} rounds — "
+                f"nudged {nudged} agents to support pulse."
+            )
+        self._rounds_since_pulse = 0  # reset counter regardless
 
     def pause(self) -> None:
         """Pause the simulation. Current round will finish, then pause before the next."""
@@ -382,6 +469,34 @@ class Orchestrator:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    def _current_llm_preset(self) -> str:
+        """Return the preset key for the current engine, or 'custom'."""
+        from agents.simulation_api import LLM_PRESETS
+        for key, cfg in LLM_PRESETS.items():
+            if (cfg["backend"] == self.engine.backend
+                    and cfg["model"] == self.engine.model
+                    and cfg.get("think", False) == self.engine.ollama_think):
+                return key
+        return "custom"
+
+    def set_llm(self, backend: str, model: str, ollama_think: bool = False) -> None:
+        """Swap the LLM backend/model mid-simulation. Takes effect on the next agent turn."""
+        new_engine = DecisionEngine(
+            backend=backend,
+            model=model,
+            ollama_timeout=self.engine.ollama_timeout,
+            ollama_num_ctx=self.engine.ollama_num_ctx,
+            ollama_temperature=self.engine.ollama_temperature,
+            ollama_num_predict=self.engine.ollama_num_predict,
+            max_retries=self.engine.max_retries,
+            ollama_think=ollama_think,
+        )
+        self.engine = new_engine
+        # Propagate the new engine to every agent immediately
+        for agent in self.agents:
+            agent.engine = new_engine
+        logger.info("LLM switched to backend=%s model=%s", backend, model)
 
     async def _maybe_spawn_newcomer(self) -> None:
         """Randomly spawn a newcomer who submits a Membership proposal."""
@@ -660,9 +775,11 @@ class Orchestrator:
             ],
             "members": members,
             "total_events": len(self.events),
+            "bb_user_id": self._bb_user_id,
             "llm": {
                 "backend": self.engine.backend,
                 "model": self.engine.model,
+                "preset": self._current_llm_preset(),
                 **self.engine.stats,
             },
             "recent_events": [

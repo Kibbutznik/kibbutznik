@@ -87,6 +87,43 @@ def load_all_personas(directory: str | None = None) -> list[Persona]:
     return personas
 
 
+# Extra names used when the requested member count exceeds the number of YAML personas.
+_EXTRA_NAMES = [
+    "Alex", "Sam", "Jordan", "Morgan", "Casey", "Riley",
+    "Avery", "Quinn", "Blake", "Drew", "Jamie", "Kai",
+    "Skyler", "Reese", "Finley", "Rowan", "Emery", "Sage",
+    "River", "Hayden", "Phoenix", "Dakota", "Remi", "Shiloh",
+    "Lennon", "Lyric", "Nova", "Zion", "Cruz", "Indigo",
+]
+
+#: Hard ceiling: 6 YAML personas + 30 generated names.
+MAX_MEMBERS = len(_EXTRA_NAMES) + 6  # 36
+
+
+def build_persona_list(count: int, directory: str | None = None) -> list[Persona]:
+    """Return exactly *count* personas for a simulation.
+
+    * count ≤ available YAML files → shuffle and take the first *count*.
+    * count > available YAML files → use all YAML personas and pad with
+      freshly generated random personas (names drawn from ``_EXTRA_NAMES``).
+    * count is clamped to [2, MAX_MEMBERS].
+    """
+    count = max(2, min(count, MAX_MEMBERS))
+    yaml_personas = load_all_personas(directory)
+    if count <= len(yaml_personas):
+        shuffled = yaml_personas[:]
+        random.shuffle(shuffled)
+        return shuffled[:count]
+    # Need more than the YAML files can provide — pad with generated personas.
+    result = yaml_personas[:]  # all YAML personas first
+    extra_needed = count - len(yaml_personas)
+    available_names = [n for n in _EXTRA_NAMES if not any(p.name == n for p in result)]
+    random.shuffle(available_names)
+    for name in available_names[:extra_needed]:
+        result.append(generate_persona(name))
+    return result
+
+
 # ── Dynamic persona generation for newcomers ──────────────
 
 _BACKGROUNDS = [

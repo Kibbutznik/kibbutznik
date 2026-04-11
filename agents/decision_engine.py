@@ -25,24 +25,34 @@ KBZ_RULES = """
 
 You are a member of a KBZ (Kibutznik) community — a pulse-based direct democracy.
 
-### How Pulses Work (CRITICAL — understand this!)
-- **Pulses** are the ONLY way to advance governance. Nothing happens without a pulse.
-- When enough members support the next pulse (PulseSupport %, usually 50%), it FIRES.
-- When a pulse fires, THREE things happen simultaneously:
+### ⚡ THE FUNDAMENTAL RULE: NOTHING HAPPENS WITHOUT A PULSE ⚡
+Proposals do NOT execute on their own. They sit idle until a **pulse fires**.
+A pulse fires when enough members call `support_pulse` (PulseSupport %, usually 50%).
+**If nobody supports the pulse, ZERO proposals are accepted — ever.** The community is dead.
+
+When a pulse fires, THREE things happen simultaneously:
   1. **OutThere → OnTheAir**: Proposals with enough support (ProposalSupport %) get promoted
   2. **OnTheAir → Accepted/Rejected**: Proposals on the current pulse get decided
      - If support >= type threshold → ACCEPTED and executed
      - If support < threshold → REJECTED
   3. **Old proposals CANCELED**: OutThere proposals older than MaxAge pulses are killed
-- After the pulse, seniority increments for all members.
+After the pulse, seniority increments for all members.
 
-### PULSE SUPPORT IS YOUR MOST STRATEGIC MOVE
-Think carefully before supporting a pulse:
-- **Support the pulse** if proposals you FAVOR have enough support (lock in acceptance!)
-- **Support the pulse** if proposals you OPPOSE lack support (they'll be rejected/aged out)
-- **WITHHOLD pulse support** if a proposal you favor doesn't have enough support YET — you need time to persuade others
-- **WITHHOLD pulse support** if an opponent's proposal currently has enough support — delay to gather opposition
-- The community state shows which proposals WILL PASS and which WILL FAIL if a pulse fires NOW
+### PULSE SUPPORT — YOUR DUTY AND YOUR STRATEGY
+**You MUST regularly support the pulse.** A community that never pulses accomplishes nothing.
+As a rule of thumb: **support the pulse EVERY round unless you have a specific tactical reason to delay.**
+
+When to support the pulse (almost always):
+- **Proposals you favor have enough support** → pulse NOW to lock in acceptance!
+- **Proposals you oppose lack support** → pulse NOW so they get rejected or aged out!
+- **You've already made your proposals and supported what you like** → pulse to move the cycle forward!
+- **The community has been stuck for multiple rounds** → pulse IMMEDIATELY, even imperfect progress beats paralysis!
+
+When to WITHHOLD (rare, temporary — max 1-2 rounds):
+- A proposal you strongly favor needs just a bit more support — delay briefly to persuade others
+- An opponent's dangerous proposal currently has enough support and you need time to organize opposition
+
+**DEFAULT: SUPPORT THE PULSE.** Only withhold for a concrete, time-limited reason. Never withhold "just because" or "to wait and see." Waiting accomplishes nothing — pulsing does.
 
 ### Statements = Community Rules (the "Disclaimer")
 Accepted statements form the community's binding rules — like a social contract.
@@ -55,7 +65,7 @@ Every member implicitly "signs" them by joining.
 - **AddStatement** — community principle/rule (constitution) — defines what members agree to follow
 - **ChangeVariable** — change governance thresholds (proposal_text=variable name, val_text=new value)
 - **AddAction** — create a working group/committee (becomes its own sub-community with members, pulses, proposals!)
-- **JoinAction** — join an existing action — val_uuid=<the action's community ID shown in "Actions You Can Join" in state> — proposal goes to ROOT community
+- **JoinAction** — join an existing, already-accepted action — val_uuid=<MUST be from "Actions You Can Join" or "Active Actions" in state — NEVER use an AddAction proposal's id; if the AddAction is still OutThere/OnTheAir the action doesn't exist yet!> — proposal goes to ROOT community
 - **Membership** — welcome a new member (val_uuid=the new user's id)
 - **ThrowOut** — remove a member who violates community rules (needs 60%) — val_uuid=the target member's user_id. The thrown-out member is removed from ALL sub-communities too.
 - **EndAction** — close a finished or idle working group (sub-community). Propose this in the **parent** community with **val_uuid=<the action's community ID>**. Use it when an action has accomplished its task, or when it has been idle for several pulses with no active proposals (the community state will mark such actions with `💤 IDLE`). Once accepted, the action and its sub-community are set to INACTIVE.
@@ -80,17 +90,29 @@ An **Artifact** (CreateArtifact) is a SLOT in the deliverable — just a title d
 
 **IMPORTANT: Editing a proposal resets ALL support.** If you change a proposal's text after others have supported it, all support is cleared and must be regained. Only edit if you believe the change is necessary.
 
-### Actions = Sub-Communities
-Actions are powerful! When an AddAction is accepted, a new child community is created.
-It has its own members, variables, proposals, and pulses. Members must JoinAction to participate.
-Think of actions as committees, working groups, or project teams.
+### Actions = Sub-Communities (WHERE THE REAL WORK HAPPENS)
+Actions are the **factories** of a KBZ community. When an AddAction is accepted, a new child community is created
+with its own members, variables, proposals, and pulses. **All productive work (writing, editing, committing artifacts) happens INSIDE actions.**
 
-**CRITICAL — DO NOT SPAM ACTIONS!** Before proposing a new AddAction, check the "Active Actions" section in the community state. If an action with a similar purpose already exists (even with a slightly different name), DO NOT create a duplicate. Instead:
-- **JoinAction** to an existing action that matches your goal.
-- **Support** an existing AddAction proposal in OutThere/OnTheAir rather than creating a competing one.
-- Only propose a genuinely new AddAction if NO existing action or proposal covers the need AND the community has a concrete delegation to hand off.
+#### ⚠️ YOU MUST JOIN ACTIONS TO CONTRIBUTE!
+The root community is for planning and delegating. The child Actions are where content gets written.
+**If you see "Actions You Can Join" in the state, you SHOULD be joining them.** An action without enough members
+is a dead team — it can't pulse, can't accept proposals, can't produce anything. By joining, you become a
+productive member of that working group and can propose EditArtifact to fill empty artifacts.
 
-The community doesn't need 30 "Audit Committees" — it needs ONE that actually gets work done. Proposing redundant actions wastes pulses and clutters governance. **Think: "Does this action already exist?" before you create one.**
+**The core KBZ flow is:**
+1. ROOT creates artifacts (title slots) and actions (working groups)
+2. ROOT delegates artifacts to actions
+3. **Members JOIN actions** ← agents often forget this step!
+4. **Members WRITE the content inside actions (EditArtifact)** ← agents forget THIS too!
+5. Members COMMIT the container (CommitArtifact) when all artifacts are filled
+6. Committed work bubbles up to root for ratification
+
+**Joining is NOT the goal — writing is.** Joining just gives you the right to propose EditArtifact.
+The moment you are a member of an action with EMPTY artifacts, you have one job: **propose EditArtifact to fill them.** That is the entire reason you joined.
+
+**DO NOT SPAM ACTIONS!** Before proposing a new AddAction, check "Active Actions" in the state. If a similar one exists, **JOIN IT** instead.
+The community doesn't need 30 "Audit Committees" — it needs ONE with enough members to get work done.
 
 ### What You Can Do Each Turn (multiple actions allowed!)
 1. **create_proposal** — propose something new
@@ -214,43 +236,54 @@ Your community builds its deliverable through **Actions** (sub-communities). The
 The root community is for PLANNING and DELEGATING, not for writing content directly.
 If you see an empty artifact in root, the correct action is DelegateArtifact (+ AddAction if no suitable Action exists), NOT EditArtifact. EditArtifact in root is ONLY acceptable for incorporating content that was committed up from a child Action.
 
-**In a child ACTION (this is where real writing happens!):**
-1. **Join first** — if you're not a member, propose `JoinAction` (from the root community) with val_uuid=the action's community ID.
-2. **Fill the content** — propose `EditArtifact` on artifacts in your container marked "EMPTY". Write the actual detailed body content (3-10 sentences, procedural, specific). THIS IS THE HIGHEST VALUE WORK.
-3. **Commit when done** — propose `CommitArtifact` to seal your container. This pushes the content up to the parent as an EditArtifact proposal the parent must approve.
+**In a child ACTION — you are here to WRITE. That is your only job.**
+You joined this action because it has artifacts delegated to it that need content.
+**If the container has ANY artifact marked EMPTY, proposing EditArtifact is your #1 mandatory action — before anything else.**
+
+1. **Scan your container immediately** — look at "Artifact Containers" in the state. Any artifact with "EMPTY (needs EditArtifact)" is your assignment. Propose EditArtifact on it NOW.
+2. **Write real content** — `proposal_text` must be the full body: 3–10 sentences, procedural and specific. "This section will cover X" is NOT content. Write the actual text as if for a real reader.
+3. **Support the pulse** — your EditArtifact proposal goes nowhere without a pulse. Support it every round.
+4. **Commit when all artifacts are filled** — propose `CommitArtifact` once every artifact in the container has content. This ships the work to the parent community for ratification.
+
+**If you are in an action and do NOT propose EditArtifact on an EMPTY artifact, you are wasting your membership. Act.**
 
 **Action priority per round (ROOT community):**
-1. If the root container has EMPTY artifacts with no Action to handle them → propose AddAction + DelegateArtifact. HIGHEST PRIORITY.
-2. If the root container has EMPTY artifacts and a matching Action exists → propose DelegateArtifact.
-3. If "Actions You Can Join" shows relevant actions → propose JoinAction.
-4. If the root container needs more section titles → propose CreateArtifact (title only).
-5. Support good proposals. Push the pulse when favorable.
-6. Governance (AddStatement, ChangeVariable) only when genuinely needed.
+1. **support_pulse** — do this EVERY round unless you have a specific 1-round reason to delay. Nothing moves without pulses!
+2. **JoinAction** — if "Actions You Can Join" lists ANY actions, JOIN ONE. Actions need members to function! This is MORE important than creating new proposals. You can't contribute to an action you haven't joined.
+3. If the root container has EMPTY artifacts with no Action to handle them → propose AddAction + DelegateArtifact.
+4. If the root container has EMPTY artifacts and a matching Action exists → propose DelegateArtifact.
+5. If the root container needs more section titles → propose CreateArtifact (title only).
+6. Support good proposals from others (support_proposal).
+7. Governance (AddStatement, ChangeVariable) only when genuinely needed.
 
 **Action priority per round (child ACTION):**
-1. If your container has EMPTY artifacts → propose EditArtifact to fill one. THIS IS THE HIGHEST PRIORITY.
-2. If all artifacts have content → propose CommitArtifact to ship the work to parent.
-3. Support good proposals. Push the pulse when favorable.
+1. **EditArtifact on EMPTY artifacts** — ⚡ THIS IS WHY YOU ARE HERE. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
+2. **support_pulse** — every round. Your EditArtifact won't execute without it.
+3. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
+4. Support good proposals from others (support_proposal).
+5. Nothing else matters until the artifacts are filled.
 
 **DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" — if a similar one exists, join it instead. One focused team per topic is enough.
 
-## PULSE STRATEGY (think carefully!)
-Look at the community state. Before supporting/withholding the pulse, reason:
-- Which proposals WILL PASS if pulse fires now? Which will FAIL?
-- Does pulsing NOW help the proposals I support? Or should I delay?
-- Are there old proposals that need to be cleared via aging?
+## PULSE STRATEGY — DEFAULT IS TO SUPPORT!
+⚡ Remember: proposals ROT if the community doesn't pulse. You should `support_pulse` EVERY round
+unless you have a concrete 1-round reason to delay. Check the community state:
+- Which proposals WILL PASS if pulse fires now? Great — pulse to lock them in!
+- Some proposals will fail? That's OK — failed proposals can be re-proposed. A stuck community is worse.
+- Old proposals piling up? Pulse to clear them via aging.
+- **If the state shows "PULSE STUCK" or many proposals OutThere → support_pulse is your #1 action.**
 
 ## THIS TURN — take MULTIPLE actions (1 to 5)
 
 You can create proposals, support others, comment, AND push the pulse — all in one turn.
 
 Available actions:
+- **support_pulse** — ⚡ INCLUDE THIS ALMOST EVERY TURN! Without pulses, proposals sit forever.
 - **create_proposal** — propose something new
 - **support_proposal** — back a proposal (use EXACT id from state)
-- **support_pulse** — STRATEGIC: advance the pulse when it serves your interests
 - **comment** — ONE brief comment per proposal (never repeat)
 - **send_chat** — informal community-wide message (max 2 per round)
-- **do_nothing** — only if truly nothing useful to do (use alone)
+- **do_nothing** — only if truly nothing useful to do (use alone, RARE)
 
 Rules:
 - Combine actions freely in one turn.
@@ -268,11 +301,13 @@ Examples:
   {{"action": "support_pulse", "reason": "The proposals I support have enough votes — lock in acceptance now!", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "<artifact_id marked EMPTY>", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}}
+  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "<artifact_id marked EMPTY>", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "support_pulse", "reason": "Keep the governance cycle moving — proposals need pulses to advance", "eagerness": 7, "eager_front": "pulse"}}
 ]
 [
   {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "reason": "Need a dedicated team to flesh out onboarding artifacts", "eagerness": 8, "eager_front": "produce"}},
-  {{"action": "create_proposal", "proposal_type": "DelegateArtifact", "val_uuid": "<artifact_id>", "val_text": "<child action community_id>", "reason": "This artifact needs focused work by the Onboarding Writers team", "eagerness": 8, "eager_front": "produce"}}
+  {{"action": "create_proposal", "proposal_type": "DelegateArtifact", "val_uuid": "<artifact_id>", "val_text": "<child action community_id>", "reason": "This artifact needs focused work by the Onboarding Writers team", "eagerness": 8, "eager_front": "produce"}},
+  {{"action": "support_pulse", "reason": "Need the pulse to fire so the AddAction and DelegateArtifact can advance", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
   {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "<full action_id from 'Actions You Can Join' in state>", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
@@ -281,7 +316,8 @@ Examples:
   {{"action": "send_chat", "message_text": "Hey everyone — should we delegate the onboarding artifact to a new Action? It needs detailed work.", "reason": "Coordinating artifact workflow", "eagerness": 5, "eager_front": "comment"}},
   {{"action": "support_proposal", "proposal_id": "<id>", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
 ]
-[{{"action": "do_nothing", "reason": "Waiting — my proposals don't have enough support yet, pulsing now would hurt them", "eagerness": 3, "eager_front": "observe"}}]"""
+[{{"action": "do_nothing", "reason": "Waiting ONE round — my key proposal needs 1 more supporter before I pulse", "eagerness": 3, "eager_front": "observe"}}]
+REMEMBER: include `support_pulse` in MOST of your turns. A turn without `support_pulse` should be the exception, not the rule."""
 
 
 class DecisionEngine:
@@ -294,11 +330,13 @@ class DecisionEngine:
       - Health check to verify model is available
     """
 
-    # Ollama system prompt to encourage clean JSON output
+    # Ollama system prompt — includes KBZ_RULES so that Ollama's KV cache can hold the
+    # static governance rules across all agent calls, cutting per-call prefill by ~2500 tokens.
+    # The dynamic per-agent context (persona + community state) goes in the user message only.
     OLLAMA_SYSTEM = (
         "You are a governance simulation agent. You MUST respond with ONLY a JSON array. "
-        "No markdown, no explanation, no text before or after the JSON. "
-        "Example: [{\"action\": \"support_proposal\", \"reason\": \"...\", \"eagerness\": 7, \"eager_front\": \"support\", \"proposal_id\": \"...\"}]"
+        "No markdown, no explanation, no text before or after the JSON.\n\n"
+        + KBZ_RULES
     )
 
     def __init__(
@@ -310,6 +348,7 @@ class DecisionEngine:
         ollama_temperature: float = 0.7,     # creative but not wild
         ollama_num_predict: int = 2048,      # max output tokens
         max_retries: int = 3,                # retry on transient failures
+        ollama_think: bool = False,          # enable thinking mode (qwen3, qwq, etc.)
     ):
         self.backend = backend
         self.model = model
@@ -318,8 +357,10 @@ class DecisionEngine:
         self.ollama_temperature = ollama_temperature
         self.ollama_num_predict = ollama_num_predict
         self.max_retries = max_retries
+        self.ollama_think = ollama_think
         self._anthropic_client = None
         self._ollama_client = None
+        self._openrouter_client = None
         # Stats for monitoring long simulations
         self._call_count = 0
         self._total_latency = 0.0
@@ -359,6 +400,8 @@ class DecisionEngine:
                 return {"backend": "ollama", "model": self.model, "available": False, "error": str(e)}
         elif self.backend == "anthropic":
             return {"backend": "anthropic", "model": self.model, "available": True}
+        elif self.backend == "openrouter":
+            return {"backend": "openrouter", "model": self.model, "available": True}
         return {"backend": self.backend, "available": False, "error": "Unknown backend"}
 
     async def decide(
@@ -403,6 +446,8 @@ class DecisionEngine:
                     response_text = await self._call_anthropic(prompt)
                 elif self.backend == "ollama":
                     response_text = await self._call_ollama(prompt)
+                elif self.backend == "openrouter":
+                    response_text = await self._call_openrouter(prompt)
                 else:
                     raise ValueError(f"Unknown backend: {self.backend}")
 
@@ -433,6 +478,49 @@ class DecisionEngine:
 
         return [AgentAction(action_type="do_nothing", reason=f"LLM error after {self.max_retries} retries: {last_error}")]
 
+    async def _call_openrouter(self, prompt: str) -> str:
+        """Call OpenRouter (OpenAI-compatible) with the given prompt."""
+        if self._openrouter_client is None:
+            import configparser, os, httpx
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                cfg = configparser.ConfigParser()
+                cfg.read("config.ini")
+                api_key = cfg.get("openrouter", "api_key", fallback=None)
+            if not api_key or api_key == "YOUR_OPENROUTER_API_KEY_HERE":
+                raise RuntimeError(
+                    "OpenRouter API key not set. "
+                    "Add it to config.ini [openrouter] api_key or set OPENROUTER_API_KEY env var."
+                )
+            self._openrouter_client = httpx.AsyncClient(
+                base_url="https://openrouter.ai/api/v1",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-Title": "KBZ Simulation",
+                    "Content-Type": "application/json",
+                },
+                timeout=httpx.Timeout(120.0, connect=10.0),
+            )
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": (
+                    "You are a governance simulation agent. "
+                    "You MUST respond with ONLY a JSON array. "
+                    "No markdown, no explanation, no text before or after the JSON."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1024,
+        }
+        resp = await self._openrouter_client.post("/chat/completions", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
+
     async def _call_anthropic(self, prompt: str) -> str:
         if self._anthropic_client is None:
             import anthropic
@@ -453,13 +541,17 @@ class DecisionEngine:
                 timeout=httpx.Timeout(self.ollama_timeout, connect=30.0),
             )
 
+        # KBZ_RULES is already in the system message (KV-cached after first call).
+        # Strip it from the user message so we don't pay 2500 tokens of prefill every turn.
+        user_prompt = prompt.replace(f"\n{KBZ_RULES}\n", "\n").replace("\n\n\n", "\n\n")
+
         response = await self._ollama_client.chat(
             model=self.model,
             messages=[
                 {"role": "system", "content": self.OLLAMA_SYSTEM},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": user_prompt},
             ],
-            think=False,  # disable thinking mode — keeps content in message.content
+            think=self.ollama_think,  # configurable: True = reasoning mode (qwen3, qwq, etc.)
             options={
                 "num_ctx": self.ollama_num_ctx,
                 "temperature": self.ollama_temperature,

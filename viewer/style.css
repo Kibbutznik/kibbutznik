@@ -76,6 +76,25 @@ body {
     font-weight: 600;
 }
 
+.header-stat select {
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.header-stat select:hover {
+    border-color: var(--accent);
+}
+.header-stat select:focus {
+    border-color: var(--accent);
+}
+
 /* Tab Navigation */
 .tab-nav {
     display: flex;
@@ -647,6 +666,69 @@ body {
 }
 
 /* Timeline */
+/* ── Timeline filter bar ─────────────────────────────── */
+.timeline-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.timeline-filter-input {
+    flex: 1;
+    min-width: 140px;
+    padding: 5px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+.timeline-filter-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.timeline-filter-select {
+    padding: 5px 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.timeline-filter-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.timeline-filter-clear {
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px solid var(--danger, #e05);
+    border-radius: var(--radius);
+    color: var(--danger, #e05);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.timeline-filter-clear:hover {
+    background: rgba(238, 0, 85, 0.1);
+}
+
+.timeline-filter-count {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 .timeline {
     position: relative;
     padding-left: 30px;
@@ -835,6 +917,15 @@ body {
 .run-round-btn.paused {
     background: var(--success);
     border-color: var(--success);
+    color: var(--bg-primary);
+}
+
+.run-round-btn.restart-btn {
+    border-color: var(--warning, #f0c040);
+    color: var(--warning, #f0c040);
+}
+.run-round-btn.restart-btn:hover {
+    background: var(--warning, #f0c040);
     color: var(--bg-primary);
 }
 
@@ -1719,4 +1810,84 @@ body {
     font-size: 0.9rem;
     line-height: 1.4;
     white-space: pre-wrap;
+}
+
+/* Big Brother compose box */
+.chat-scope-badge {
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: rgba(99, 179, 237, 0.12);
+    border: 1px solid rgba(99, 179, 237, 0.3);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-weight: 500;
+}
+
+.bb-compose {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+}
+
+.bb-compose-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.bb-compose-input {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.bb-compose-input:focus {
+    border-color: var(--accent);
+}
+.bb-compose-input::placeholder {
+    color: var(--text-muted);
+}
+
+.bb-compose-btn {
+    align-self: flex-end;
+    padding: 6px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.bb-compose-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.bb-compose-btn:not(:disabled):hover {
+    opacity: 0.85;
+}
+
+/* Big Brother messages in the feed */
+.bb-message {
+    border-left-color: var(--accent) !important;
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+}
+
+.bb-message-author {
+    color: var(--accent) !important;
+    font-weight: 700;
 }

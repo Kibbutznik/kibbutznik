@@ -43,8 +43,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from agents.orchestrator import Orchestrator
-from agents.persona import load_all_personas
-from agents.simulation_api import router as sim_router, set_orchestrator
+from agents.persona import load_all_personas, build_persona_list, MAX_MEMBERS
+from agents.simulation_api import (
+    router as sim_router,
+    set_orchestrator,
+    set_restart_callback,
+)
 
 
 DEFAULT_MISSION = (
@@ -89,7 +93,7 @@ def setup_logging(verbose: bool = False):
 
 
 async def run_simulation(orch: Orchestrator, rounds: int, delay: float):
-    """Run the simulation as a background task."""
+    """Run the simulation as a background task (first start — calls setup)."""
     logger = logging.getLogger("simulation")
     try:
         await orch.setup()
@@ -104,6 +108,21 @@ async def run_simulation(orch: Orchestrator, rounds: int, delay: float):
         logger.info("Simulation cancelled")
     except Exception as e:
         logger.error(f"Simulation error: {e}", exc_info=True)
+
+
+async def _resume_simulation(orch: Orchestrator, rounds: int, delay: float):
+    """Restart the simulation loop without calling setup() — community and agents already exist."""
+    logger = logging.getLogger("simulation")
+    try:
+        logger.info(f"Resuming simulation from round {orch._round} — community '{orch.community_name}'")
+        await orch.run(rounds=rounds, delay=delay)
+
+        status = await orch.get_status()
+        logger.info(f"\nSimulation complete. {status['total_events']} total events over {status['round']} rounds.")
+    except asyncio.CancelledError:
+        logger.info("Simulation loop cancelled")
+    except Exception as e:
+        logger.error(f"Simulation error after restart: {e}", exc_info=True)
 
 
 def main():
@@ -133,6 +152,13 @@ Examples:
                         help="LLM model name (e.g. gemma4:26b for Ollama)")
     parser.add_argument("--community-name", default="AI Kibbutz", help="Community name")
     parser.add_argument(
+        "--members", type=int, default=6,
+        metavar="N",
+        help=f"Number of agents to start with (2–{MAX_MEMBERS}, default: 6). "
+             "Uses the built-in YAML personas first; extra slots are filled with "
+             "randomly generated agents.",
+    )
+    parser.add_argument(
         "--mission",
         default=None,
         help=(
@@ -160,30 +186,56 @@ Examples:
                               help="Max output tokens (default: 2048)")
     ollama_group.add_argument("--retries", type=int, default=3,
                               help="Max retries per LLM call (default: 3)")
+    ollama_group.add_argument("--ollama-think", action="store_true", default=False,
+                              help="Enable thinking mode for Ollama models that support it (e.g. qwen3)")
+    parser.add_argument(
+        "--reset-db",
+        action="store_true",
+        help="Drop and recreate all database tables before starting (fresh slate).",
+    )
     args = parser.parse_args()
 
     verbose = args.verbose or (args.log_level == "debug")
     setup_logging(verbose)
     log = logging.getLogger("simulation")
 
+    if getattr(args, "reset_db", False):
+        import asyncio as _asyncio
+        from kbz.database import engine as _engine
+        from kbz.models import Base as _Base  # noqa: F401 — ensures all models are registered
+
+        async def _reset():
+            async with _engine.begin() as conn:
+                await conn.run_sync(_Base.metadata.drop_all)
+                await conn.run_sync(_Base.metadata.create_all)
+
+        _asyncio.run(_reset())
+        log.info("Database reset: all tables dropped and recreated.")
+
     if args.rounds == 0:
         log.info("Running in CONTINUOUS mode (rounds=0). Press Ctrl+C to stop.")
 
-    personas = load_all_personas()
+    personas = build_persona_list(args.members)
     mission = args.mission if args.mission is not None else DEFAULT_MISSION
-    orch = Orchestrator(
-        community_name=args.community_name,
-        mission=mission,
-        api_url=f"http://localhost:{args.port}",
-        llm_backend=args.backend,
-        llm_model=args.model,
-        personas=personas,
-        ollama_timeout=args.ollama_timeout,
-        ollama_num_ctx=args.ollama_ctx,
-        ollama_temperature=args.ollama_temp,
-        ollama_num_predict=args.ollama_max_tokens,
-        max_retries=args.retries,
-    )
+
+    def _make_orchestrator(n_members: int) -> Orchestrator:
+        """Build an Orchestrator with the current args but a fresh persona list."""
+        return Orchestrator(
+            community_name=args.community_name,
+            mission=mission,
+            api_url=f"http://localhost:{args.port}",
+            llm_backend=args.backend,
+            llm_model=args.model,
+            personas=build_persona_list(n_members),
+            ollama_timeout=args.ollama_timeout,
+            ollama_num_ctx=args.ollama_ctx,
+            ollama_temperature=args.ollama_temp,
+            ollama_num_predict=args.ollama_max_tokens,
+            max_retries=args.retries,
+            ollama_think=args.ollama_think,
+        )
+
+    orch = _make_orchestrator(args.members)
     set_orchestrator(orch)
 
     viewer_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "viewer")
@@ -226,10 +278,43 @@ Examples:
             event_bus.unsubscribe(queue)
             raise
 
+    # Mutable container so the restart closure can update the task reference
+    _sim_state: dict = {"task": None}  # tracks the running simulation task
+
+    async def _restart():
+        """Cancel the running simulation loop and relaunch it with the same
+        orchestrator and existing data.  Nothing is wiped — agents, community,
+        proposals and history are all preserved."""
+        log = logging.getLogger("simulation")
+        log.info("=== RESTARTING SIMULATION LOOP (data preserved) ===")
+
+        # 1. Cancel the running sim task
+        task = _sim_state["task"]
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        log.info("Old simulation loop stopped.")
+
+        # 2. Resume from where we left off — same orchestrator, same community.
+        #    Reset the paused flag so the loop doesn't stall immediately.
+        orch.resume()
+
+        # 3. Relaunch the loop
+        new_task = asyncio.create_task(
+            _resume_simulation(orch, rounds=args.rounds, delay=args.delay)
+        )
+        _sim_state["task"] = new_task
+        log.info("Simulation loop restarted (round %d).", orch._round)
+
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         cascade_task = asyncio.create_task(_artifact_cascade_loop())
-        asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
+        sim_task = asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
+        _sim_state["task"] = sim_task
+        set_restart_callback(_restart)
         try:
             yield
         finally:

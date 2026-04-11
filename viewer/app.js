@@ -74,6 +74,49 @@ function proposalDisplayText(p) {
     return "";
 }
 
+/**
+ * React hook that resolves a human-readable card title for a proposal.
+ * For types that carry UUIDs (DelegateArtifact, JoinAction, etc.), fetches
+ * the real names asynchronously using the cached API.
+ */
+function useProposalCardTitle(p) {
+    const [title, setTitle] = React.useState(() => proposalDisplayText(p) || p.proposal_type);
+    React.useEffect(() => {
+        if (!p) return;
+        const pt = p.proposal_type;
+        let cancelled = false;
+        async function resolve() {
+            try {
+                if (pt === "DelegateArtifact") {
+                    // val_uuid = artifact id, val_text = target action community id
+                    let artName = p.val_uuid ? p.val_uuid.slice(0, 8) : "?";
+                    let actionName = p.val_text ? p.val_text.slice(0, 8) : "?";
+                    try { const h = await API.getCached(`/artifacts/${p.val_uuid}/history`); if (h?.length) artName = h[h.length-1].title || artName; } catch {}
+                    try { const c = await API.getCached(`/communities/${p.val_text}`); actionName = c.name || actionName; } catch {}
+                    if (!cancelled) setTitle(`Delegate "${truncate(artName,30)}" → ${truncate(actionName,25)}`);
+                } else if (pt === "EditArtifact" || pt === "RemoveArtifact") {
+                    let artName = p.val_uuid ? p.val_uuid.slice(0, 8) : "?";
+                    try { const h = await API.getCached(`/artifacts/${p.val_uuid}/history`); if (h?.length) artName = h[h.length-1].title || artName; } catch {}
+                    if (!cancelled) setTitle(`${pt === "EditArtifact" ? "Edit" : "Remove"}: ${truncate(artName, 45)}`);
+                } else if (pt === "JoinAction" || pt === "EndAction") {
+                    let commName = p.val_uuid ? p.val_uuid.slice(0, 8) : "?";
+                    try { const c = await API.getCached(`/communities/${p.val_uuid}`); commName = c.name || commName; } catch {}
+                    if (!cancelled) setTitle(`${pt === "JoinAction" ? "Join" : "End"}: ${truncate(commName, 45)}`);
+                } else if (pt === "CommitArtifact") {
+                    let contName = "Container";
+                    try { const c = await API.getCached(`/artifacts/containers/${p.val_uuid}`); contName = c?.container?.title || contName; } catch {}
+                    if (!cancelled) setTitle(`Commit: ${truncate(contName, 45)}`);
+                } else if (pt === "CreateArtifact") {
+                    if (!cancelled) setTitle(p.val_text || p.proposal_text || "Create Artifact");
+                }
+            } catch {}
+        }
+        resolve();
+        return () => { cancelled = true; };
+    }, [p?.id]);
+    return title;
+}
+
 // ── EntityLink ─────────────────────────────────────────
 function EntityLink({ type, id, label, openDetail }) {
     return (
@@ -431,10 +474,11 @@ function CommentThread({ comments, openDetail, agentsByUserId }) {
             roots.push(byId[c.id]);
         }
     });
-    // Sort roots and children by time ascending
-    const sortByTime = (a, b) => new Date(a.created_at) - new Date(b.created_at);
-    roots.sort(sortByTime);
-    Object.values(byId).forEach(c => c.children.sort(sortByTime));
+    // Sort roots newest-first; keep children ascending so threads read top-down
+    const sortByTimeAsc = (a, b) => new Date(a.created_at) - new Date(b.created_at);
+    const sortByTimeDesc = (a, b) => new Date(b.created_at) - new Date(a.created_at);
+    roots.sort(sortByTimeDesc);
+    Object.values(byId).forEach(c => c.children.sort(sortByTimeAsc));
 
     function CommentNode({ comment, depth }) {
         const authorAgent = agentsByUserId?.[comment.user_id];
@@ -1138,6 +1182,67 @@ function VariablesTab({ communityId, openDetail }) {
     );
 }
 
+// ── LLM Switcher ────────────────────────────────────────
+const LLM_LABELS = {
+    "custom":              "— custom —",
+    "claude-haiku":        "⚡ Claude Haiku",
+    "ollama-gemma4":       "🦙 Ollama gemma4:26b",
+    "ollama-gemma4-e4b":   "🦙 Ollama gemma4:e4b",
+    "ollama-qwen3":        "🤖 Ollama qwen3:8b",
+    "ollama-qwen3-think":  "🧠 Ollama qwen3:8b (think)",
+    "or-mistral-small":    "🌐 OR mistral-small",
+    "or-lunaris":          "🌐 OR lunaris-8b",
+    "or-gemini-flash-lite":"🌐 OR gemini-2.5-flash-lite",
+};
+
+function LLMSwitcher({ currentPreset }) {
+    const [switching, setSwitching] = React.useState(false);
+    const [current, setCurrent] = React.useState(currentPreset || "custom");
+
+    React.useEffect(() => {
+        if (currentPreset) setCurrent(currentPreset);
+    }, [currentPreset]);
+
+    async function handleChange(e) {
+        const preset = e.target.value;
+        setSwitching(true);
+        try {
+            await API.post("/simulation/llm", { preset });
+            setCurrent(preset);
+        } catch (err) {
+            alert(`Failed to switch LLM: ${err.message}`);
+        } finally {
+            setSwitching(false);
+        }
+    }
+
+    return (
+        <div className="header-stat" title="Switch LLM backend mid-session">
+            <span className="label">LLM</span>
+            <select
+                value={current}
+                onChange={handleChange}
+                disabled={switching}
+                style={{
+                    background: "var(--surface)",
+                    color: "var(--text-primary)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    padding: "2px 6px",
+                    fontSize: "0.78rem",
+                    cursor: switching ? "wait" : "pointer",
+                    opacity: switching ? 0.6 : 1,
+                }}
+            >
+                {Object.entries(LLM_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                ))}
+            </select>
+            {switching && <span style={{ marginLeft: 4, fontSize: "0.7rem", color: "var(--text-muted)" }}>…</span>}
+        </div>
+    );
+}
+
 // ── Header ──────────────────────────────────────────────
 function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot }) {
     const community = status?.community;
@@ -1198,13 +1303,11 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                     <span className="label">Events</span>
                     <span className="value">{status?.total_events || 0}</span>
                 </div>
-                {status?.llm && (
-                    <div className="header-stat" title={`${status.llm.calls} calls, avg ${status.llm.avg_latency_s}s, ${status.llm.errors} errors`}>
-                        <span className="label">LLM</span>
-                        <span className="value" style={{ fontSize: "0.75rem" }}>
-                            {status.llm.model?.split(":")[0] || status.llm.backend}
-                            {status.llm.avg_latency_s > 0 ? ` (${status.llm.avg_latency_s}s)` : ""}
-                        </span>
+                <LLMSwitcher currentPreset={status?.llm?.preset} />
+                {status?.llm?.avg_latency_s > 0 && (
+                    <div className="header-stat" title={`${status.llm.calls} calls, ${status.llm.errors} errors`}>
+                        <span className="label">Avg</span>
+                        <span className="value" style={{ fontSize: "0.75rem" }}>{status.llm.avg_latency_s}s</span>
                     </div>
                 )}
                 {status?.paused && (
@@ -1973,6 +2076,42 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
     );
 }
 
+// ── Proposal Card ──────────────────────────────────────
+// Defined at module level (not inside ProposalBoard) so React sees a stable
+// component identity across re-renders.  Defining it inside ProposalBoard would
+// create a new function reference on every render → React unmounts/remounts
+// every card every poll cycle → useProposalCardTitle resets → visible "jump".
+function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, openDetail }) {
+    const cardTitle = useProposalCardTitle(p);
+    const statusClass = p.proposal_status === "Accepted" ? "accepted" : p.proposal_status === "Rejected" ? "rejected" : "";
+    const hasEnoughSupport = memberCount > 0 && (
+        p.proposal_status === "OutThere"
+            ? p.support_count >= proposalThreshold
+            : p.proposal_status === "OnTheAir"
+                ? p.support_count >= getTypeThreshold(p.proposal_type)
+                : false
+    );
+    const readyClass = hasEnoughSupport ? "ready-to-pass" : "";
+    return (
+        <div className={`proposal-card ${statusClass} ${readyClass} clickable`}
+             onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
+            <div className="proposal-type">{p.proposal_type}</div>
+            <div className="proposal-text">{cardTitle}</div>
+            <div className="proposal-meta">
+                <span>Support: {p.support_count}{memberCount > 0 && (
+                    p.proposal_status === "OutThere"
+                        ? `/${proposalThreshold}`
+                        : p.proposal_status === "OnTheAir"
+                            ? `/${getTypeThreshold(p.proposal_type)}`
+                            : ""
+                )}</span>
+                <span>Age: {p.age}</span>
+                {hasEnoughSupport && <span className="ready-badge">Ready</span>}
+            </div>
+        </div>
+    );
+}
+
 // ── Proposal Board ──────────────────────────────────────
 function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity }) {
     const onTheAir = proposals?.filter((p) => p.proposal_status === "OnTheAir") || [];
@@ -2022,49 +2161,18 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
     };
     const proposalThreshold = Math.max(1, Math.ceil(memberCount * proposalSupportPct / 100));
 
-    function ProposalCard({ p }) {
-        const statusClass = p.proposal_status === "Accepted" ? "accepted" : p.proposal_status === "Rejected" ? "rejected" : "";
-        // Yellow highlight: proposal has enough support to pass/advance
-        const hasEnoughSupport = memberCount > 0 && (
-            p.proposal_status === "OutThere"
-                ? p.support_count >= proposalThreshold
-                : p.proposal_status === "OnTheAir"
-                    ? p.support_count >= getTypeThreshold(p.proposal_type)
-                    : false
-        );
-        const readyClass = hasEnoughSupport ? "ready-to-pass" : "";
-        return (
-            <div className={`proposal-card ${statusClass} ${readyClass} clickable`}
-                 onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
-                <div className="proposal-type">{p.proposal_type}</div>
-                <div className="proposal-text">{proposalDisplayText(p) || p.proposal_type}</div>
-                <div className="proposal-meta">
-                    <span>Support: {p.support_count}{memberCount > 0 && (
-                        p.proposal_status === "OutThere"
-                            ? `/${proposalThreshold}`
-                            : p.proposal_status === "OnTheAir"
-                                ? `/${getTypeThreshold(p.proposal_type)}`
-                                : ""
-                    )}</span>
-                    <span>Age: {p.age}</span>
-                    {hasEnoughSupport && <span className="ready-badge">Ready</span>}
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="card">
             <div className="card-title">Proposals</div>
             <div className="proposal-columns">
                 <div>
                     <div className="proposal-column-title">On The Air ({onTheAir.length})</div>
-                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} />)}
+                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
                     {onTheAir.length === 0 && <div className="empty-state">None</div>}
                 </div>
                 <div>
                     <div className="proposal-column-title">Out There ({outThere.length})</div>
-                    {outThere.map((p) => <ProposalCard key={p.id} p={p} />)}
+                    {outThere.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
                     {outThere.length === 0 && <div className="empty-state">None</div>}
                 </div>
                 <div>
@@ -2072,13 +2180,13 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
                     {accepted.length > 0 && (
                         <div style={{ marginBottom: 8 }}>
                             <div className="results-sub accepted">Accepted ({accepted.length})</div>
-                            {accepted.map((p) => <ProposalCard key={p.id} p={p} />)}
+                            {accepted.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
                         </div>
                     )}
                     {rejected.length > 0 && (
                         <div>
                             <div className="results-sub rejected">Rejected ({rejected.length})</div>
-                            {rejected.map((p) => <ProposalCard key={p.id} p={p} />)}
+                            {rejected.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
                         </div>
                     )}
                     {recent.length === 0 && <div className="empty-state">No pulse results yet</div>}
@@ -2089,10 +2197,27 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
 }
 
 // ── Dashboard Tab ───────────────────────────────────────
-function DashboardTab({ status, events, proposals, pulses, onRunRound, runningRound, paused, onTogglePause, openDetail, agentsByUserId, communityId, activeCommunity, activeCommunityId, rootCommunityId }) {
+
+function DashboardTab({ status, events, proposals, pulses, onRunRound, runningRound, paused, onTogglePause, onRestart, restarting, openDetail, agentsByUserId, communityId, activeCommunity, activeCommunityId, rootCommunityId }) {
+    if (restarting) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 80, gap: 16 }}>
+                <span className="spinner" style={{ width: 36, height: 36, borderWidth: 4 }}></span>
+                <div style={{ color: "var(--text-secondary)", fontSize: "1.1rem" }}>Restarting simulation loop…</div>
+                <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>All data is preserved. Agents will resume shortly.</div>
+            </div>
+        );
+    }
     return (
         <div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8 }}>
+                <button
+                    className="run-round-btn restart-btn"
+                    onClick={onRestart}
+                    title="Restart the simulation loop — all data and history are preserved"
+                >
+                    ↺ Restart
+                </button>
                 <button
                     className={`run-round-btn ${paused ? "paused" : ""}`}
                     onClick={onTogglePause}
@@ -2291,45 +2416,109 @@ function AgentsTab({ agents, openDetail, communityId, rootCommunityId }) {
 }
 
 // ── Chat Tab ────────────────────────────────────────────
-function ChatTab({ communityId, agentsByUserId }) {
+function ChatTab({ communityId, communityName, agentsByUserId, bbUserId }) {
     const [messages, setMessages] = React.useState([]);
-    React.useEffect(() => {
+    const [draft, setDraft] = React.useState("");
+    const [sending, setSending] = React.useState(false);
+    const textareaRef = React.useRef(null);
+
+    // Keep a ref so handleSend always reads the LATEST communityId even if the
+    // closure captured a stale value (e.g. during a concurrent-mode render).
+    const communityIdRef = React.useRef(communityId);
+    React.useEffect(() => { communityIdRef.current = communityId; }, [communityId]);
+
+    // Force-refresh bypasses cache
+    const loadMessages = React.useCallback(() => {
         if (!communityId) return;
-        const load = () =>
-            API.getCached(`/entities/community/${communityId}/comments?limit=100`)
-                .then(setMessages)
-                .catch(() => {});
-        load();
-        const iv = setInterval(load, 5000);
-        return () => clearInterval(iv);
+        const url = `/entities/community/${communityId}/comments?limit=100`;
+        delete _cache[url];
+        API.getCached(url).then(setMessages).catch(() => {});
     }, [communityId]);
 
-    // Sort chronologically (oldest first) for chat-style reading
+    React.useEffect(() => {
+        if (!communityId) return;
+        loadMessages();
+        const iv = setInterval(loadMessages, 5000);
+        return () => clearInterval(iv);
+    }, [communityId, loadMessages]);
+
+    async function handleSend() {
+        const text = draft.trim();
+        if (!text || sending) return;
+        // Always read from ref — guaranteed to be the current communityId
+        const targetId = communityIdRef.current;
+        if (!targetId) { alert("No community selected — cannot send message."); return; }
+        setSending(true);
+        try {
+            await API.post("/simulation/chat", { message: text, community_id: targetId });
+            setDraft("");
+            setTimeout(loadMessages, 300);
+        } catch (err) {
+            alert(`Could not send message: ${err.message}`);
+        } finally {
+            setSending(false);
+            textareaRef.current?.focus();
+        }
+    }
+
+    function handleKeyDown(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+            e.preventDefault();
+            handleSend();
+        }
+    }
+
+    // Sort newest-first so latest messages appear at the top
     const sorted = [...messages].sort(
-        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        (a, b) => new Date(b.created_at) - new Date(a.created_at)
     );
+
+    const scopeLabel = communityName || (communityId ? communityId.slice(0, 8) : "…");
 
     return (
         <div className="chat-tab">
-            <h3 style={{ margin: "0 0 12px", color: "#e0e0e0" }}>Community Chat</h3>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+                <h3 style={{ margin: 0, color: "#e0e0e0" }}>Community Chat</h3>
+                <span className="chat-scope-badge">📍 {scopeLabel}</span>
+            </div>
+
+            {/* ── Compose box ── */}
+            <div className="bb-compose">
+                <div className="bb-compose-label">👁 Big Brother → <em>{scopeLabel}</em></div>
+                <textarea
+                    ref={textareaRef}
+                    className="bb-compose-input"
+                    placeholder={`Send a message to ${scopeLabel}… (Ctrl+Enter to send)`}
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={2}
+                    disabled={sending}
+                />
+                <button
+                    className="bb-compose-btn"
+                    onClick={handleSend}
+                    disabled={!draft.trim() || sending}
+                >
+                    {sending ? "Sending…" : "Send"}
+                </button>
+            </div>
+
+            {/* ── Messages ── */}
             {sorted.length === 0 && (
                 <div className="empty-state">No chat messages yet. Agents will start chatting soon...</div>
             )}
             <div className="chat-messages">
                 {sorted.map((m) => {
+                    const isBB = bbUserId && m.user_id === bbUserId;
                     const agent = agentsByUserId?.[m.user_id];
-                    const name = agent?.name || (m.user_id || "").slice(0, 8);
-                    const colorClass = agent ? agentColor(name) : "";
+                    const name = isBB ? "👁 Big Brother" : (agent?.name || (m.user_id || "").slice(0, 8));
+                    const colorClass = isBB ? "bb-message-author" : (agent ? agentColor(name) : "");
                     return (
-                        <div key={m.id} className="chat-message">
+                        <div key={m.id} className={`chat-message${isBB ? " bb-message" : ""}`}>
                             <div className="chat-message-header">
                                 <span className={`chat-author ${colorClass}`}>{name}</span>
                                 <span className="chat-time">{formatTime(m.created_at)}</span>
-                                {m.score !== 0 && (
-                                    <span className="chat-score">
-                                        {m.score > 0 ? "+" : ""}{m.score}
-                                    </span>
-                                )}
                             </div>
                             <div className="chat-text">{m.comment_text}</div>
                         </div>
@@ -2451,6 +2640,10 @@ function InterviewTab({ agents }) {
 
 // ── Timeline Tab ────────────────────────────────────────
 function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, activeCommunityId, rootCommunityId }) {
+    const [filterKind, setFilterKind] = useState("all");   // all | pulse | proposal | event
+    const [filterMember, setFilterMember] = useState("");  // agent name or ""
+    const [filterKeyword, setFilterKeyword] = useState(""); // free-text search
+
     // Merge events into one chronological stream
     // Entries: pulse markers + proposal events + agent action events
     const eventsByCommunity = activeCommunityId
@@ -2459,21 +2652,68 @@ function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, ac
     // Filter out noise: failed do_nothing events (guards, already-supported, etc.)
     const filteredEvents = eventsByCommunity.filter(ev => !(ev.success === false && ev.action === "do_nothing"));
 
-    const entries = [];
+    const allEntries = [];
 
     (pulses || []).forEach(p => {
-        entries.push({ kind: "pulse", time: p.created_at, data: p });
+        allEntries.push({ kind: "pulse", time: p.created_at, data: p });
     });
 
     (proposals || []).forEach(p => {
-        entries.push({ kind: "proposal", time: p.created_at, data: p });
+        allEntries.push({ kind: "proposal", time: p.created_at, data: p });
     });
 
     filteredEvents.forEach(ev => {
-        entries.push({ kind: "event", time: ev.time, data: ev });
+        allEntries.push({ kind: "event", time: ev.time, data: ev });
     });
 
-    entries.sort((a, b) => new Date(b.time) - new Date(a.time));
+    allEntries.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+    // Derive unique agent/member names for the member dropdown
+    const memberNames = useMemo(() => {
+        const names = new Set();
+        filteredEvents.forEach(ev => { if (ev.agent) names.add(ev.agent); });
+        (proposals || []).forEach(p => {
+            const a = agentsByUserId?.[p.user_id];
+            if (a?.name) names.add(a.name);
+        });
+        return [...names].sort();
+    }, [filteredEvents, proposals, agentsByUserId]);
+
+    // Apply filters
+    const kw = filterKeyword.trim().toLowerCase();
+    const entries = allEntries.filter(entry => {
+        // --- kind filter ---
+        if (filterKind !== "all" && entry.kind !== filterKind) return false;
+
+        // --- member filter ---
+        if (filterMember) {
+            if (entry.kind === "event") {
+                if (entry.data.agent !== filterMember) return false;
+            } else if (entry.kind === "proposal") {
+                const a = agentsByUserId?.[entry.data.user_id];
+                if ((a?.name || "") !== filterMember) return false;
+            } else {
+                // pulse entries have no author → hide when member filter is active
+                return false;
+            }
+        }
+
+        // --- keyword filter ---
+        if (kw) {
+            const d = entry.data;
+            let haystack = "";
+            if (entry.kind === "pulse") {
+                haystack = `pulse ${d.status}`;
+            } else if (entry.kind === "proposal") {
+                haystack = [d.proposal_type, d.proposal_text, d.val_text, d.proposal_status].filter(Boolean).join(" ").toLowerCase();
+            } else {
+                haystack = [d.agent, d.action, d.details, d.reason].filter(Boolean).join(" ").toLowerCase();
+            }
+            if (!haystack.includes(kw)) return false;
+        }
+
+        return true;
+    });
 
     function pulseLabel(s) {
         return s === 0 ? "Next" : s === 1 ? "Active" : "Executed";
@@ -2484,7 +2724,44 @@ function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, ac
 
     return (
         <div className="card">
-            <div className="card-title">Full Timeline ({entries.length} entries)</div>
+            <div className="card-title" style={{ marginBottom: 8 }}>Full Timeline</div>
+
+            {/* ── Filter bar ── */}
+            <div className="timeline-filter-bar">
+                <input
+                    className="timeline-filter-input"
+                    type="text"
+                    placeholder="Search keyword…"
+                    value={filterKeyword}
+                    onChange={e => setFilterKeyword(e.target.value)}
+                />
+                <select
+                    className="timeline-filter-select"
+                    value={filterKind}
+                    onChange={e => setFilterKind(e.target.value)}
+                >
+                    <option value="all">All types</option>
+                    <option value="pulse">Pulse</option>
+                    <option value="proposal">Proposal</option>
+                    <option value="event">Agent event</option>
+                </select>
+                <select
+                    className="timeline-filter-select"
+                    value={filterMember}
+                    onChange={e => setFilterMember(e.target.value)}
+                >
+                    <option value="">All members</option>
+                    {memberNames.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+                {(filterKind !== "all" || filterMember || filterKeyword) && (
+                    <button
+                        className="timeline-filter-clear"
+                        onClick={() => { setFilterKind("all"); setFilterMember(""); setFilterKeyword(""); }}
+                    >✕ Clear</button>
+                )}
+                <span className="timeline-filter-count">{entries.length} / {allEntries.length}</span>
+            </div>
+
             <div className="timeline">
                 {entries.length === 0 && <div className="empty-state">No activity yet</div>}
                 {entries.map((entry, i) => {
@@ -2709,6 +2986,7 @@ function App() {
     }, [agents, status]);
 
     const rootCommunityId = status?.community?.id;
+    const bbUserId = status?.bb_user_id || null;
     const effectiveCommunityId = activeCommunityId || rootCommunityId;
     // For backward compat, keep communityId pointing to effective
     const communityId = effectiveCommunityId;
@@ -2812,6 +3090,31 @@ function App() {
         }
     }
 
+    // Restart simulation loop (data preserved)
+    const [restarting, setRestarting] = useState(false);
+    async function handleRestart() {
+        setRestarting(true);
+        try {
+            await API.post("/simulation/restart", {});
+            let attempts = 0;
+            const poll = setInterval(async () => {
+                attempts++;
+                try {
+                    const s = await API.get("/simulation/status");
+                    if (!s.restarting) {
+                        clearInterval(poll);
+                        setRestarting(false);
+                        setStatus(s);
+                    }
+                } catch {}
+                if (attempts > 30) { clearInterval(poll); setRestarting(false); }
+            }, 500);
+        } catch (err) {
+            alert(`Restart failed: ${err.message}`);
+            setRestarting(false);
+        }
+    }
+
     // Run round manually
     async function handleRunRound() {
         setRunningRound(true);
@@ -2857,8 +3160,13 @@ function App() {
                     openDetail={openDetail}
                     round={status?.round}
                 />
-                <div className="main-content">
-                    {activeTab === "dashboard" && (
+                {/* key=communityId: unmount/remount all tabs when navigating to a
+                    different community, giving each community its own fresh state.
+                    Within a community, tabs are always mounted — just hidden with
+                    display:none — so their internal state (filters, draft text,
+                    interview history) survives tab switches. */}
+                <div className="main-content" key={communityId || "root"}>
+                    <div style={{ display: activeTab === "dashboard" ? undefined : "none" }}>
                         <DashboardTab
                             status={status}
                             events={events}
@@ -2868,6 +3176,8 @@ function App() {
                             runningRound={runningRound}
                             paused={paused}
                             onTogglePause={handleTogglePause}
+                            onRestart={handleRestart}
+                            restarting={restarting}
                             openDetail={openDetail}
                             agentsByUserId={agentsByUserId}
                             communityId={communityId}
@@ -2875,24 +3185,42 @@ function App() {
                             activeCommunityId={activeCommunityId}
                             rootCommunityId={rootCommunityId}
                         />
-                    )}
-                    {activeTab === "agents" && <AgentsTab agents={agents} openDetail={openDetail} communityId={communityId} rootCommunityId={rootCommunityId} />}
-                    {activeTab === "variables" && <VariablesTab communityId={communityId} openDetail={openDetail} />}
-                    {activeTab === "statements" && <StatementsTab communityId={communityId} openDetail={openDetail} />}
-                    {activeTab === "pulses" && <PulsesTab pulses={pulses} communityId={communityId} openDetail={openDetail} />}
-                    {activeTab === "actions" && (
+                    </div>
+                    <div style={{ display: activeTab === "agents" ? undefined : "none" }}>
+                        <AgentsTab agents={agents} openDetail={openDetail} communityId={communityId} rootCommunityId={rootCommunityId} />
+                    </div>
+                    <div style={{ display: activeTab === "variables" ? undefined : "none" }}>
+                        <VariablesTab communityId={communityId} openDetail={openDetail} />
+                    </div>
+                    <div style={{ display: activeTab === "statements" ? undefined : "none" }}>
+                        <StatementsTab communityId={communityId} openDetail={openDetail} />
+                    </div>
+                    <div style={{ display: activeTab === "pulses" ? undefined : "none" }}>
+                        <PulsesTab pulses={pulses} communityId={communityId} openDetail={openDetail} />
+                    </div>
+                    <div style={{ display: activeTab === "actions" ? undefined : "none" }}>
                         <ActionTreeTab
                             communityId={communityId}
                             rootCommunityId={rootCommunityId}
                             openDetail={openDetail}
                             onNavigate={handleNavigateToAction}
                         />
-                    )}
-                    {activeTab === "work" && <WorkTab communityId={communityId} openDetail={openDetail} />}
-                    {activeTab === "chat" && <ChatTab communityId={communityId} agentsByUserId={agentsByUserId} />}
-                    {activeTab === "interview" && <InterviewTab agents={agents} />}
-                    {activeTab === "timeline" && <TimelineTab pulses={pulses} proposals={proposals} events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />}
-                    {activeTab === "relationships" && <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />}
+                    </div>
+                    <div style={{ display: activeTab === "work" ? undefined : "none" }}>
+                        <WorkTab communityId={communityId} openDetail={openDetail} />
+                    </div>
+                    <div style={{ display: activeTab === "chat" ? undefined : "none" }}>
+                        <ChatTab communityId={communityId} communityName={activeCommunityName || status?.community?.name || null} agentsByUserId={agentsByUserId} bbUserId={bbUserId} />
+                    </div>
+                    <div style={{ display: activeTab === "interview" ? undefined : "none" }}>
+                        <InterviewTab agents={agents} />
+                    </div>
+                    <div style={{ display: activeTab === "timeline" ? undefined : "none" }}>
+                        <TimelineTab pulses={pulses} proposals={proposals} events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />
+                    </div>
+                    <div style={{ display: activeTab === "relationships" ? undefined : "none" }}>
+                        <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />
+                    </div>
                 </div>
             </div>
             <DetailPanel
