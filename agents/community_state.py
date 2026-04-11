@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 def _proposal_display_text(p: dict) -> str:
     """Return a human-readable description for a proposal.
 
-    For artifact proposals (CreateArtifact, EditArtifact, etc.) the meaningful
-    text is often in val_text (the title) rather than proposal_text (which may
-    be empty for title-only CreateArtifact).  Fall back gracefully.
+    Prefers the pre-resolved `_display` field injected by observe_community
+    (which contains real artifact titles and action names).  Falls back to
+    val_text / proposal_text for types where those are already human-readable.
     """
+    # Pre-resolved display injected during observe_community enrichment
+    if p.get("_display"):
+        return p["_display"]
     ptype = p.get("proposal_type", "")
     text = (p.get("proposal_text") or "").strip()
     val = (p.get("val_text") or "").strip()
@@ -50,6 +53,7 @@ class CommunitySnapshot:
     containers: list[dict] = field(default_factory=list)  # ArtifactContainer dicts owned by THIS community
     container_artifacts: dict[str, list[dict]] = field(default_factory=dict)  # container_id -> list of active artifacts
     delegations_out: dict[str, dict] = field(default_factory=dict)  # artifact_id -> {action_community_id, action_name, child_container_id, child_status, child_artifact_count} for artifacts of THIS community delegated to a child Action
+    rounds_since_pulse: int = 0  # rounds since a pulse last fired — used for deadlock warnings
 
     @property
     def member_count(self) -> int:
@@ -118,7 +122,13 @@ class CommunitySnapshot:
         lines = []
         lines.append(f"## Community: {self.community_name}")
         lines.append(f"Members: {self.member_count}")
-        lines.append(f"Pulse progress: {self.pulse_support_progress}")
+        pulse_progress = self.pulse_support_progress
+        if self.rounds_since_pulse >= 3:
+            pulse_progress += (
+                f"  ⚠️ PULSE HAS BEEN STUCK FOR {self.rounds_since_pulse} ROUNDS — "
+                f"proposals are aging out! Support the pulse NOW to advance governance."
+            )
+        lines.append(f"Pulse progress: {pulse_progress}")
 
         max_age = self.variables.get("MaxAge", "2")
 
@@ -158,10 +168,11 @@ class CommunitySnapshot:
                         " 💤 IDLE — consider proposing EndAction to close it"
                         if idle else ""
                     )
+                    understaffed = " ⚠️ UNDERSTAFFED — needs more members via JoinAction!" if len(members) < 3 and not idle else ""
                     lines.append(
                         f"  - [{name}] id={aid} ({len(members)} members, "
                         f"{pulses} pulses fired, {active_props} active proposals, "
-                        f"{accepted} accepted / {rejected} rejected){status_tag}"
+                        f"{accepted} accepted / {rejected} rejected){status_tag}{understaffed}"
                     )
                     if idle:
                         lines.append(
@@ -191,6 +202,13 @@ class CommunitySnapshot:
                     f"by {creator} | support: {support}/{accept_threshold} | {will_promote} |{age_warn}"
                     f" | id: {p['id']}"
                 )
+                # Warn agents NOT to JoinAction for AddAction proposals that haven't been accepted yet
+                if p["proposal_type"] == "AddAction":
+                    lines.append(
+                        f"    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
+                        f"Support this AddAction proposal first, wait for it to be accepted, "
+                        f"then it will appear in 'Actions You Can Join'."
+                    )
                 comments = self.proposal_comments.get(p["id"], [])
                 for c in comments[:3]:
                     commenter = users_cache.get(c["user_id"], c["user_id"][:8])
@@ -215,6 +233,11 @@ class CommunitySnapshot:
                     f"by {creator} | support: {support}/{threshold} needed → **{verdict}**"
                     f" | id: {p['id']}"
                 )
+                if p["proposal_type"] == "AddAction":
+                    lines.append(
+                        f"    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
+                        f"It will appear in 'Actions You Can Join' after the pulse accepts it."
+                    )
             if will_pass or will_fail:
                 lines.append(f"  >>> PULSE IMPACT: {len(will_pass)} would PASS, {len(will_fail)} would FAIL")
 
@@ -240,9 +263,14 @@ class CommunitySnapshot:
                     name = self.action_names.get(a["action_id"], "Unnamed")
                     joinable.append((name, a["action_id"]))
             if joinable:
-                lines.append(f"\n### Actions You Can Join ({len(joinable)}) — propose JoinAction to participate!")
+                lines.append(f"\n### ⚠️ Actions You Can Join ({len(joinable)}) — YOU SHOULD JOIN THESE!")
+                lines.append("  Actions are where the real work happens. Without members, actions are dead.")
+                lines.append("  Propose JoinAction (from ROOT) to become a contributing member.")
                 for name, aid in joinable:
-                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid}")
+                    # Show member count so agents know which actions are understaffed
+                    member_count = len(self.action_members.get(aid, []))
+                    urgency = " ← NEEDS MEMBERS!" if member_count < 3 else ""
+                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid} ({member_count} members){urgency}")
 
         # Members list (with user_ids for ThrowOut targeting)
         if self.members:
@@ -265,24 +293,51 @@ class CommunitySnapshot:
 
         # Artifact containers (the productive layer — what this community is BUILDING)
         if self.containers:
-            lines.append(f"\n### Artifact Containers ({len(self.containers)}) — what this community is producing:")
-            lines.append("  (CreateArtifact = plan a SLOT (title only, empty body);")
-            lines.append("   EditArtifact = FILL the body of an existing artifact;")
-            lines.append("   DelegateArtifact = hand an artifact to a child Action to work on;")
-            lines.append("   CommitArtifact = seal the container and ship its contents upward.)")
             status_label = {1: "OPEN", 2: "PENDING_PARENT (frozen)", 3: "COMMITTED"}
+
+            # Count total empty artifacts across all child-action containers so we
+            # can emit a top-level urgent banner when this IS an action community.
+            is_action_container = any(c.get("delegated_from_artifact_id") for c in self.containers)
+            empty_in_action = sum(
+                1 for c in self.containers if c.get("delegated_from_artifact_id")
+                for a in self.container_artifacts.get(c["id"], [])
+                if not (a.get("content") or "").strip()
+            )
+
+            if is_action_container and empty_in_action > 0:
+                lines.append(
+                    f"\n🚨 ACTION REQUIRED: This action has {empty_in_action} EMPTY artifact(s) waiting to be written. "
+                    f"You joined this action TO WRITE THEM. Propose EditArtifact on each EMPTY artifact immediately. "
+                    f"That is your purpose here."
+                )
+
+            lines.append(f"\n### Artifact Containers ({len(self.containers)}) — what this community is producing:")
+            if is_action_container:
+                lines.append("  *** YOU ARE INSIDE AN ACTION — your job is to WRITE content via EditArtifact ***")
+            else:
+                lines.append("  (CreateArtifact = plan a SLOT (title only, empty body);")
+                lines.append("   DelegateArtifact = hand an artifact to a child Action to work on;")
+                lines.append("   EditArtifact = FILL the body; CommitArtifact = seal and ship upward.)")
+
             for c in self.containers:
                 cid = c["id"]
                 st = status_label.get(c.get("status"), str(c.get("status")))
-                origin = " (root)" if not c.get("delegated_from_artifact_id") else f" (delegated from artifact {c['delegated_from_artifact_id'][:8]} in parent)"
+                is_delegated_container = bool(c.get("delegated_from_artifact_id"))
+                origin = " (root)" if not is_delegated_container else f" (delegated from parent — YOUR WORK CONTAINER)"
                 lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid}] — {st}{origin}")
                 mission = (c.get("mission") or "").strip()
                 if mission:
                     lines.append(f"    >>> MISSION: {mission}")
-                    lines.append(
-                        "    >>> CreateArtifact here = title-only slot for a section of the deliverable. "
-                        "EditArtifact fills the body. Slogans/principles belong in AddStatement."
-                    )
+                    if is_delegated_container:
+                        lines.append(
+                            "    >>> Write artifacts that fulfil this mission. Each artifact = one section. "
+                            "Use EditArtifact to fill EMPTY artifacts with real, detailed content."
+                        )
+                    else:
+                        lines.append(
+                            "    >>> CreateArtifact here = title-only slot for a section of the deliverable. "
+                            "EditArtifact fills the body. Slogans/principles belong in AddStatement."
+                        )
                 else:
                     lines.append(
                         "    >>> MISSION: (none set — ask the community what concrete deliverable "
@@ -290,7 +345,10 @@ class CommunitySnapshot:
                     )
                 arts = self.container_artifacts.get(cid, [])
                 if not arts:
-                    lines.append("    (empty — no artifacts yet, propose CreateArtifact to add one)")
+                    if is_delegated_container:
+                        lines.append("    (no artifacts yet — the root community needs to CreateArtifact and DelegateArtifact here first)")
+                    else:
+                        lines.append("    (empty — no artifacts yet, propose CreateArtifact to add one)")
                 for a in arts:
                     aid = a["id"]
                     author = users_cache.get(a["author_user_id"], a["author_user_id"][:8])
@@ -304,18 +362,27 @@ class CommunitySnapshot:
                             f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
                         )
                     elif not (a.get("content") or "").strip():
-                        # In root containers, nudge toward delegation; in child containers, nudge toward EditArtifact
-                        if not c.get("delegated_from_artifact_id"):
-                            lines.append(f"    [{aid}] \"{title}\" by {author} — EMPTY (needs DelegateArtifact to an Action, or AddAction first)")
+                        if is_delegated_container:
+                            lines.append(
+                                f"    [{aid}] \"{title}\" by {author} — "
+                                f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid}"
+                            )
                         else:
-                            lines.append(f"    [{aid}] \"{title}\" by {author} — EMPTY (needs EditArtifact to fill body)")
+                            lines.append(f"    [{aid}] \"{title}\" by {author} — EMPTY (needs DelegateArtifact to an Action, or AddAction first)")
                     else:
                         lines.append(f"    [{aid}] \"{title}\" by {author} — {preview}")
                 if c.get("status") == 1 and arts:
-                    lines.append(
-                        f"    → To commit: CommitArtifact with val_uuid={cid} "
-                        f"and val_text=JSON list of artifact ids in chosen order"
-                    )
+                    all_filled = all((a.get("content") or "").strip() for a in arts if not self.delegations_out.get(a["id"]))
+                    if all_filled and is_delegated_container:
+                        lines.append(
+                            f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid} "
+                            f"val_text=JSON list of artifact ids in order"
+                        )
+                    elif not is_delegated_container:
+                        lines.append(
+                            f"    → To commit: CommitArtifact with val_uuid={cid} "
+                            f"and val_text=JSON list of artifact ids in chosen order"
+                        )
                 if c.get("status") == 2:
                     lines.append("    → Frozen pending parent verdict — no mutations allowed.")
 
@@ -339,13 +406,14 @@ async def observe_community(
     client: KBZClient,
     community_id: str,
     chat_after: str | None = None,
+    rounds_since_pulse: int = 0,
 ) -> CommunitySnapshot:
     """Fetch the full state of a community — the agent's 'eyes'.
 
     `chat_after` is an ISO timestamp; only chat messages newer than this
     are returned. Pass None to get the last 15 messages (initial read).
     """
-    snapshot = CommunitySnapshot()
+    snapshot = CommunitySnapshot(rounds_since_pulse=rounds_since_pulse)
 
     snapshot.community = await client.get_community(community_id)
     snapshot.variables = await client.get_variables(community_id)
@@ -481,11 +549,77 @@ async def observe_community(
     except Exception as e:
         logger.warning("observe_community: failed to fetch work_tree for %s: %s", community_id, e)
 
+    # Enrich active proposals with human-readable display text so agents see
+    # names instead of raw UUIDs.  We resolve artifact titles (for
+    # DelegateArtifact / EditArtifact / RemoveArtifact / CommitArtifact) and
+    # action names (already in snapshot.action_names for DelegateArtifact).
+    # Build an artifact-title cache keyed by artifact_id; we also pull titles
+    # from the container_artifacts we already fetched.
+    artifact_title_cache: dict[str, str] = {}
+    for arts in snapshot.container_artifacts.values():
+        for a in arts:
+            if a.get("title"):
+                artifact_title_cache[a["id"]] = a["title"]
+
+    for p in (snapshot.proposals_out_there + snapshot.proposals_on_the_air
+              + snapshot.recent_accepted + snapshot.recent_rejected):
+        ptype = p.get("proposal_type", "")
+        val_uuid = (p.get("val_uuid") or "").strip()
+        val_text = (p.get("val_text") or "").strip()
+
+        if ptype == "DelegateArtifact":
+            # val_uuid = artifact id; val_text = target action community id
+            art_title = artifact_title_cache.get(val_uuid)
+            if not art_title and val_uuid:
+                try:
+                    hist = await client.get_artifact_history(val_uuid)
+                    if hist:
+                        art_title = hist[-1].get("title") or val_uuid[:8]
+                        artifact_title_cache[val_uuid] = art_title
+                except Exception:
+                    art_title = val_uuid[:8]
+            action_name = snapshot.action_names.get(val_text)
+            if not action_name and val_text:
+                try:
+                    comm = await client.get_community(val_text)
+                    action_name = comm.get("name") or val_text[:8]
+                    snapshot.action_names[val_text] = action_name
+                except Exception:
+                    action_name = val_text[:8]
+            p["_display"] = f'Delegate "{art_title or val_uuid[:8]}" → "{action_name or val_text[:8]}"'
+
+        elif ptype in ("EditArtifact", "RemoveArtifact"):
+            art_title = artifact_title_cache.get(val_uuid)
+            if not art_title and val_uuid:
+                try:
+                    hist = await client.get_artifact_history(val_uuid)
+                    if hist:
+                        art_title = hist[-1].get("title") or val_uuid[:8]
+                        artifact_title_cache[val_uuid] = art_title
+                except Exception:
+                    art_title = val_uuid[:8]
+            verb = "Edit" if ptype == "EditArtifact" else "Remove"
+            p["_display"] = f'{verb}: "{art_title or val_uuid[:8]}"'
+
+        elif ptype == "CommitArtifact" and val_uuid:
+            # Show the container title
+            for c in snapshot.containers:
+                if c["id"] == val_uuid and c.get("title"):
+                    p["_display"] = f'Commit container "{c["title"]}"'
+                    break
+
+        elif ptype in ("JoinAction", "EndAction") and val_uuid:
+            action_name = snapshot.action_names.get(val_uuid)
+            if action_name:
+                verb = "Join" if ptype == "JoinAction" else "End"
+                p["_display"] = f'{verb} action "{action_name}"'
+
     # Community chat — fetch recent messages (diff since last read, or last 15).
     try:
         chat_url = f"/entities/community/{community_id}/comments?limit=15"
         if chat_after:
-            chat_url += f"&after={chat_after}"
+            from urllib.parse import quote
+            chat_url += f"&after={quote(str(chat_after))}"
         resp = await client._client.get(chat_url)
         resp.raise_for_status()
         snapshot.chat_messages = resp.json()

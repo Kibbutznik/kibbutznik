@@ -603,6 +603,11 @@ class DecisionEngine:
         if text.startswith("json"):
             text = text[4:].strip()
 
+        # 3. Strip JavaScript-style // comments (common in mistral/openrouter outputs).
+        #    Only removes // that appear after a JSON value (closing " } ] or digit),
+        #    not inside string content.
+        text = re.sub(r'([\]}"\'0-9])\s*//[^\n]*', r'\1', text)
+
         # Try to parse as JSON
         data = None
         try:
