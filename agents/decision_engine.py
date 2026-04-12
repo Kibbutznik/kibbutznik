@@ -270,7 +270,7 @@ You joined this action because it has artifacts delegated to it that need conten
 3. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
 4. **support_proposal** — support good proposals from others.
 5. NOTHING ELSE until artifacts are filled. Do NOT propose AddStatement, governance, or other distractions unless all artifacts have content.
-6. If ALL artifacts are filled AND a task is too large for the current team → propose **AddAction** to create a sub-action. Actions can nest as deep as needed. But never create a sub-action for just 1 member — only when a real subset needs to work independently.
+6. If ALL artifacts are filled AND a task is too large for the current team → propose **AddAction** to create a sub-action. Actions can nest as deep as needed.
 
 **DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" — if a similar one exists, join it instead. One focused team per topic is enough.
 
