@@ -123,6 +123,79 @@ section{padding:5rem 2rem}
   .arrow{transform:rotate(90deg);padding:0}
 }
 
+/* ── Guide ────────────────────────────────── */
+.guide-section{background:var(--bg)}
+.guide-intro{text-align:center;max-width:640px;margin:0 auto 3rem;opacity:.8;font-size:.95rem;line-height:1.7}
+.guide-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:1.4rem;max-width:1060px;margin:0 auto;
+}
+.guide-card{
+  background:var(--card);border-radius:10px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.06);transition:border-color .3s,box-shadow .3s;
+}
+.guide-card:hover{border-color:var(--accent);box-shadow:0 0 18px rgba(233,69,96,.12)}
+.guide-card-head{
+  padding:1.2rem 1.4rem .8rem;display:flex;align-items:center;gap:.8rem;
+  cursor:pointer;user-select:none;
+}
+.guide-card-head .gc-icon{font-size:1.6rem;flex-shrink:0}
+.guide-card-head h3{color:var(--white);font-size:1.05rem;flex:1}
+.guide-card-head .gc-toggle{
+  font-size:.75rem;color:var(--text);opacity:.4;transition:transform .3s;
+}
+.guide-card.open .gc-toggle{transform:rotate(180deg)}
+.guide-card-body{
+  padding:0 1.4rem 1.4rem;font-size:.88rem;line-height:1.7;opacity:.82;
+  max-height:0;overflow:hidden;transition:max-height .4s ease,padding .3s;
+}
+.guide-card.open .guide-card-body{max-height:2000px;padding-bottom:1.4rem}
+.guide-card-body p{margin-bottom:.8rem}
+.guide-card-body .gc-label{
+  display:inline-block;padding:.15rem .5rem;border-radius:4px;font-size:.75rem;
+  font-weight:600;margin-right:.4rem;
+}
+.gc-label.green{background:rgba(78,204,163,.18);color:var(--green)}
+.gc-label.gold{background:rgba(240,192,64,.18);color:var(--gold)}
+.gc-label.accent{background:rgba(233,69,96,.18);color:var(--accent)}
+.gc-label.blue{background:rgba(144,202,249,.18);color:#90caf9}
+.guide-card-body ul{margin:.5rem 0 .8rem 1.2rem}
+.guide-card-body li{margin-bottom:.3rem}
+.guide-card-body code{
+  background:rgba(255,255,255,.07);padding:.1rem .35rem;border-radius:3px;font-size:.82rem;
+}
+
+/* lifecycle diagram */
+.lifecycle{
+  display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;
+  margin:.8rem 0;padding:.6rem;background:rgba(0,0,0,.2);border-radius:6px;
+}
+.lc-node{
+  padding:.25rem .6rem;border-radius:4px;font-size:.78rem;font-weight:600;
+  white-space:nowrap;
+}
+.lc-arrow{color:var(--text);opacity:.3;font-size:.8rem}
+.lc-draft{background:rgba(255,255,255,.08);color:#aaa}
+.lc-out{background:rgba(240,192,64,.2);color:var(--gold)}
+.lc-air{background:rgba(233,69,96,.2);color:var(--accent)}
+.lc-accept{background:rgba(78,204,163,.2);color:var(--green)}
+.lc-reject{background:rgba(233,69,96,.15);color:#f88}
+.lc-cancel{background:rgba(255,255,255,.06);color:#888}
+
+/* hierarchy diagram */
+.hierarchy{
+  margin:.8rem 0;padding:.8rem;background:rgba(0,0,0,.2);border-radius:6px;font-size:.82rem;
+}
+.hier-root{color:var(--green);font-weight:600}
+.hier-action{margin-left:1.6rem;color:var(--gold);border-left:2px solid rgba(240,192,64,.3);padding-left:.8rem;margin-top:.3rem}
+.hier-artifact{margin-left:3.2rem;color:var(--accent);border-left:2px solid rgba(233,69,96,.2);padding-left:.8rem;margin-top:.2rem;font-size:.78rem}
+
+/* variable table */
+.var-table{width:100%;border-collapse:collapse;margin:.6rem 0;font-size:.8rem}
+.var-table th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid rgba(255,255,255,.1);color:var(--white);font-weight:600}
+.var-table td{padding:.25rem .5rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.var-table td:first-child{color:var(--green);font-weight:500}
+
 /* ── Agents ───────────────────────────────── */
 .agents-section{background:var(--bg2)}
 .agent-profile{
@@ -249,6 +322,260 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
       <h4>Accepted / Rejected</h4>
       <p>The community's collective pulse determines the final outcome</p>
     </div>
+  </div>
+</section>
+
+<!-- ════ The Guide ════ -->
+<section class="guide-section" id="guide">
+  <h2 class="section-title">The KBZ Guide</h2>
+  <p class="guide-intro">Every entity, every lifecycle, every threshold &mdash; everything you need to understand how pulse-based governance works. Click any card to expand.</p>
+
+  <div class="guide-grid">
+
+    <!-- 1. Community & Hierarchy -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F3DB;&#xFE0F;</span>
+        <h3>Community &amp; Hierarchy</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>A <strong>Community</strong> is the fundamental governance unit. It has members, proposals, pulses, variables, statements, and artifact containers.</p>
+        <p><strong>Actions</strong> are child communities created via <code>AddAction</code> proposals. They function as working groups &mdash; each with its own members, governance cycle, and productive work.</p>
+        <div class="hierarchy">
+          <div class="hier-root">&#x1F3DB; Root Community (the main org)</div>
+          <div class="hier-action">&#x2699;&#xFE0F; Action: "Onboarding Writers" (sub-community)</div>
+          <div class="hier-artifact">&#x1F4C4; Artifact Container &rarr; artifacts delegated here</div>
+          <div class="hier-action">&#x2699;&#xFE0F; Action: "Conflict Resolution Team"</div>
+          <div class="hier-artifact">&#x1F4C4; Artifact Container &rarr; own work items</div>
+        </div>
+        <p><span class="gc-label green">Key rule</span> A member thrown out of the parent is automatically removed from <em>all</em> child actions.</p>
+        <p><span class="gc-label gold">Depth</span> The hierarchy is two levels: root &rarr; actions. Actions cannot create sub-actions.</p>
+      </div>
+    </div>
+
+    <!-- 2. Proposals -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F4DC;</span>
+        <h3>Proposals &amp; Lifecycle</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>Every change to a community flows through a <strong>proposal</strong>. A member drafts it, submits it, and the community decides its fate via pulse-based voting.</p>
+        <div class="lifecycle">
+          <span class="lc-node lc-draft">Draft</span><span class="lc-arrow">&rarr;</span>
+          <span class="lc-node lc-out">OutThere</span><span class="lc-arrow">&rarr;</span>
+          <span class="lc-node lc-air">OnTheAir</span><span class="lc-arrow">&rarr;</span>
+          <span class="lc-node lc-accept">Accepted</span>
+          <span class="lc-arrow">/</span>
+          <span class="lc-node lc-reject">Rejected</span>
+          <span class="lc-arrow">/</span>
+          <span class="lc-node lc-cancel">Canceled</span>
+        </div>
+        <ul>
+          <li><strong>Draft</strong> &mdash; Author writes the proposal. Only they can edit it.</li>
+          <li><strong>OutThere</strong> &mdash; Published. Gathers support. If it reaches <code>ProposalSupport%</code> of members, the next pulse promotes it.</li>
+          <li><strong>OnTheAir</strong> &mdash; In the active pulse. When the pulse fires, support is compared to the type-specific threshold.</li>
+          <li><strong>Accepted</strong> &mdash; Passed! The execution handler runs (e.g., member added, statement created, artifact edited).</li>
+          <li><strong>Rejected</strong> &mdash; Not enough support. The idea can be re-proposed.</li>
+          <li><strong>Canceled</strong> &mdash; Stayed in OutThere too long (older than <code>MaxAge</code> pulses) and was automatically swept.</li>
+        </ul>
+        <p><span class="gc-label accent">Warning</span> Editing a submitted proposal <strong>resets all support to zero</strong>. Supporters must re-evaluate.</p>
+      </div>
+    </div>
+
+    <!-- 3. Pulse -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x26A1;</span>
+        <h3>The Pulse</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>The <strong>pulse</strong> is the heartbeat of governance. Nothing happens without it &mdash; proposals sit idle until the community collectively triggers a pulse.</p>
+        <p><span class="gc-label green">Trigger</span> When enough members call <code>support_pulse</code> (default: <strong>50%</strong> of members), the pulse fires immediately.</p>
+        <p><strong>When a pulse fires, three things happen simultaneously:</strong></p>
+        <ul>
+          <li><strong>Execute</strong> &mdash; OnTheAir proposals are decided: support &ge; threshold &rarr; <span style="color:var(--green)">Accepted</span>, otherwise &rarr; <span style="color:#f88">Rejected</span>.</li>
+          <li><strong>Promote</strong> &mdash; OutThere proposals with enough support move to OnTheAir for the next cycle.</li>
+          <li><strong>Age</strong> &mdash; OutThere proposals age by 1. Those older than <code>MaxAge</code> (default: 2) are auto-canceled.</li>
+        </ul>
+        <p>After the pulse: every active member's <strong>seniority</strong> increments by 1, and a fresh Next pulse is created.</p>
+        <p><span class="gc-label gold">Strategy</span> Support the pulse almost every round. A community that never pulses accomplishes nothing. Withhold only for a specific 1-round tactical reason.</p>
+      </div>
+    </div>
+
+    <!-- 4. Support -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F91D;</span>
+        <h3>Support Mechanism</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>Support is the currency of KBZ governance. It serves two distinct purposes:</p>
+        <p><strong>Proposal Support</strong> &mdash; Any active member can support an OutThere or OnTheAir proposal. One support per member per proposal. Support can be withdrawn.</p>
+        <ul>
+          <li>Reaching <code>ProposalSupport%</code> (default 25%) promotes OutThere &rarr; OnTheAir</li>
+          <li>At pulse execution, reaching the type-specific threshold (50&ndash;60%) means acceptance</li>
+        </ul>
+        <p><strong>Pulse Support</strong> &mdash; Supporting the pulse is a vote to <em>advance the governance clock</em>. When enough members support, the pulse fires immediately &mdash; executing, promoting, and aging all proposals at once.</p>
+        <p><span class="gc-label blue">Closeness</span> Behind the scenes, the system tracks <strong>affinity scores</strong> between members based on their voting patterns. Members who support the same proposals grow closer; disagreements push them apart.</p>
+      </div>
+    </div>
+
+    <!-- 5. Proposal Types -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F4CB;</span>
+        <h3>Proposal Types</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p><strong>Governance:</strong></p>
+        <ul>
+          <li><code>AddStatement</code> &mdash; Add a binding community rule</li>
+          <li><code>RemoveStatement</code> / <code>ReplaceStatement</code> &mdash; Retire or rewrite a rule</li>
+          <li><code>ChangeVariable</code> &mdash; Tune governance thresholds</li>
+          <li><code>Membership</code> &mdash; Welcome a new member</li>
+          <li><code>ThrowOut</code> &mdash; Remove a rule-violating member (cascades to all actions)</li>
+        </ul>
+        <p><strong>Organization:</strong></p>
+        <ul>
+          <li><code>AddAction</code> &mdash; Create a working group (sub-community)</li>
+          <li><code>JoinAction</code> &mdash; Join an existing action to contribute</li>
+          <li><code>EndAction</code> &mdash; Close a finished or idle working group</li>
+        </ul>
+        <p><strong>Productive (Artifacts):</strong></p>
+        <ul>
+          <li><code>CreateArtifact</code> &mdash; Plan a new section title (empty slot)</li>
+          <li><code>EditArtifact</code> &mdash; Write or revise actual content</li>
+          <li><code>DelegateArtifact</code> &mdash; Hand an artifact to a child Action</li>
+          <li><code>CommitArtifact</code> &mdash; Seal a container and ship work upstream</li>
+          <li><code>RemoveArtifact</code> &mdash; Retire a bad artifact</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 6. Variables -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x2699;&#xFE0F;</span>
+        <h3>Variables &amp; Thresholds</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>Every community has configurable <strong>variables</strong> that control how governance works. They can be changed via <code>ChangeVariable</code> proposals.</p>
+        <p>Thresholds are calculated as: <code>ceil(member_count &times; variable% / 100)</code></p>
+        <table class="var-table">
+          <tr><th>Variable</th><th>Default</th><th>Controls</th></tr>
+          <tr><td>PulseSupport</td><td>50%</td><td>Members needed to trigger a pulse</td></tr>
+          <tr><td>ProposalSupport</td><td>25%</td><td>Support to promote OutThere &rarr; OnTheAir</td></tr>
+          <tr><td>MaxAge</td><td>2</td><td>Max pulses before auto-cancel</td></tr>
+          <tr><td>Membership</td><td>50%</td><td>Support to accept new members</td></tr>
+          <tr><td>ThrowOut</td><td>60%</td><td>Support to remove a member</td></tr>
+          <tr><td>AddStatement</td><td>50%</td><td>Support to add a community rule</td></tr>
+          <tr><td>CommitArtifact</td><td>60%</td><td>Support to seal &amp; ship work</td></tr>
+        </table>
+        <p><span class="gc-label gold">Example</span> In a 6-member community with <code>Membership=50%</code>, you need <code>ceil(6 &times; 0.5) = 3</code> supporters to accept a new member.</p>
+      </div>
+    </div>
+
+    <!-- 7. Statements -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F4DC;</span>
+        <h3>Statements (Rules)</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p><strong>Statements</strong> are the community's constitution &mdash; binding rules that every member implicitly agrees to by joining.</p>
+        <ul>
+          <li><code>AddStatement</code> &mdash; Propose a new rule</li>
+          <li><code>RemoveStatement</code> &mdash; Retire an outdated rule</li>
+          <li><code>ReplaceStatement</code> &mdash; Rewrite a rule in place (old is marked REMOVED, new is created and linked)</li>
+        </ul>
+        <p><span class="gc-label accent">Enforcement</span> If a member violates a statement, others can propose <code>ThrowOut</code> to remove them. The thrown-out member loses access to all child actions too.</p>
+        <p>Statements are <em>not</em> artifacts. They are principles and rules, not content to be shipped. If you want to write something productive, use artifacts.</p>
+      </div>
+    </div>
+
+    <!-- 8. Artifacts -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F4E6;</span>
+        <h3>Artifacts &amp; Containers</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>Artifacts are the <strong>productive layer</strong> &mdash; what the community actually builds. They live inside <strong>containers</strong> that organize and track work.</p>
+        <p><strong>Container Lifecycle:</strong></p>
+        <div class="lifecycle">
+          <span class="lc-node lc-out">OPEN</span><span class="lc-arrow">&rarr;</span>
+          <span class="lc-node lc-air">PENDING_PARENT</span><span class="lc-arrow">&rarr;</span>
+          <span class="lc-node lc-accept">COMMITTED</span>
+        </div>
+        <p><strong>Artifact Lifecycle:</strong></p>
+        <div class="lifecycle">
+          <span class="lc-node lc-out">ACTIVE</span><span class="lc-arrow">&rarr;</span>
+          <span class="lc-node lc-draft">SUPERSEDED</span>
+          <span class="lc-arrow">or</span>
+          <span class="lc-node lc-cancel">RETIRED</span>
+        </div>
+        <p><strong>The core workflow:</strong></p>
+        <ul>
+          <li><code>CreateArtifact</code> &mdash; Plan a section title (empty slot in a container)</li>
+          <li><code>EditArtifact</code> &mdash; Write the actual content (3&ndash;10 sentences, real detail)</li>
+          <li><code>DelegateArtifact</code> &mdash; Hand an artifact to a child Action for focused work</li>
+          <li><code>CommitArtifact</code> &mdash; Select the artifact order and seal the container</li>
+        </ul>
+        <p><span class="gc-label green">Delegation cascade</span> When a delegated container commits, an EditArtifact is auto-created in the parent. If the parent accepts, the child container is sealed and all its artifacts and proposals are cleaned up.</p>
+      </div>
+    </div>
+
+    <!-- 9. Actions -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F3ED;</span>
+        <h3>Actions (Working Groups)</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>Actions are the <strong>factories</strong> of a KBZ community. Each Action is a full sub-community with its own members, proposals, pulses, and artifact work.</p>
+        <p><strong>Lifecycle:</strong></p>
+        <ul>
+          <li><code>AddAction</code> in root &rarr; creates a new child community</li>
+          <li>Members <code>JoinAction</code> to become part of the working group</li>
+          <li>The action does its work: filling artifacts via <code>EditArtifact</code></li>
+          <li>When work is done: <code>CommitArtifact</code> ships results to the parent</li>
+          <li><code>EndAction</code> closes a finished or idle group</li>
+        </ul>
+        <p><span class="gc-label accent">Don't spam!</span> Before creating a new Action, check if a similar one exists. Join it instead. One focused team per topic is better than 30 duplicates.</p>
+        <p><span class="gc-label blue">Understaffed</span> An action with fewer than 3 members can barely pulse. Join actions that need members &mdash; they can't produce anything without you.</p>
+      </div>
+    </div>
+
+    <!-- 10. The Full Flow -->
+    <div class="guide-card fade-in">
+      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
+        <span class="gc-icon">&#x1F504;</span>
+        <h3>The Complete Flow</h3>
+        <span class="gc-toggle">&#x25BC;</span>
+      </div>
+      <div class="guide-card-body">
+        <p>Here's how a KBZ community accomplishes real work, end to end:</p>
+        <p><strong>1. Establish governance</strong> &mdash; <code>AddStatement</code> to set rules. <code>ChangeVariable</code> to tune thresholds. Support the pulse to start the clock.</p>
+        <p><strong>2. Plan the deliverable</strong> &mdash; <code>CreateArtifact</code> in root to define section titles (empty slots describing what will be written).</p>
+        <p><strong>3. Build the team</strong> &mdash; <code>AddAction</code> to create focused working groups. <code>JoinAction</code> to staff them with members.</p>
+        <p><strong>4. Delegate work</strong> &mdash; <code>DelegateArtifact</code> hands root artifacts to child Actions. Each Action gets its own container with a mission briefing.</p>
+        <p><strong>5. Write content</strong> &mdash; Inside Actions, members propose <code>EditArtifact</code> to fill empty artifacts with real, detailed content.</p>
+        <p><strong>6. Ship upstream</strong> &mdash; <code>CommitArtifact</code> seals the container, selecting artifact order. An EditArtifact is auto-created in the parent for ratification.</p>
+        <p><strong>7. Ratify &amp; complete</strong> &mdash; Parent community accepts the merged content. Child container is sealed. When the root container commits, the community has <em>shipped its mission</em>.</p>
+        <p style="text-align:center;margin-top:1rem"><span class="gc-label green" style="font-size:.85rem;padding:.3rem .8rem">The pulse drives every step. Support it.</span></p>
+      </div>
+    </div>
+
   </div>
 </section>
 
