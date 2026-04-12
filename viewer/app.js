@@ -39,6 +39,15 @@ const API = {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.json();
     },
+    async patch(path, body) {
+        const res = await fetch(BASE + path, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined,
+        });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json();
+    },
 };
 
 // Normalize the variables API response to [{name, value}, ...]
@@ -294,7 +303,7 @@ function buildProposalTitle(proposal, resolvedNames) {
         case "DelegateArtifact":
             return `Delegate "${refName || "Artifact"}" → ${valName || "Action"}`;
         case "CommitArtifact":
-            return "Commit Container";
+            return `Commit: ${refName || "Container"}`;
         default:
             return `${pt} Proposal`;
     }
