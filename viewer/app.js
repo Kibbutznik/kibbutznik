@@ -263,6 +263,19 @@ async function resolveProposalRefs(proposal, agentsByUserId) {
     if (proposal.val_text && pt === "DelegateArtifact") {
         try { const c = await API.getCached(`/communities/${proposal.val_text}`); result.valText = c.name || c.description || proposal.val_text.slice(0, 12); } catch {}
     }
+    // Resolve val_text for CommitArtifact: JSON array of artifact UUIDs → numbered titles
+    if (proposal.val_text && pt === "CommitArtifact") {
+        try {
+            const ids = JSON.parse(proposal.val_text);
+            if (Array.isArray(ids)) {
+                const titles = [];
+                for (const id of ids) {
+                    try { const hist = await API.getCached(`/artifacts/${id}/history`); titles.push(hist.length ? hist[hist.length-1].title || id.slice(0,8) : id.slice(0,8)); } catch { titles.push(id.slice(0,8)); }
+                }
+                result.valText = titles.map((t,i) => `${i+1}. ${t}`).join('\n');
+            }
+        } catch {}
+    }
 
     return result;
 }
@@ -390,6 +403,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                         {proposal.proposal_type === "DelegateArtifact" ? "Target Action" :
                          proposal.proposal_type === "CreateArtifact" ? "Artifact Title" :
                          proposal.proposal_type === "EditArtifact" ? "New Title" :
+                         proposal.proposal_type === "CommitArtifact" ? "Commit Order" :
                          "Short Name"}
                     </div>
                     <div className="detail-text-block">
@@ -1747,13 +1761,113 @@ function ArtifactNode({ artifact, openDetail, depth }) {
                 }}>{artifact.content}</pre>
             )}
             {children.map((c) => (
-                <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={depth + 1} />
+                <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={depth + 1} bbUserId={null} communityId={null} onRefresh={null} />
             ))}
         </div>
     );
 }
 
-function ContainerNode({ container, openDetail, depth }) {
+function CommitContainerUI({ container, bbUserId, communityId, onDone }) {
+    const [ordering, setOrdering] = useState(false);
+    const [items, setItems] = useState([]);
+    const [dragIdx, setDragIdx] = useState(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        const arts = (container.artifacts || []).filter(a => a.status === 1);
+        setItems(arts.map(a => ({ id: a.id, title: a.title || "(untitled)" })));
+    }, [container]);
+
+    const onDragStart = (i) => setDragIdx(i);
+    const onDragOver = (e, i) => {
+        e.preventDefault();
+        if (dragIdx === null || dragIdx === i) return;
+        const newItems = [...items];
+        const [moved] = newItems.splice(dragIdx, 1);
+        newItems.splice(i, 0, moved);
+        setItems(newItems);
+        setDragIdx(i);
+    };
+    const onDragEnd = () => setDragIdx(null);
+
+    const handleCommit = async () => {
+        setSubmitting(true);
+        try {
+            const orderedIds = items.map(it => it.id);
+            const proposal = await API.post(
+                `/communities/${communityId}/proposals`,
+                {
+                    user_id: bbUserId,
+                    proposal_type: "CommitArtifact",
+                    proposal_text: `Commit container "${container.title}" with ${orderedIds.length} artifacts`,
+                    val_uuid: container.id,
+                    val_text: JSON.stringify(orderedIds),
+                }
+            );
+            await API.patch(`/proposals/${proposal.id}/submit`);
+            await API.post(`/proposals/${proposal.id}/support`, { user_id: bbUserId });
+            onDone?.();
+        } catch (e) {
+            alert("CommitArtifact failed: " + e);
+        } finally {
+            setSubmitting(false);
+            setOrdering(false);
+        }
+    };
+
+    if (!ordering) {
+        const arts = (container.artifacts || []).filter(a => a.status === 1);
+        const allFilled = arts.length > 0 && arts.every(a => (a.content || "").trim());
+        if (!allFilled || !bbUserId) return null;
+        return (
+            <button onClick={() => setOrdering(true)}
+                style={{ marginTop: "0.5rem", fontSize: "0.75rem", background: "#4ecca3", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#111" }}>
+                📦 Commit Container…
+            </button>
+        );
+    }
+
+    return (
+        <div style={{ marginTop: "0.5rem", padding: "0.5rem", border: "1px solid #4ecca3", borderRadius: 6, background: "#0e1a0e" }}>
+            <div style={{ fontWeight: 600, marginBottom: "0.4rem", color: "#4ecca3", fontSize: "0.85rem" }}>
+                Drag to set commit order:
+            </div>
+            {items.map((item, i) => (
+                <div key={item.id}
+                    draggable
+                    onDragStart={() => onDragStart(i)}
+                    onDragOver={(e) => onDragOver(e, i)}
+                    onDragEnd={onDragEnd}
+                    style={{
+                        padding: "0.35rem 0.5rem",
+                        margin: "0.2rem 0",
+                        background: dragIdx === i ? "#1a3a1a" : "#141414",
+                        border: "1px solid #333",
+                        borderRadius: 3,
+                        cursor: "grab",
+                        fontSize: "0.8rem",
+                        display: "flex",
+                        gap: "0.5rem",
+                    }}>
+                    <span style={{ color: "#888" }}>{i + 1}.</span>
+                    <span>{item.title}</span>
+                </div>
+            ))}
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <button onClick={handleCommit} disabled={submitting}
+                    style={{ background: "#4ecca3", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#111", fontSize: "0.75rem" }}>
+                    {submitting ? "Committing…" : "Commit"}
+                </button>
+                <button onClick={() => setOrdering(false)}
+                    style={{ background: "#333", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#ccc", fontSize: "0.75rem" }}>
+                    Cancel
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function ContainerNode({ container, openDetail, depth, bbUserId, communityId, onRefresh }) {
     const [open, setOpen] = useState(true);
     const indent = { marginLeft: `${depth * 0.6}rem` };
     const arts = container.artifacts || [];
@@ -1792,13 +1906,16 @@ function ContainerNode({ container, openDetail, depth }) {
                             }}>{container.committed_content}</pre>
                         </details>
                     )}
+                    {container.status === 1 && (
+                        <CommitContainerUI container={container} bbUserId={bbUserId} communityId={communityId} onDone={onRefresh} />
+                    )}
                 </div>
             )}
         </div>
     );
 }
 
-function WorkTab({ communityId, openDetail }) {
+function WorkTab({ communityId, openDetail, bbUserId }) {
     const [tree, setTree] = useState([]);
     const [loading, setLoading] = useState(false);
     const [view, setView] = useState("tree");
@@ -1857,7 +1974,9 @@ function WorkTab({ communityId, openDetail }) {
                 <div style={{ color: "#888" }}>No artifact containers in this community.</div>
             )}
             {view === "tree" && tree.map((c) => (
-                <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={0} />
+                <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={0}
+                    bbUserId={bbUserId} communityId={communityId}
+                    onRefresh={() => API.get(`/artifacts/communities/${communityId}/work_tree`).then(d => setTree(Array.isArray(d) ? d : [])).catch(() => {})} />
             ))}
             {view === "manuscript" && (
                 <pre style={{
@@ -3219,7 +3338,7 @@ function App() {
                         />
                     </div>
                     <div style={{ display: activeTab === "work" ? undefined : "none" }}>
-                        <WorkTab communityId={communityId} openDetail={openDetail} />
+                        <WorkTab communityId={communityId} openDetail={openDetail} bbUserId={bbUserId} />
                     </div>
                     <div style={{ display: activeTab === "chat" ? undefined : "none" }}>
                         <ChatTab communityId={communityId} communityName={activeCommunityName || status?.community?.name || null} agentsByUserId={agentsByUserId} bbUserId={bbUserId} />

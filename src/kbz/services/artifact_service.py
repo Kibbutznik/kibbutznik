@@ -13,7 +13,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import (
@@ -332,7 +332,9 @@ class ArtifactService:
         """Called by event subscriber when a 'proposal.accepted' event fires.
 
         If the accepted proposal is the auto-generated EditArtifact for some
-        sub-action's pending container, flip that container to COMMITTED.
+        sub-action's pending container, flip that container to COMMITTED and
+        cascade-cleanup: retire artifacts, cancel orphaned proposals, and
+        recursively seal any sub-containers delegated further downstream.
         """
         result = await self.db.execute(
             select(ArtifactContainer).where(
@@ -344,12 +346,87 @@ class ArtifactService:
             return
         container.status = ContainerStatus.COMMITTED
         container.committed_at = datetime.now(timezone.utc)
+
+        # --- Cascade cleanup ---
+        await self._cleanup_committed_container(container)
+
         await self.db.flush()
         logger.info(
             "ArtifactService: container %s sealed (parent proposal %s accepted)",
             container.id,
             parent_proposal_id,
         )
+
+    async def _cleanup_committed_container(self, container: ArtifactContainer) -> None:
+        """Retire artifacts, cancel orphaned proposals, and cascade to sub-containers."""
+        active_statuses = (ProposalStatus.OUT_THERE.value, ProposalStatus.ON_THE_AIR.value)
+        artifact_types = [
+            ProposalType.EDIT_ARTIFACT.value,
+            ProposalType.REMOVE_ARTIFACT.value,
+            ProposalType.DELEGATE_ARTIFACT.value,
+            ProposalType.CREATE_ARTIFACT.value,
+            ProposalType.COMMIT_ARTIFACT.value,
+        ]
+
+        # 1. Retire all ACTIVE artifacts in this container
+        active_arts = await self.list_artifacts(container.id, include_history=False)
+        artifact_ids = [a.id for a in active_arts]
+        for art in active_arts:
+            art.status = ArtifactStatus.RETIRED
+
+        if not artifact_ids:
+            return
+
+        # 2. Cancel active proposals referencing these artifacts
+        #    (EditArtifact, RemoveArtifact, DelegateArtifact use val_uuid = artifact_id)
+        orphan_result = await self.db.execute(
+            select(Proposal).where(
+                Proposal.community_id == container.community_id,
+                Proposal.proposal_status.in_(active_statuses),
+                Proposal.proposal_type.in_([
+                    ProposalType.EDIT_ARTIFACT.value,
+                    ProposalType.REMOVE_ARTIFACT.value,
+                    ProposalType.DELEGATE_ARTIFACT.value,
+                ]),
+                Proposal.val_uuid.in_(artifact_ids),
+            )
+        )
+        for orphan in orphan_result.scalars().all():
+            orphan.proposal_status = ProposalStatus.CANCELED.value
+            logger.info("Auto-canceled %s proposal %s (container %s committed upstream)",
+                        orphan.proposal_type, orphan.id, container.id)
+
+        # Cancel CreateArtifact + CommitArtifact proposals targeting this container
+        container_result = await self.db.execute(
+            select(Proposal).where(
+                Proposal.community_id == container.community_id,
+                Proposal.proposal_status.in_(active_statuses),
+                Proposal.proposal_type.in_([
+                    ProposalType.CREATE_ARTIFACT.value,
+                    ProposalType.COMMIT_ARTIFACT.value,
+                ]),
+                Proposal.val_uuid == container.id,
+            )
+        )
+        for orphan in container_result.scalars().all():
+            orphan.proposal_status = ProposalStatus.CANCELED.value
+            logger.info("Auto-canceled %s proposal %s (container %s committed)",
+                        orphan.proposal_type, orphan.id, container.id)
+
+        # 3. Cascade to sub-containers (artifacts delegated further downstream)
+        sub_result = await self.db.execute(
+            select(ArtifactContainer).where(
+                ArtifactContainer.delegated_from_artifact_id.in_(artifact_ids),
+                ArtifactContainer.status != ContainerStatus.COMMITTED,
+            )
+        )
+        for sub_container in sub_result.scalars().all():
+            logger.info("Cascade-committing sub-container %s (parent artifact committed)",
+                        sub_container.id)
+            sub_container.status = ContainerStatus.COMMITTED
+            sub_container.committed_at = datetime.now(timezone.utc)
+            # Recursively cleanup the sub-container
+            await self._cleanup_committed_container(sub_container)
 
     async def on_parent_proposal_rejected(self, parent_proposal_id: uuid.UUID) -> None:
         """Called by event subscriber when a 'proposal.rejected' event fires.
