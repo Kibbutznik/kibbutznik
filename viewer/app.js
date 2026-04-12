@@ -48,6 +48,11 @@ const API = {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.json();
     },
+    async delete(path) {
+        const res = await fetch(BASE + path, { method: "DELETE" });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json();
+    },
 };
 
 // Normalize the variables API response to [{name, value}, ...]
@@ -175,7 +180,7 @@ function Breadcrumbs({ stack, popToIndex }) {
 }
 
 // ── Detail Panel (sliding overlay) ─────────────────────
-function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agentsByUserId, communityId, events }) {
+function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agentsByUserId, communityId, events, bbUserId }) {
     if (stack.length === 0) return null;
     const current = stack[stack.length - 1];
 
@@ -188,7 +193,7 @@ function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agent
     let content;
     switch (current.type) {
         case "proposal":
-            content = <ProposalDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} communityId={communityId} />;
+            content = <ProposalDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} communityId={communityId} bbUserId={bbUserId} />;
             break;
         case "user":
             content = <MemberDetail id={current.id} openDetail={openDetail} agents={agents} agentsByUserId={agentsByUserId} communityId={communityId} events={events} />;
@@ -322,16 +327,25 @@ function buildProposalTitle(proposal, resolvedNames) {
     }
 }
 
-function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
+function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId }) {
     const [proposal, setProposal] = useState(null);
     const [comments, setComments] = useState([]);
     const [supporters, setSupporters] = useState([]);
     const [resolvedNames, setResolvedNames] = useState({});
     const [loading, setLoading] = useState(true);
+    // EditArtifact diff state
+    const [oldArtifact, setOldArtifact] = useState(null);
+    const [diffReviewed, setDiffReviewed] = useState(false);
+    const [diffExpanded, setDiffExpanded] = useState(false);
+    // Support action state
+    const [supportBusy, setSupportBusy] = useState(false);
 
-    useEffect(() => {
+    const reload = () => {
         setLoading(true);
         setResolvedNames({});
+        setOldArtifact(null);
+        setDiffReviewed(false);
+        setDiffExpanded(false);
         Promise.all([
             API.getCached(`/proposals/${id}`),
             API.getCached(`/entities/proposal/${id}/comments`).catch(() => []),
@@ -340,10 +354,17 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
             setProposal(p);
             setComments(c);
             setSupporters(s || []);
-            // Resolve human-readable names for val_uuid and val_text UUIDs
             resolveProposalRefs(p, agentsByUserId).then(setResolvedNames);
+            // For EditArtifact, fetch the current (old) artifact content
+            if (p.proposal_type === "EditArtifact" && p.val_uuid) {
+                API.getCached(`/artifacts/${p.val_uuid}/history`).then(history => {
+                    if (history?.length) setOldArtifact(history[history.length - 1]);
+                }).catch(() => {});
+            }
         }).finally(() => setLoading(false));
-    }, [id]);
+    };
+
+    useEffect(() => { reload(); }, [id]);
 
     if (loading) return <div className="loading-center"><span className="spinner"></span> Loading proposal...</div>;
     if (!proposal) return <div className="empty-state">Proposal not found</div>;
@@ -355,6 +376,36 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                         proposal.proposal_status === "OnTheAir" ? "status-ontheair" : "status-outthere";
 
     const title = buildProposalTitle(proposal, resolvedNames);
+
+    const isEdit = proposal.proposal_type === "EditArtifact";
+    const isActive = proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir";
+    const alreadySupports = bbUserId && supporters.some(s => s.user_id === bbUserId);
+    // For EditArtifact: must review diff before supporting. For others: always allowed.
+    const canSupport = bbUserId && isActive && !alreadySupports && (isEdit ? diffReviewed : true);
+    const canUnsupport = bbUserId && isActive && alreadySupports;
+
+    const handleSupport = async () => {
+        setSupportBusy(true);
+        try {
+            await API.post(`/proposals/${proposal.id}/support`, { user_id: bbUserId });
+            // Refresh supporters
+            const s = await API.getCached(`/proposals/${proposal.id}/supporters`).catch(() => []);
+            setSupporters(s || []);
+            setProposal(prev => ({ ...prev, support_count: (prev.support_count || 0) + 1 }));
+        } catch (e) { alert("Support failed: " + e); }
+        finally { setSupportBusy(false); }
+    };
+
+    const handleUnsupport = async () => {
+        setSupportBusy(true);
+        try {
+            await API.delete(`/proposals/${proposal.id}/support/${bbUserId}`);
+            const s = await API.getCached(`/proposals/${proposal.id}/supporters`).catch(() => []);
+            setSupporters(s || []);
+            setProposal(prev => ({ ...prev, support_count: Math.max(0, (prev.support_count || 0) - 1) }));
+        } catch (e) { alert("Unsupport failed: " + e); }
+        finally { setSupportBusy(false); }
+    };
 
     return (
         <div className="detail-view">
@@ -372,8 +423,59 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                     )}
                 </div>
             </div>
-            {/* Pitch / Description — the agent's persuasive text */}
-            {proposal.proposal_text && (
+
+            {/* ── EditArtifact Diff View ─────────────────── */}
+            {isEdit && oldArtifact && (
+                <div className="detail-section" style={{ border: "1px solid rgba(78,204,163,0.3)", borderRadius: 8, padding: "0.8rem" }}>
+                    <div className="detail-section-title"
+                         style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                         onClick={() => { setDiffExpanded(e => !e); setDiffReviewed(true); }}>
+                        <span>📝 Review Changes {diffReviewed ? "✓" : "(click to review)"}</span>
+                        <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{diffExpanded ? "▲ collapse" : "▼ expand"}</span>
+                    </div>
+                    {diffExpanded && (
+                        <div style={{ marginTop: "0.6rem" }}>
+                            {/* Title change */}
+                            {proposal.val_text && proposal.val_text !== oldArtifact.title && (
+                                <div style={{ marginBottom: "0.8rem" }}>
+                                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--gold)", marginBottom: 4 }}>Title</div>
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.82rem" }}>
+                                        <span style={{ background: "rgba(233,69,96,0.15)", padding: "2px 8px", borderRadius: 4, textDecoration: "line-through", color: "#e94560" }}>
+                                            {oldArtifact.title}
+                                        </span>
+                                        <span>→</span>
+                                        <span style={{ background: "rgba(78,204,163,0.15)", padding: "2px 8px", borderRadius: 4, color: "#4ecca3" }}>
+                                            {proposal.val_text}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            {/* Content comparison */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <div>
+                                    <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#e94560", marginBottom: 4 }}>Current Version</div>
+                                    <pre style={{
+                                        background: "rgba(233,69,96,0.08)", border: "1px solid rgba(233,69,96,0.2)",
+                                        borderRadius: 6, padding: "0.5rem", fontSize: "0.72rem", whiteSpace: "pre-wrap",
+                                        wordBreak: "break-word", maxHeight: 300, overflow: "auto", color: "#ccc", margin: 0
+                                    }}>{oldArtifact.content || "(empty)"}</pre>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#4ecca3", marginBottom: 4 }}>Proposed Version</div>
+                                    <pre style={{
+                                        background: "rgba(78,204,163,0.08)", border: "1px solid rgba(78,204,163,0.2)",
+                                        borderRadius: 6, padding: "0.5rem", fontSize: "0.72rem", whiteSpace: "pre-wrap",
+                                        wordBreak: "break-word", maxHeight: 300, overflow: "auto", color: "#ccc", margin: 0
+                                    }}>{proposal.proposal_text || "(empty)"}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Pitch / Description — for non-EditArtifact proposals show as-is */}
+            {!isEdit && proposal.proposal_text && (
                 <div className="detail-section proposal-pitch-section">
                     <div className="detail-section-title">Proposal Description</div>
                     <div className="proposal-pitch-text">{proposal.proposal_text}</div>
@@ -397,12 +499,11 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                     </div>
                 </div>
             )}
-            {proposal.proposal_type !== "ChangeVariable" && proposal.val_text && (
+            {proposal.proposal_type !== "ChangeVariable" && !isEdit && proposal.val_text && (
                 <div className="detail-section">
                     <div className="detail-section-title">
                         {proposal.proposal_type === "DelegateArtifact" ? "Target Action" :
                          proposal.proposal_type === "CreateArtifact" ? "Artifact Title" :
-                         proposal.proposal_type === "EditArtifact" ? "New Title" :
                          proposal.proposal_type === "CommitArtifact" ? "Commit Order" :
                          "Short Name"}
                     </div>
@@ -439,6 +540,32 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId }) {
                     </div>
                 </div>
             )}
+
+            {/* ── BB Support / Unsupport Button ─────────── */}
+            {bbUserId && isActive && (
+                <div className="detail-section" style={{ textAlign: "center" }}>
+                    {canSupport && (
+                        <button onClick={handleSupport} disabled={supportBusy}
+                            style={{ background: "#4ecca3", color: "#111", border: "none", padding: "0.5rem 1.5rem",
+                                     borderRadius: 6, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", marginRight: 8 }}>
+                            {supportBusy ? "…" : "👍 Support"}
+                        </button>
+                    )}
+                    {canUnsupport && (
+                        <button onClick={handleUnsupport} disabled={supportBusy}
+                            style={{ background: "#e94560", color: "#fff", border: "none", padding: "0.5rem 1.5rem",
+                                     borderRadius: 6, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                            {supportBusy ? "…" : "👎 Unsupport"}
+                        </button>
+                    )}
+                    {isEdit && !diffReviewed && !alreadySupports && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--gold)", marginTop: 6 }}>
+                            ⚠️ Review the changes above before you can support this proposal
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Full data dump — ID, community, pulse */}
             <div className="detail-section">
                 <div className="detail-section-title">Details</div>
@@ -3363,6 +3490,7 @@ function App() {
                 agentsByUserId={agentsByUserId}
                 communityId={communityId}
                 events={events}
+                bbUserId={bbUserId}
             />
         </div>
     );
