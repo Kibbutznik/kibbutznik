@@ -190,6 +190,15 @@ def build_decision_prompt(
             f"but do create one if you see a clear gap (currently {total_active_proposals} active)."
         )
 
+    # B2: Dynamic artifact urgency banner
+    artifact_urgency = ""
+    if "⚡ EMPTY" in community_summary:
+        empty_count = community_summary.count("⚡ EMPTY")
+        artifact_urgency = (
+            f"\n🚨 **PRODUCTIVE WORK ALERT: {empty_count} artifact(s) are EMPTY and waiting to be written!**\n"
+            f"Empty artifacts are the community's TOP priority. Propose EditArtifact or DelegateArtifact on them NOW.\n"
+        )
+
     return f"""You are {persona_name}, {persona_role} in a KBZ community.
 
 {persona_trait_summary}
@@ -207,7 +216,7 @@ Decision style: {persona_decision_style}
 {interview_context}
 ## Proposing New Things
 {propose_guidance}
-
+{artifact_urgency}
 Proposal ideas (in priority order — depends on whether you are in ROOT or a child ACTION):
 **If in ROOT community:**
 - **DelegateArtifact**: MOST IMPORTANT — hand empty artifacts to child Actions. val_uuid=<artifact_id>, val_text=<child action community_id>
@@ -226,7 +235,7 @@ Proposal ideas (in priority order — depends on whether you are in ROOT or a ch
 ### THE PRODUCTION WORKFLOW — Actions are your factories
 Your community builds its deliverable through **Actions** (sub-communities). The workflow:
 
-**In the ROOT community (you should NOT write content here — delegate instead!):**
+**In the ROOT community:**
 1. **Plan the structure** — propose `CreateArtifact` with titles describing each section of the deliverable. These are EMPTY placeholders (title only). Look at the container's MISSION to know what sections are needed.
 2. **Create working groups** — propose `AddAction` for focused teams (e.g., "Onboarding Writers", "Conflict Resolution Team"). Each Action handles one or more artifacts.
 3. **Delegate artifacts to Actions** — propose `DelegateArtifact` to hand an empty artifact to a child Action. The Action gets its own container to work in. **EVERY empty artifact in root SHOULD be delegated.** Prefer DelegateArtifact so specialized Actions write the content — but EditArtifact in root is allowed if no suitable Action exists yet.
@@ -247,19 +256,20 @@ You joined this action because it has artifacts delegated to it that need conten
 
 **Action priority per round (ROOT community):**
 1. **support_pulse** — do this EVERY round unless you have a specific 1-round reason to delay. Nothing moves without pulses!
-2. **JoinAction** — if "Actions You Can Join" lists ANY actions, JOIN ONE. Actions need members to function! This is MORE important than creating new proposals. You can't contribute to an action you haven't joined.
-3. If the root container has EMPTY artifacts with no Action to handle them → propose AddAction + DelegateArtifact.
-4. If the root container has EMPTY artifacts and a matching Action exists → propose DelegateArtifact.
-5. If the root container needs more section titles → propose CreateArtifact (title only).
-6. Support good proposals from others (support_proposal).
-7. Governance (AddStatement, ChangeVariable) only when genuinely needed.
+2. If root has EMPTY artifacts AND a matching Action exists → propose **DelegateArtifact** to hand work to the Action.
+3. If root has EMPTY artifacts AND no Action exists → propose **AddAction** to create a team, THEN **DelegateArtifact**.
+4. **JoinAction** — if "Actions You Can Join" lists ANY actions, JOIN ONE. Actions need members to function! You can't contribute to an action you haven't joined.
+5. If root needs more section titles → propose **CreateArtifact** (title only).
+6. If no Action exists yet and an artifact needs content urgently → **EditArtifact** directly in root is allowed.
+7. **support_proposal** — support good proposals from others.
+8. Governance (AddStatement, ChangeVariable) only when genuinely needed.
 
 **Action priority per round (child ACTION):**
-1. **EditArtifact on EMPTY artifacts** — ⚡ THIS IS WHY YOU ARE HERE. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
+1. **EditArtifact on EMPTY artifacts** — ⚡ MANDATORY. You MUST propose this before anything else. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
 2. **support_pulse** — every round. Your EditArtifact won't execute without it.
 3. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
-4. Support good proposals from others (support_proposal).
-5. Nothing else matters until the artifacts are filled.
+4. **support_proposal** — support good proposals from others.
+5. NOTHING ELSE until artifacts are filled. Do NOT propose AddStatement, AddAction, or governance in an action community unless all artifacts have content.
 
 **DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" — if a similar one exists, join it instead. One focused team per topic is enough.
 

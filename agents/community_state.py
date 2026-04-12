@@ -116,6 +116,113 @@ class CommunitySnapshot:
             pct = 15.0
         return math.ceil(mc * pct / 100)
 
+    def _append_artifact_section(self, lines: list[str], users_cache: dict[str, str], my_user_id: str = "") -> None:
+        """Append artifact container info to the summary lines (called early for visibility)."""
+        if not self.containers:
+            return
+
+        status_label = {1: "OPEN", 2: "PENDING_PARENT (frozen)", 3: "COMMITTED"}
+
+        # Count total empty artifacts across all child-action containers so we
+        # can emit a top-level urgent banner when this IS an action community.
+        is_action_container = any(c.get("delegated_from_artifact_id") for c in self.containers)
+        empty_in_action = sum(
+            1 for c in self.containers if c.get("delegated_from_artifact_id")
+            for a in self.container_artifacts.get(c["id"], [])
+            if not (a.get("content") or "").strip()
+        )
+
+        if is_action_container and empty_in_action > 0:
+            lines.append(
+                f"\n🚨 ACTION REQUIRED: This action has {empty_in_action} EMPTY artifact(s) waiting to be written. "
+                f"You joined this action TO WRITE THEM. Propose EditArtifact on each EMPTY artifact immediately. "
+                f"That is your purpose here."
+            )
+
+        lines.append(f"\n### ★ Artifact Containers ({len(self.containers)}) — what this community is producing:")
+        if is_action_container:
+            lines.append("  *** YOU ARE INSIDE AN ACTION — your job is to WRITE content via EditArtifact ***")
+        else:
+            lines.append("  (CreateArtifact = plan a SLOT (title only, empty body);")
+            lines.append("   DelegateArtifact = hand an artifact to a child Action to work on;")
+            lines.append("   EditArtifact = FILL the body; CommitArtifact = seal and ship upward.)")
+
+        for c in self.containers:
+            cid = c["id"]
+            st = status_label.get(c.get("status"), str(c.get("status")))
+            is_delegated_container = bool(c.get("delegated_from_artifact_id"))
+            origin = " (root)" if not is_delegated_container else f" (delegated from parent — YOUR WORK CONTAINER)"
+            lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid}] — {st}{origin}")
+            mission = (c.get("mission") or "").strip()
+            if mission:
+                lines.append(f"    >>> MISSION: {mission}")
+                if is_delegated_container:
+                    lines.append(
+                        "    >>> Write artifacts that fulfil this mission. Each artifact = one section. "
+                        "Use EditArtifact to fill EMPTY artifacts with real, detailed content."
+                    )
+                else:
+                    lines.append(
+                        "    >>> CreateArtifact here = title-only slot for a section of the deliverable. "
+                        "EditArtifact fills the body. Slogans/principles belong in AddStatement."
+                    )
+            else:
+                lines.append(
+                    "    >>> MISSION: (none set — ask the community what concrete deliverable "
+                    "this container is for, then fill it with real sections, not slogans.)"
+                )
+            arts = self.container_artifacts.get(cid, [])
+            if not arts:
+                if is_delegated_container:
+                    lines.append("    (no artifacts yet — the root community needs to CreateArtifact and DelegateArtifact here first)")
+                else:
+                    lines.append("    (empty — no artifacts yet, propose CreateArtifact to add one)")
+            for a in arts:
+                aid = a["id"]
+                author = users_cache.get(a["author_user_id"], a["author_user_id"][:8])
+                title = a.get("title") or "(untitled)"
+                deleg = self.delegations_out.get(aid)
+                if deleg:
+                    lines.append(
+                        f"    [{aid}] \"{title}\" by {author} — DELEGATED to action "
+                        f"\"{deleg['action_name']}\" "
+                        f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
+                    )
+                elif not (a.get("content") or "").strip():
+                    if is_delegated_container:
+                        lines.append(
+                            f"    [{aid}] \"{title}\" by {author} — "
+                            f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid}"
+                        )
+                    else:
+                        lines.append(
+                            f"    [{aid}] \"{title}\" by {author} — "
+                            f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={aid}, val_text=<action_id>), "
+                            f"or EditArtifact directly if no suitable Action exists (val_uuid={aid})"
+                        )
+                else:
+                    full_content = (a.get("content") or "").strip()
+                    lines.append(f"    [{aid}] \"{title}\" by {author} — current content:")
+                    lines.append(f"      {full_content}")
+                    lines.append(f"      → To improve: EditArtifact val_uuid={aid}")
+            if c.get("status") == 1 and arts:
+                all_filled = all((a.get("content") or "").strip() for a in arts if not self.delegations_out.get(a["id"]))
+                if all_filled and is_delegated_container:
+                    lines.append(
+                        f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid} "
+                        f"val_text=JSON list of artifact ids in order"
+                    )
+                elif not is_delegated_container:
+                    lines.append(
+                        f"    → To commit: CommitArtifact with val_uuid={cid} "
+                        f"and val_text=JSON list of artifact ids in chosen order"
+                    )
+            if c.get("status") == 2:
+                lines.append("    → Frozen pending parent verdict — no mutations allowed.")
+
+        # Bridge reminder to actions section below
+        lines.append("\n  → See \"Active Actions\" and \"Actions You Can Join\" below — create or join actions when artifacts need teams to work on them.")
+
     def summarize(self, my_user_id: str = "", users_cache: dict[str, str] | None = None) -> str:
         """Generate a human-readable summary of the community state for the LLM."""
         users_cache = users_cache or {}
@@ -142,6 +249,9 @@ class CommunitySnapshot:
                 lines.append(f"  {i}. [id={s['id']}] {s['statement_text']}")
         else:
             lines.append("\n### Community Rules: None yet — consider proposing AddStatement to establish community values!")
+
+        # ★ Artifact containers FIRST — productive work is the community's purpose
+        self._append_artifact_section(lines, users_cache, my_user_id)
 
         if self.actions:
             active_actions = [a for a in self.actions if a.get("status") == 1]
@@ -290,108 +400,6 @@ class CommunitySnapshot:
                 text = (m.get("comment_text") or "")[:200]
                 lines.append(f"  {author}: {text}")
             lines.append("  (Use send_chat to participate in the community discussion.)")
-
-        # Artifact containers (the productive layer — what this community is BUILDING)
-        if self.containers:
-            status_label = {1: "OPEN", 2: "PENDING_PARENT (frozen)", 3: "COMMITTED"}
-
-            # Count total empty artifacts across all child-action containers so we
-            # can emit a top-level urgent banner when this IS an action community.
-            is_action_container = any(c.get("delegated_from_artifact_id") for c in self.containers)
-            empty_in_action = sum(
-                1 for c in self.containers if c.get("delegated_from_artifact_id")
-                for a in self.container_artifacts.get(c["id"], [])
-                if not (a.get("content") or "").strip()
-            )
-
-            if is_action_container and empty_in_action > 0:
-                lines.append(
-                    f"\n🚨 ACTION REQUIRED: This action has {empty_in_action} EMPTY artifact(s) waiting to be written. "
-                    f"You joined this action TO WRITE THEM. Propose EditArtifact on each EMPTY artifact immediately. "
-                    f"That is your purpose here."
-                )
-
-            lines.append(f"\n### Artifact Containers ({len(self.containers)}) — what this community is producing:")
-            if is_action_container:
-                lines.append("  *** YOU ARE INSIDE AN ACTION — your job is to WRITE content via EditArtifact ***")
-            else:
-                lines.append("  (CreateArtifact = plan a SLOT (title only, empty body);")
-                lines.append("   DelegateArtifact = hand an artifact to a child Action to work on;")
-                lines.append("   EditArtifact = FILL the body; CommitArtifact = seal and ship upward.)")
-
-            for c in self.containers:
-                cid = c["id"]
-                st = status_label.get(c.get("status"), str(c.get("status")))
-                is_delegated_container = bool(c.get("delegated_from_artifact_id"))
-                origin = " (root)" if not is_delegated_container else f" (delegated from parent — YOUR WORK CONTAINER)"
-                lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid}] — {st}{origin}")
-                mission = (c.get("mission") or "").strip()
-                if mission:
-                    lines.append(f"    >>> MISSION: {mission}")
-                    if is_delegated_container:
-                        lines.append(
-                            "    >>> Write artifacts that fulfil this mission. Each artifact = one section. "
-                            "Use EditArtifact to fill EMPTY artifacts with real, detailed content."
-                        )
-                    else:
-                        lines.append(
-                            "    >>> CreateArtifact here = title-only slot for a section of the deliverable. "
-                            "EditArtifact fills the body. Slogans/principles belong in AddStatement."
-                        )
-                else:
-                    lines.append(
-                        "    >>> MISSION: (none set — ask the community what concrete deliverable "
-                        "this container is for, then fill it with real sections, not slogans.)"
-                    )
-                arts = self.container_artifacts.get(cid, [])
-                if not arts:
-                    if is_delegated_container:
-                        lines.append("    (no artifacts yet — the root community needs to CreateArtifact and DelegateArtifact here first)")
-                    else:
-                        lines.append("    (empty — no artifacts yet, propose CreateArtifact to add one)")
-                for a in arts:
-                    aid = a["id"]
-                    author = users_cache.get(a["author_user_id"], a["author_user_id"][:8])
-                    title = a.get("title") or "(untitled)"
-                    preview = (a.get("content") or "").replace("\n", " ")[:120]
-                    deleg = self.delegations_out.get(aid)
-                    if deleg:
-                        lines.append(
-                            f"    [{aid}] \"{title}\" by {author} — DELEGATED to action "
-                            f"\"{deleg['action_name']}\" "
-                            f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
-                        )
-                    elif not (a.get("content") or "").strip():
-                        if is_delegated_container:
-                            lines.append(
-                                f"    [{aid}] \"{title}\" by {author} — "
-                                f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid}"
-                            )
-                        else:
-                            lines.append(
-                                f"    [{aid}] \"{title}\" by {author} — "
-                                f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={aid}, val_text=<action_id>), "
-                                f"or EditArtifact directly if no suitable Action exists (val_uuid={aid})"
-                            )
-                    else:
-                        full_content = (a.get("content") or "").strip()
-                        lines.append(f"    [{aid}] \"{title}\" by {author} — current content:")
-                        lines.append(f"      {full_content}")
-                        lines.append(f"      → To improve: EditArtifact val_uuid={aid}")
-                if c.get("status") == 1 and arts:
-                    all_filled = all((a.get("content") or "").strip() for a in arts if not self.delegations_out.get(a["id"]))
-                    if all_filled and is_delegated_container:
-                        lines.append(
-                            f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid} "
-                            f"val_text=JSON list of artifact ids in order"
-                        )
-                    elif not is_delegated_container:
-                        lines.append(
-                            f"    → To commit: CommitArtifact with val_uuid={cid} "
-                            f"and val_text=JSON list of artifact ids in chosen order"
-                        )
-                if c.get("status") == 2:
-                    lines.append("    → Frozen pending parent verdict — no mutations allowed.")
 
         # Key variables
         important_vars = ["PulseSupport", "ProposalSupport", "Membership", "ThrowOut", "MaxAge"]

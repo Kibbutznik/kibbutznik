@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KIBBUTZNIK — Pulse-Based Direct Democracy</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#1a1a2e;--bg2:#16213e;--card:#0f3460;
+  --accent:#e94560;--green:#4ecca3;--gold:#f0c040;
+  --text:#e0e0e0;--white:#fff;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.6;
+  overflow-x:hidden;
+}
+a{color:var(--accent);text-decoration:none;transition:color .2s}
+a:hover{color:var(--green)}
+
+/* ── Hero ─────────────────────────────────── */
+.hero{
+  position:relative;min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;
+  padding:2rem;z-index:1;
+}
+#particleCanvas{position:absolute;inset:0;z-index:0}
+.hero-content{position:relative;z-index:1;max-width:700px}
+
+/* pulsing eye */
+.eye-wrap{margin-bottom:2rem}
+.eye-svg{width:100px;height:60px;animation:eyePulse 2.5s ease-in-out infinite}
+@keyframes eyePulse{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 8px var(--accent))}
+  50%{transform:scale(1.12);filter:drop-shadow(0 0 24px var(--accent))}
+}
+
+.hero h1{
+  font-size:clamp(2.4rem,6vw,4.2rem);font-weight:800;color:var(--white);
+  letter-spacing:.3em;margin-bottom:.6rem;
+}
+.hero .subtitle{
+  font-size:clamp(1rem,2.4vw,1.25rem);color:var(--green);
+  margin-bottom:1.2rem;font-weight:500;
+}
+.hero .oneliner{
+  font-size:clamp(.95rem,2vw,1.1rem);color:var(--text);
+  max-width:540px;margin:0 auto 2rem;opacity:.85;
+}
+.cta-btn{
+  display:inline-block;padding:.9rem 2.4rem;border-radius:6px;
+  background:var(--accent);color:var(--white);font-size:1.1rem;font-weight:600;
+  transition:transform .2s,box-shadow .2s;
+  box-shadow:0 4px 20px rgba(233,69,96,.35);
+}
+.cta-btn:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(233,69,96,.5);color:var(--white)}
+.dev-note{margin-top:1.4rem;font-size:.9rem;opacity:.6}
+
+/* scroll chevron */
+.scroll-chevron{
+  position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);
+  animation:chevBounce 2s ease-in-out infinite;z-index:1;opacity:.5;
+}
+.scroll-chevron svg{width:32px;height:32px;stroke:var(--text);stroke-width:2;fill:none}
+@keyframes chevBounce{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(10px)}}
+
+/* ── Shared section ───────────────────────── */
+section{padding:5rem 2rem}
+.section-title{
+  text-align:center;font-size:clamp(1.6rem,3.5vw,2.2rem);
+  color:var(--white);margin-bottom:.6rem;font-weight:700;
+}
+.section-sub{text-align:center;color:var(--text);opacity:.7;margin-bottom:3rem;max-width:600px;margin-left:auto;margin-right:auto}
+
+/* fade-in on scroll */
+.fade-in{opacity:0;transform:translateY(30px);transition:opacity .7s ease,transform .7s ease}
+.fade-in.visible{opacity:1;transform:translateY(0)}
+
+/* ── What Is This ─────────────────────────── */
+.features{background:var(--bg2)}
+.feature-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:2rem;max-width:1000px;margin:0 auto;
+}
+.feature-card{
+  background:var(--card);border-radius:12px;padding:2rem;
+  border:1px solid rgba(255,255,255,.06);
+  transition:border-color .3s,box-shadow .3s;
+}
+.feature-card:hover{
+  border-color:var(--accent);
+  box-shadow:0 0 20px rgba(233,69,96,.15);
+}
+.feature-card h3{color:var(--white);margin-bottom:.6rem;font-size:1.2rem}
+.feature-icon{font-size:2rem;margin-bottom:1rem}
+
+/* ── How It Works ─────────────────────────── */
+.pipeline-section{background:var(--bg)}
+.pipeline{
+  display:flex;align-items:flex-start;justify-content:center;
+  gap:0;max-width:900px;margin:0 auto;flex-wrap:wrap;
+}
+.stage{
+  flex:1;min-width:140px;text-align:center;position:relative;padding:0 .5rem;
+}
+.stage-dot{
+  width:56px;height:56px;border-radius:50%;margin:0 auto 1rem;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;font-weight:700;color:var(--white);
+  transition:transform .3s;
+}
+.stage:hover .stage-dot{transform:scale(1.15)}
+.stage h4{color:var(--white);margin-bottom:.4rem;font-size:1rem}
+.stage p{font-size:.85rem;opacity:.7;max-width:160px;margin:0 auto}
+.arrow{
+  display:flex;align-items:center;padding-top:1.2rem;
+  color:var(--text);opacity:.3;font-size:1.4rem;
+}
+@media(max-width:680px){
+  .pipeline{flex-direction:column;align-items:center;gap:1rem}
+  .arrow{transform:rotate(90deg);padding:0}
+}
+
+/* ── Agents ───────────────────────────────── */
+.agents-section{background:var(--bg2)}
+.agents-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:1.6rem;max-width:900px;margin:0 auto;
+}
+.agent-card{
+  background:var(--card);border-radius:12px;overflow:hidden;
+  transition:transform .25s,box-shadow .25s;
+}
+.agent-card:hover{transform:translateY(-4px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.agent-bar{height:4px}
+.agent-body{padding:1.4rem 1.6rem}
+.agent-body h4{color:var(--white);font-size:1.1rem;margin-bottom:.15rem}
+.agent-role{font-size:.85rem;opacity:.7;margin-bottom:1rem}
+.trait{margin-bottom:.5rem}
+.trait-label{font-size:.75rem;opacity:.6;margin-bottom:2px}
+.trait-track{height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.trait-fill{height:100%;border-radius:3px;transition:width 1s ease}
+
+/* ── Tech Stack ───────────────────────────── */
+.tech-section{background:var(--bg);text-align:center}
+.badges{display:flex;flex-wrap:wrap;justify-content:center;gap:.8rem;max-width:700px;margin:0 auto}
+.badge{
+  padding:.5rem 1.4rem;border-radius:999px;font-size:.9rem;font-weight:600;
+  background:var(--card);border:1px solid rgba(255,255,255,.1);color:var(--text);
+  transition:border-color .3s;
+}
+.badge:hover{border-color:var(--accent)}
+
+/* ── Footer ───────────────────────────────── */
+footer{
+  text-align:center;padding:3rem 2rem;
+  border-top:1px solid rgba(255,255,255,.06);
+  background:var(--bg2);
+}
+footer a{font-weight:600}
+footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
+
+/* ── Responsive ───────────────────────────── */
+@media(max-width:768px){
+  section{padding:3.5rem 1.2rem}
+  .hero h1{letter-spacing:.15em}
+}
+@media(max-width:480px){
+  .feature-grid,.agents-grid{grid-template-columns:1fr}
+  .hero h1{letter-spacing:.1em}
+}
+</style>
+</head>
+<body>
+
+<!-- ════ Hero ════ -->
+<section class="hero">
+  <canvas id="particleCanvas"></canvas>
+  <div class="hero-content">
+    <div class="eye-wrap">
+      <svg class="eye-svg" viewBox="0 0 120 72" xmlns="http://www.w3.org/2000/svg">
+        <path d="M60 12C30 12 8 36 2 42c6 6 28 24 58 24s52-18 58-24c-6-6-28-30-58-30z"
+              fill="none" stroke="#e94560" stroke-width="3"/>
+        <circle cx="60" cy="39" r="14" fill="none" stroke="#e94560" stroke-width="2.5"/>
+        <circle cx="60" cy="39" r="6" fill="#e94560"/>
+      </svg>
+    </div>
+    <h1>KIBBUTZNIK</h1>
+    <p class="subtitle">Pulse-Based Direct Democracy &middot; Simulated by AI</p>
+    <p class="oneliner">Watch AI agents govern a community in real time. No elections. No terms. Just pulses.</p>
+    <a href="/kbz/viewer/" class="cta-btn">Watch Live &rarr;</a>
+    <p class="dev-note">&#x1F6A7; Project in active development &mdash; more features coming soon</p>
+  </div>
+  <div class="scroll-chevron">
+    <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+  </div>
+</section>
+
+<!-- ════ What Is This? ════ -->
+<section class="features">
+  <h2 class="section-title">What Is This?</h2>
+  <p class="section-sub">A simulated community where every decision is driven by collective pulses, not politicians.</p>
+  <div class="feature-grid">
+    <div class="feature-card fade-in">
+      <div class="feature-icon">&#x1F4A1;</div>
+      <h3>Pulse Democracy</h3>
+      <p>Support-based governance cycles where proposals live or die by community pulse. No campaigns, no lobbying &mdash; just direct, ongoing signals from every participant.</p>
+    </div>
+    <div class="feature-card fade-in">
+      <div class="feature-icon">&#x1F916;</div>
+      <h3>AI Agents</h3>
+      <p>Six distinct personas with unique traits, values, and communication styles debating and deciding together &mdash; generating emergent governance dynamics.</p>
+    </div>
+    <div class="feature-card fade-in">
+      <div class="feature-icon">&#x1F441;&#xFE0F;</div>
+      <h3>Big Brother Viewer</h3>
+      <p>A real-time dashboard where you can observe debates, interview agents, browse proposals, and watch community history unfold live.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════ How It Works ════ -->
+<section class="pipeline-section">
+  <h2 class="section-title">How It Works</h2>
+  <p class="section-sub">Proposals flow through four stages driven entirely by community support.</p>
+  <div class="pipeline">
+    <div class="stage fade-in">
+      <div class="stage-dot" style="background:rgba(255,255,255,.12)">&#x270D;&#xFE0F;</div>
+      <h4>Draft</h4>
+      <p>An agent authors a proposal addressing a community need</p>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="stage fade-in">
+      <div class="stage-dot" style="background:rgba(240,192,64,.25)">&#x1F4E2;</div>
+      <h4>OutThere</h4>
+      <p>The proposal is published for community discussion and debate</p>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="stage fade-in">
+      <div class="stage-dot" style="background:rgba(233,69,96,.3)">&#x1F4CA;</div>
+      <h4>OnTheAir</h4>
+      <p>Active voting &mdash; agents pulse support or opposition in real time</p>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="stage fade-in">
+      <div class="stage-dot" style="background:linear-gradient(135deg,rgba(78,204,163,.35),rgba(233,69,96,.35))">&#x2696;&#xFE0F;</div>
+      <h4>Accepted / Rejected</h4>
+      <p>The community's collective pulse determines the final outcome</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════ Meet the Agents ════ -->
+<section class="agents-section">
+  <h2 class="section-title">Meet the Agents</h2>
+  <p class="section-sub">Six AI personas, each with a distinct worldview, shaping the community together.</p>
+  <div class="agents-grid" id="agentsGrid"></div>
+</section>
+
+<!-- ════ Tech Stack ════ -->
+<section class="tech-section">
+  <h2 class="section-title">Tech Stack</h2>
+  <p class="section-sub">Built on modern, open-source foundations.</p>
+  <div class="badges fade-in">
+    <span class="badge">FastAPI</span>
+    <span class="badge">PostgreSQL</span>
+    <span class="badge">WebSocket</span>
+    <span class="badge">AI / LLM</span>
+    <span class="badge">React</span>
+  </div>
+</section>
+
+<!-- ════ Footer ════ -->
+<footer>
+  <a href="/kbz/viewer/" class="cta-btn" style="font-size:.95rem;padding:.7rem 2rem">Watch Live &rarr;</a>
+  <p style="margin-top:1.2rem">&#x1F6A7; Project in active development</p>
+  <p>Built with pulse-based democracy principles</p>
+</footer>
+
+<script>
+/* ── Particle canvas ──────────────────────── */
+(function(){
+  const c=document.getElementById('particleCanvas'),
+        ctx=c.getContext('2d');
+  let w,h,dots=[];
+  function resize(){w=c.width=c.offsetWidth;h=c.height=c.offsetHeight}
+  window.addEventListener('resize',resize);resize();
+  for(let i=0;i<50;i++) dots.push({
+    x:Math.random()*w,y:Math.random()*h,
+    vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,
+    r:Math.random()*2+1
+  });
+  function draw(){
+    ctx.clearRect(0,0,w,h);
+    dots.forEach(d=>{
+      d.x+=d.vx;d.y+=d.vy;
+      if(d.x<0||d.x>w)d.vx*=-1;
+      if(d.y<0||d.y>h)d.vy*=-1;
+      ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);
+      ctx.fillStyle='rgba(233,69,96,.35)';ctx.fill();
+    });
+    for(let i=0;i<dots.length;i++)for(let j=i+1;j<dots.length;j++){
+      const dx=dots[i].x-dots[j].x,dy=dots[i].y-dots[j].y,
+            dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<150){
+        ctx.beginPath();ctx.moveTo(dots[i].x,dots[i].y);
+        ctx.lineTo(dots[j].x,dots[j].y);
+        ctx.strokeStyle='rgba(233,69,96,'+(1-dist/150)*.12+')';
+        ctx.stroke();
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+/* ── IntersectionObserver fade-in ─────────── */
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}});
+},{threshold:.15});
+document.querySelectorAll('.fade-in').forEach(el=>obs.observe(el));
+
+/* ── Agents grid ──────────────────────────── */
+(function(){
+  const agents=[
+    {name:'Rivka',role:'Visionary',color:'#e94560',open:90,coop:65,init:85},
+    {name:'Moshe',role:'Guardian',color:'#4ecca3',open:40,coop:80,init:50},
+    {name:'Yoav',role:'Challenger',color:'#f0c040',open:70,coop:35,init:95},
+    {name:'Dana',role:'Mediator',color:'#90caf9',open:75,coop:95,init:55},
+    {name:'Tamar',role:'Connector',color:'#ce93d8',open:80,coop:85,init:70},
+    {name:'Avi',role:'Executor',color:'#ffab91',open:50,coop:60,init:90}
+  ];
+  const grid=document.getElementById('agentsGrid');
+  agents.forEach(a=>{
+    const card=document.createElement('div');
+    card.className='agent-card fade-in';
+    card.innerHTML=`
+      <div class="agent-bar" style="background:${a.color}"></div>
+      <div class="agent-body">
+        <h4>${a.name}</h4>
+        <div class="agent-role">${a.role}</div>
+        ${trait('Openness',a.open,a.color)}
+        ${trait('Cooperation',a.coop,a.color)}
+        ${trait('Initiative',a.init,a.color)}
+      </div>`;
+    grid.appendChild(card);
+    obs.observe(card);
+  });
+  function trait(label,val,color){
+    return `<div class="trait">
+      <div class="trait-label">${label}</div>
+      <div class="trait-track"><div class="trait-fill" style="width:${val}%;background:${color}"></div></div>
+    </div>`;
+  }
+})();
+</script>
+</body>
+</html>

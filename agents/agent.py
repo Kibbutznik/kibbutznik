@@ -361,6 +361,24 @@ class Agent:
                 if ptype in pitch_safe_types and pitch and pitch.lower() not in ptext.lower():
                     ptext = f"{ptext}\n\n{pitch}" if ptext else pitch
 
+                # --- EditArtifact pre-flight validation ---
+                if ptype == "EditArtifact":
+                    all_artifact_ids = {
+                        a["id"]
+                        for arts in snapshot.container_artifacts.values()
+                        for a in arts
+                    }
+                    if not val_uuid or val_uuid not in all_artifact_ids:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"EditArtifact skipped: artifact {(val_uuid or '')[:8]} not found in community", False)
+
+                # --- CreateArtifact pre-flight validation ---
+                if ptype == "CreateArtifact":
+                    valid_container_ids = {c["id"] for c in snapshot.containers}
+                    if not val_uuid or val_uuid not in valid_container_ids:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"CreateArtifact skipped: container {(val_uuid or '')[:8]} not found in community", False)
+
                 # --- DelegateArtifact pre-flight validation ---
                 if ptype == "DelegateArtifact":
                     artifact_id = val_uuid or ""
