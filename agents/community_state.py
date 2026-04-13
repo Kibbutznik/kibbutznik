@@ -297,6 +297,25 @@ class CommunitySnapshot:
 
         promote_threshold = self._proposal_support_threshold()
 
+        def _append_edit_diff(p: dict, lines: list[str]) -> None:
+            """For EditArtifact proposals, show old vs new so agent can compare before supporting."""
+            if p.get("proposal_type") != "EditArtifact":
+                return
+            old = (p.get("_old_content") or "").strip()
+            new = (p.get("proposal_text") or "").strip()
+            new_title = (p.get("val_text") or "").strip()
+            if not old and not new:
+                return
+            lines.append("    ┌─ REVIEW CHANGES (compare before supporting!) ─┐")
+            if new_title:
+                lines.append(f"    │ New title: \"{new_title}\"")
+            # Truncate to keep summary manageable
+            old_preview = old[:500] + ("…" if len(old) > 500 else "")
+            new_preview = new[:500] + ("…" if len(new) > 500 else "")
+            lines.append(f"    │ CURRENT: {old_preview if old else '(empty)'}")
+            lines.append(f"    │ PROPOSED: {new_preview if new else '(empty)'}")
+            lines.append("    └─ Support ONLY if the proposed version is an improvement ─┘")
+
         if self.proposals_out_there:
             lines.append(f"\n### Proposals Gathering Support — need {promote_threshold} to reach OnTheAir ({len(self.proposals_out_there)}):")
             for p in self.proposals_out_there:
@@ -312,6 +331,7 @@ class CommunitySnapshot:
                     f"by {creator} | support: {support}/{accept_threshold} | {will_promote} |{age_warn}"
                     f" | id: {p['id']}"
                 )
+                _append_edit_diff(p, lines)
                 # Warn agents NOT to JoinAction for AddAction proposals that haven't been accepted yet
                 if p["proposal_type"] == "AddAction":
                     lines.append(
@@ -343,6 +363,7 @@ class CommunitySnapshot:
                     f"by {creator} | support: {support}/{threshold} needed → **{verdict}**"
                     f" | id: {p['id']}"
                 )
+                _append_edit_diff(p, lines)
                 if p["proposal_type"] == "AddAction":
                     lines.append(
                         f"    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
@@ -605,16 +626,31 @@ async def observe_community(
 
         elif ptype in ("EditArtifact", "RemoveArtifact"):
             art_title = artifact_title_cache.get(val_uuid)
+            old_content = None
             if not art_title and val_uuid:
                 try:
                     hist = await client.get_artifact_history(val_uuid)
                     if hist:
                         art_title = hist[-1].get("title") or val_uuid[:8]
                         artifact_title_cache[val_uuid] = art_title
+                        if ptype == "EditArtifact":
+                            old_content = hist[-1].get("content") or ""
                 except Exception:
                     art_title = val_uuid[:8]
+            # For EditArtifact: also try to get old content from containers
+            if ptype == "EditArtifact" and old_content is None and val_uuid:
+                for arts in snapshot.container_artifacts.values():
+                    for a in arts:
+                        if a["id"] == val_uuid:
+                            old_content = a.get("content") or ""
+                            break
+                    if old_content is not None:
+                        break
             verb = "Edit" if ptype == "EditArtifact" else "Remove"
             p["_display"] = f'{verb}: "{art_title or val_uuid[:8]}"'
+            # Stash old content so agents can compare before supporting
+            if ptype == "EditArtifact" and old_content is not None:
+                p["_old_content"] = old_content
 
         elif ptype == "CommitArtifact" and val_uuid:
             # Show the container title

@@ -261,14 +261,14 @@ You joined this action because it has artifacts delegated to it that need conten
 4. **JoinAction** — if "Actions You Can Join" lists ANY actions, JOIN ONE. Actions need members to function! You can't contribute to an action you haven't joined.
 5. If root needs more section titles → propose **CreateArtifact** (title only).
 6. If no Action exists yet and an artifact needs content urgently → **EditArtifact** directly in root is allowed.
-7. **support_proposal** — support good proposals from others.
+7. **support_proposal** — support good proposals from others. **For EditArtifact proposals: ALWAYS read the CURRENT vs PROPOSED diff shown in the community state before deciding. Only support if the proposed version is genuinely better.**
 8. Governance (AddStatement, ChangeVariable) only when genuinely needed.
 
 **Action priority per round (child ACTION):**
 1. **EditArtifact on EMPTY artifacts** — ⚡ MANDATORY. You MUST propose this before anything else. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
 2. **support_pulse** — every round. Your EditArtifact won't execute without it.
 3. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
-4. **support_proposal** — support good proposals from others.
+4. **support_proposal** — support good proposals from others. **For EditArtifact: read the CURRENT vs PROPOSED diff first — only support if the new version is better.**
 5. NOTHING ELSE until artifacts are filled. Do NOT propose AddStatement, governance, or other distractions unless all artifacts have content.
 6. If ALL artifacts are filled AND a task is too large for the current team → propose **AddAction** to create a sub-action. Actions can nest as deep as needed.
 
