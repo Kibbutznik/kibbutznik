@@ -2354,24 +2354,33 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
                 {newest.length === 0 && (
                     <div className="empty-state">Waiting for simulation to start...</div>
                 )}
-                {newest.map((ev, i) => (
-                    <div className="event-item" key={`${ev.time}-${i}`}>
-                        <span className="event-time">{formatTime(ev.time)}</span>
-                        <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
-                              onClick={() => {
-                                  // Find user_id for this agent name
-                                  const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
-                                  if (agent) openDetail("user", agent.user_id, ev.agent);
-                              }}>
-                            {ev.agent}
-                        </span>
-                        <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
-                        <div className="event-details">
-                            <LinkedDetails details={ev.details} refId={ev.ref_id} openDetail={openDetail} />
-                            {ev.reason && <div className="event-reason">{ev.reason}</div>}
+                {newest.map((ev, i) => {
+                    // Determine clickable entity type from action
+                    const refType = ev.action === 'send_chat' ? null
+                        : ev.action === 'edit_artifact' ? 'artifact'
+                        : 'proposal';
+                    const isClickable = !!(ev.ref_id && openDetail);
+                    return (
+                        <div className={`event-item ${isClickable ? 'clickable' : ''}`}
+                             key={`${ev.time}-${i}`}
+                             onClick={isClickable ? () => openDetail(refType, ev.ref_id, (ev.details || '').slice(0, 40)) : undefined}>
+                            <span className="event-time">{formatTime(ev.time)}</span>
+                            <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
+                                  onClick={(e) => {
+                                      e.stopPropagation();
+                                      const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
+                                      if (agent) openDetail("user", agent.user_id, ev.agent);
+                                  }}>
+                                {ev.agent}
+                            </span>
+                            <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
+                            <div className="event-details">
+                                {ev.details && <span>{ev.details}</span>}
+                                {ev.reason && <div className="event-reason">{ev.reason}</div>}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
