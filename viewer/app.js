@@ -1124,7 +1124,7 @@ function ActionTreeTab({ communityId, rootCommunityId, openDetail, onNavigate })
 }
 
 // ── Compact Sidebar Action Tree (always visible alongside main content) ────
-function ActionSidebar({ rootCommunityId, activeCommunityId, onNavigate, openDetail, round }) {
+function ActionSidebar({ rootCommunityId, activeCommunityId, onNavigate, openDetail, round, isOpen, onClose }) {
     const [actions, setActions] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -1137,31 +1137,99 @@ function ActionSidebar({ rootCommunityId, activeCommunityId, onNavigate, openDet
             .finally(() => setLoading(false));
     }, [rootCommunityId, round]);
 
-    // Don't show sidebar if no actions exist
+    // Don't show sidebar if no actions exist (desktop only — on mobile it's hidden by default)
     if (!loading && actions.length === 0) return null;
 
+    function handleNav(id, name) {
+        onNavigate(id, name);
+        if (onClose) onClose();  // auto-close on mobile
+    }
+
     return (
-        <div className="action-sidebar">
-            <div className="action-sidebar-title">Communities</div>
-            <div
-                className={`action-sidebar-item ${!activeCommunityId ? "active" : ""}`}
+        <React.Fragment>
+            {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
+            <div className={`action-sidebar ${isOpen ? 'open' : ''}`}>
+                <div className="action-sidebar-title">Communities</div>
+                <div
+                    className={`action-sidebar-item ${!activeCommunityId ? "active" : ""}`}
+                    onClick={() => handleNav(null, null)}
+                >
+                    🏠 Root
+                </div>
+                {loading && <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: "0.75rem" }}>Loading...</div>}
+                {actions.map(a => {
+                    const isActive = activeCommunityId === a.action_id;
+                    return (
+                        <div
+                            key={a.action_id}
+                            className={`action-sidebar-item ${isActive ? "active" : ""}`}
+                            onClick={() => handleNav(a.action_id, a.name || a.action_id.slice(0, 8))}
+                            title={a.name || a.action_id}
+                        >
+                            <span className="action-sidebar-icon">⚡</span>
+                            <span className="action-sidebar-name">{a.name || a.action_id.slice(0, 8)}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        </React.Fragment>
+    );
+}
+
+// ── Action Breadcrumb ───────────────────────────────
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+const _communityCache = {};
+
+function ActionBreadcrumb({ activeCommunityId, rootCommunityId, rootCommunityName, onNavigate }) {
+    const [chain, setChain] = useState([]);
+
+    useEffect(() => {
+        if (!activeCommunityId || !rootCommunityId) { setChain([]); return; }
+
+        async function buildChain() {
+            const path = [];
+            let currentId = activeCommunityId;
+
+            // Walk up parent_id until we reach root or zero UUID
+            while (currentId && currentId !== rootCommunityId && currentId !== ZERO_UUID) {
+                let comm = _communityCache[currentId];
+                if (!comm) {
+                    try {
+                        comm = await API.get(`/communities/${currentId}`);
+                        _communityCache[currentId] = comm;
+                    } catch { break; }
+                }
+                path.unshift({ id: comm.id, name: comm.name || comm.id.slice(0, 8) });
+                currentId = comm.parent_id;
+            }
+
+            setChain(path);
+        }
+        buildChain();
+    }, [activeCommunityId, rootCommunityId]);
+
+    if (chain.length === 0) return null;
+
+    return (
+        <div className="action-breadcrumb">
+            <span
+                className="action-breadcrumb-item"
                 onClick={() => onNavigate(null, null)}
             >
-                🏠 Root
-            </div>
-            {loading && <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: "0.75rem" }}>Loading...</div>}
-            {actions.map(a => {
-                const isActive = activeCommunityId === a.action_id;
+                {rootCommunityName || 'Root'}
+            </span>
+            {chain.map((item, i) => {
+                const isCurrent = i === chain.length - 1;
                 return (
-                    <div
-                        key={a.action_id}
-                        className={`action-sidebar-item ${isActive ? "active" : ""}`}
-                        onClick={() => onNavigate(a.action_id, a.name || a.action_id.slice(0, 8))}
-                        title={a.name || a.action_id}
-                    >
-                        <span className="action-sidebar-icon">⚡</span>
-                        <span className="action-sidebar-name">{a.name || a.action_id.slice(0, 8)}</span>
-                    </div>
+                    <React.Fragment key={item.id}>
+                        <span className="action-breadcrumb-sep">&rsaquo;</span>
+                        <span
+                            className={`action-breadcrumb-item ${isCurrent ? 'current' : ''}`}
+                            onClick={isCurrent ? undefined : () => onNavigate(item.id, item.name)}
+                        >
+                            {item.name}
+                        </span>
+                    </React.Fragment>
                 );
             })}
         </div>
@@ -1397,51 +1465,25 @@ function LLMSwitcher({ currentPreset }) {
 }
 
 // ── Header ──────────────────────────────────────────────
-function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot }) {
+function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar }) {
     const community = status?.community;
-    const isViewingAction = !!activeCommunityId;
     return (
         <div className="header">
-            <div className="header-title">
-                KBZ BIG BROTHER
-                {isViewingAction ? (
-                    <React.Fragment>
-                        <span
-                            className="entity-link"
-                            style={{ marginLeft: 8, opacity: 0.6 }}
-                            onClick={onBackToRoot}
-                        >
-                            {community?.name || "Root"}
-                        </span>
-                        <span style={{ margin: "0 6px", color: "var(--text-muted)" }}>&rsaquo;</span>
-                        <span
-                            className="entity-link"
-                            style={{ fontWeight: 700 }}
-                            onClick={() => openDetail("community", activeCommunityId, activeCommunityName)}
-                        >
-                            {activeCommunityName || activeCommunityId?.slice(0, 8)}
-                        </span>
-                        <button
-                            className="back-to-root-btn"
-                            onClick={onBackToRoot}
-                            style={{
-                                marginLeft: 12, padding: "2px 10px", fontSize: "0.75rem",
-                                background: "var(--surface)", border: "1px solid var(--border)",
-                                color: "var(--text-secondary)", borderRadius: 4, cursor: "pointer",
-                            }}
-                        >
-                            ← Back to Root
-                        </button>
-                    </React.Fragment>
-                ) : (
+            <div className="header-left">
+                <button className="hamburger-btn" onClick={onToggleSidebar} title="Toggle sidebar">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/>
+                    </svg>
+                </button>
+                <div className="header-title">
+                    KBZ BIG BROTHER
                     <span
-                        className="entity-link"
-                        style={{ marginLeft: 8 }}
+                        className="entity-link header-community-name"
                         onClick={() => community && openDetail("community", community.id, community.name)}
                     >
                         {community?.name || "Loading..."}
                     </span>
-                )}
+                </div>
             </div>
             <div className="header-stats">
                 <div className="header-stat">
@@ -1452,13 +1494,13 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                     <span className="label">Members</span>
                     <span className="value">{community?.member_count || 0}</span>
                 </div>
-                <div className="header-stat">
+                <div className="header-stat header-stat-events">
                     <span className="label">Events</span>
                     <span className="value">{status?.total_events || 0}</span>
                 </div>
                 <LLMSwitcher currentPreset={status?.llm?.preset} />
                 {status?.llm?.avg_latency_s > 0 && (
-                    <div className="header-stat" title={`${status.llm.calls} calls, ${status.llm.errors} errors`}>
+                    <div className="header-stat header-stat-latency" title={`${status.llm.calls} calls, ${status.llm.errors} errors`}>
                         <span className="label">Avg</span>
                         <span className="value" style={{ fontSize: "0.75rem" }}>{status.llm.avg_latency_s}s</span>
                     </div>
@@ -3242,10 +3284,9 @@ function formatNewsEvent(event) {
             const name = agentName || 'Agent';
             // Skip noisy/uninteresting events
             if (action === 'do_nothing' || action === 'create_proposal') return null;
+            if (action === 'support_proposal' || action === 'support_pulse') return null;
             if (action === 'send_chat') return `${prefix}${name} posted in chat`;
             if (action === 'comment') return `${prefix}${name} commented on a proposal`;
-            if (action === 'support_proposal') return `${prefix}${name} supported a proposal`;
-            if (action === 'support_pulse') return `${prefix}${name} supported the pulse`;
             if (action) return `${prefix}${name}: ${action}`;
             return null;
         }
@@ -3329,6 +3370,7 @@ function App() {
     const [activeCommunityId, setActiveCommunityId] = useState(null);
     const [activeCommunityName, setActiveCommunityName] = useState(null);
     const [activeCommunity, setActiveCommunity] = useState(null);  // full community object for the active action
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Detail panel navigation stack
     const [detailStack, setDetailStack] = useState([]);
@@ -3527,8 +3569,15 @@ function App() {
                 activeCommunityId={activeCommunityId}
                 activeCommunityName={activeCommunityName}
                 onBackToRoot={handleBackToRoot}
+                onToggleSidebar={() => setSidebarOpen(prev => !prev)}
             />
             <NewsTicker />
+            <ActionBreadcrumb
+                activeCommunityId={activeCommunityId}
+                rootCommunityId={rootCommunityId}
+                rootCommunityName={status?.community?.name}
+                onNavigate={handleNavigateToAction}
+            />
             <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
             <div className="app-body">
                 <ActionSidebar
@@ -3537,6 +3586,8 @@ function App() {
                     onNavigate={handleNavigateToAction}
                     openDetail={openDetail}
                     round={status?.round}
+                    isOpen={sidebarOpen}
+                    onClose={() => setSidebarOpen(false)}
                 />
                 {/* key=communityId: unmount/remount all tabs when navigating to a
                     different community, giving each community its own fresh state.
