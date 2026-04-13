@@ -3240,12 +3240,10 @@ function formatNewsEvent(event) {
         case 'agent.action': {
             const action = d.action_type || d.action || '';
             const name = agentName || 'Agent';
+            // Skip noisy/uninteresting events
+            if (action === 'do_nothing' || action === 'create_proposal') return null;
             if (action === 'send_chat') return `${prefix}${name} posted in chat`;
             if (action === 'comment') return `${prefix}${name} commented on a proposal`;
-            if (action === 'create_proposal') {
-                const pType = d.proposal_type || '';
-                return `${prefix}${name} proposed ${pType}`;
-            }
             if (action === 'support_proposal') return `${prefix}${name} supported a proposal`;
             if (action === 'support_pulse') return `${prefix}${name} supported the pulse`;
             if (action) return `${prefix}${name}: ${action}`;
