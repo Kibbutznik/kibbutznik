@@ -3258,11 +3258,37 @@ function formatNewsEvent(event) {
 
 function NewsTicker() {
     const [items, setItems] = useState([..._newsQueue]);
+    const prevLenRef = useRef(items.length);
+    const scrollRef = useRef(null);
 
     useEffect(() => {
         _newsListeners.add(setItems);
         return () => _newsListeners.delete(setItems);
     }, []);
+
+    // After render, measure new items and animate the shift
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el || items.length === 0) { prevLenRef.current = items.length; return; }
+        const newCount = items.length - prevLenRef.current;
+        if (newCount > 0) {
+            // Measure width of newly prepended items
+            let shiftPx = 0;
+            const children = el.children;
+            const gap = parseFloat(getComputedStyle(el).gap) || 24;
+            for (let i = 0; i < Math.min(newCount, children.length); i++) {
+                shiftPx += children[i].offsetWidth + gap;
+            }
+            // Instantly jump right (so new items are off-screen left)
+            el.style.transition = 'none';
+            el.style.transform = `translateX(-${shiftPx}px)`;
+            // Force reflow then animate back to 0
+            void el.offsetWidth;
+            el.style.transition = 'transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+            el.style.transform = 'translateX(0)';
+        }
+        prevLenRef.current = items.length;
+    }, [items]);
 
     if (items.length === 0) {
         return React.createElement('div', { className: 'news-ticker' },
@@ -3276,8 +3302,8 @@ function NewsTicker() {
     return React.createElement('div', { className: 'news-ticker' },
         React.createElement('span', { className: 'news-ticker-label' }, 'LIVE'),
         React.createElement('div', { className: 'news-ticker-track' },
-            React.createElement('div', { className: 'news-ticker-scroll' },
-                items.map(item =>
+            React.createElement('div', { className: 'news-ticker-scroll', ref: scrollRef },
+                items.map((item, i) =>
                     React.createElement('span', {
                         key: item.id,
                         className: `news-ticker-item ${item.type === 'proposal.accepted' ? 'news-accept' : ''} ${item.type === 'proposal.rejected' ? 'news-reject' : ''} ${item.type === 'pulse.executed' ? 'news-pulse' : ''}`
