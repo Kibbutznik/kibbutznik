@@ -2344,16 +2344,17 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
         : (events || []).filter(ev => !ev.community_id || ev.community_id === rootCommunityId);
     // Filter out noise: failed do_nothing events (guards, already-supported, etc.)
     const filtered = byCommunity.filter(ev => !(ev.success === false && ev.action === "do_nothing"));
-    const reversed = [...filtered].reverse();
+    // Newest first, capped at 100
+    const newest = filtered.slice(-100).reverse();
 
     return (
         <div className="card">
-            <div className="card-title">Activity Feed ({filtered.length} events)</div>
+            <div className="card-title">Activity Feed ({newest.length} events)</div>
             <div className="activity-feed" ref={feedRef} onScroll={handleScroll}>
-                {reversed.length === 0 && (
+                {newest.length === 0 && (
                     <div className="empty-state">Waiting for simulation to start...</div>
                 )}
-                {reversed.map((ev, i) => (
+                {newest.map((ev, i) => (
                     <div className="event-item" key={`${ev.time}-${i}`}>
                         <span className="event-time">{formatTime(ev.time)}</span>
                         <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
@@ -3407,7 +3408,7 @@ function App() {
             const [statusData, agentsData, eventsData] = await Promise.all([
                 API.get("/simulation/status"),
                 API.get("/simulation/agents"),
-                API.get("/simulation/events?limit=1000"),
+                API.get("/simulation/events?limit=200"),
             ]);
             setStatus(statusData);
             setAgents(agentsData);
