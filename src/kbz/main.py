@@ -12,6 +12,7 @@ from kbz.routers import (
     comments,
     communities,
     members,
+    memory,
     proposals,
     pulses,
     statements,
@@ -46,6 +47,7 @@ app.include_router(actions.router, tags=["actions"])
 app.include_router(comments.router, tags=["comments"])
 app.include_router(closeness.router, tags=["closeness"])
 app.include_router(artifacts.router)
+app.include_router(memory.router, tags=["memory"])
 app.include_router(ws.router, tags=["websocket"])
 
 

@@ -14,6 +14,7 @@ from typing import Any
 from agents.agent import Agent, ActionLog
 from agents.api_client import KBZClient
 from agents.decision_engine import DecisionEngine
+from agents.memory import MemoryStore
 from agents.persona import Persona, load_all_personas, generate_persona
 from kbz.services.event_bus import event_bus
 
@@ -112,6 +113,9 @@ class Orchestrator:
         # "Big Brother" observer user — created during setup, used to post
         # admin messages into the community chat from the viewer.
         self._bb_user_id: str | None = None
+        # Agent memory system
+        self.memory_store = MemoryStore(api_url)
+        self._reflection_interval: int = 5  # generate reflections every N rounds
 
     async def post_chat(self, message: str, community_id: str | None = None) -> dict:
         """Post a message to a community chat as Big Brother.
@@ -138,6 +142,7 @@ class Orchestrator:
                 persona=persona,
                 client=self.client,
                 engine=self.engine,
+                memory_store=self.memory_store,
             )
             await agent.register()
             self.agents.append(agent)
@@ -284,6 +289,7 @@ class Orchestrator:
 
         for agent in acting_agents:
             agent.rounds_since_pulse = self._rounds_since_pulse
+            agent.current_round = self._round
             try:
                 agent_logs = await agent.think_and_act()
                 # think_and_act resets rounds_since_acted to 0 internally
@@ -359,6 +365,7 @@ class Orchestrator:
                             try:
                                 agent.community_id = aid
                                 agent.rounds_since_pulse = self._rounds_since_pulse
+                                agent.current_round = self._round
                                 action_logs = await agent.think_and_act()
                                 for log in action_logs:
                                     event = SimulationEvent(
@@ -422,6 +429,21 @@ class Orchestrator:
         if self._rounds_since_pulse >= self._pulse_deadlock_threshold:
             await self._break_pulse_deadlock()
 
+        # --- Agent memory: reflections + pruning ---
+        if self._round % self._reflection_interval == 0:
+            try:
+                await self._generate_reflections()
+            except Exception as e:
+                logger.error(f"Reflection generation failed: {e}")
+
+        # Prune memories every round (lightweight operation)
+        for agent in self.agents:
+            if agent.user_id and agent.memory_store:
+                try:
+                    await agent.memory_store.prune(agent.user_id, self._round)
+                except Exception:
+                    pass
+
         return round_events
 
     async def _break_pulse_deadlock(self) -> None:
@@ -453,6 +475,76 @@ class Orchestrator:
                 f"nudged {nudged} agents to support pulse."
             )
         self._rounds_since_pulse = 0  # reset counter regardless
+
+    async def _generate_reflections(self) -> None:
+        """Generate LLM-powered reflections for all agents.
+
+        Called every ``_reflection_interval`` rounds. Each agent gets a short
+        prompt asking it to reflect on recent experiences, goals, and
+        relationships. The resulting text is stored as a "reflection" memory.
+        """
+        logger.info(f"[Memory] Generating reflections for {len(self.agents)} agents (round {self._round})")
+        for agent in self.agents:
+            if not agent.user_id or not agent.memory_store:
+                continue
+            try:
+                store = agent.memory_store
+                episodes = await store.get_recent(agent.user_id, "episodic", limit=12)
+                goals = await store.get_goals(agent.user_id)
+                relationships = await store.get_relationships(agent.user_id, limit=8)
+
+                if not episodes and not goals and not relationships:
+                    continue  # nothing to reflect on yet
+
+                ep_text = "\n".join(f"- {m['content']}" for m in episodes[:12]) or "None yet."
+                goal_text = "\n".join(f"- {m['content']}" for m in goals[:5]) or "None yet."
+                rel_text = "\n".join(
+                    f"- {agent.users_cache.get(m.get('related_id', ''), m.get('related_id', '?')[:8])}: {m['content']}"
+                    for m in relationships[:8]
+                ) or "None yet."
+
+                prompt = (
+                    f"You are {agent.persona.name}, {agent.persona.role} in a KBZ community.\n\n"
+                    f"Review your recent experiences and write a brief personal reflection "
+                    f"(3-4 sentences) covering:\n"
+                    f"1. What you've learned or accomplished recently\n"
+                    f"2. What you should focus on next\n"
+                    f"3. Any insights about your relationships with other community members\n\n"
+                    f"Recent events:\n{ep_text}\n\n"
+                    f"Current goals:\n{goal_text}\n\n"
+                    f"Relationships:\n{rel_text}\n\n"
+                    f"Write your reflection in first person, staying in character. "
+                    f"Be specific and actionable — not vague. 3-4 sentences only."
+                )
+
+                if self.engine.backend == "anthropic":
+                    reflection_text = await self.engine._call_anthropic(prompt)
+                elif self.engine.backend == "ollama":
+                    reflection_text = await self.engine._call_ollama(prompt)
+                elif self.engine.backend == "openrouter":
+                    reflection_text = await self.engine._call_openrouter(prompt)
+                else:
+                    continue
+
+                # Clean up: remove any JSON formatting the LLM might add
+                reflection_text = reflection_text.strip()
+                if reflection_text.startswith('"') and reflection_text.endswith('"'):
+                    reflection_text = reflection_text[1:-1]
+                # Cap at 800 chars
+                if len(reflection_text) > 800:
+                    reflection_text = reflection_text[:800].rsplit(" ", 1)[0] + "..."
+
+                await store.add(
+                    user_id=agent.user_id,
+                    memory_type="reflection",
+                    content=reflection_text,
+                    importance=0.9,
+                    round_num=self._round,
+                )
+                logger.debug(f"[Memory] Reflection for {agent.persona.name}: {reflection_text[:80]}...")
+
+            except Exception as e:
+                logger.warning(f"[Memory] Reflection failed for {agent.persona.name}: {e}")
 
     def pause(self) -> None:
         """Pause the simulation. Current round will finish, then pause before the next."""
@@ -591,6 +683,7 @@ class Orchestrator:
                     client=self.client,
                     engine=self.engine,
                     user_id=newcomer["id"],
+                    memory_store=self.memory_store,
                 )
                 agent.community_id = self.community_id
                 # Ensure the agent recognizes itself in community snapshots
@@ -796,3 +889,5 @@ class Orchestrator:
 
     async def cleanup(self) -> None:
         await self.client.close()
+        if self.memory_store:
+            await self.memory_store.close()

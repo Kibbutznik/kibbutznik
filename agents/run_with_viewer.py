@@ -332,6 +332,7 @@ Examples:
         comments,
         communities,
         members,
+        memory,
         proposals,
         pulses,
         statements,
@@ -354,6 +355,7 @@ Examples:
     combined_app.include_router(comments.router, tags=["comments"])
     combined_app.include_router(closeness.router, tags=["closeness"])
     combined_app.include_router(artifacts.router)
+    combined_app.include_router(memory.router, tags=["memory"])
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

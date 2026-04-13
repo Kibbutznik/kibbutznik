@@ -12,6 +12,7 @@ from kbz.models.closeness import Closeness
 from kbz.models.variable import Variable
 from kbz.models.artifact_container import ArtifactContainer
 from kbz.models.artifact import Artifact
+from kbz.models.agent_memory import AgentMemory
 
 __all__ = [
     "Base",
@@ -29,4 +30,5 @@ __all__ = [
     "Variable",
     "ArtifactContainer",
     "Artifact",
+    "AgentMemory",
 ]

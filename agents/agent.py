@@ -18,6 +18,9 @@ from datetime import datetime, timezone
 from agents.api_client import KBZClient
 from agents.community_state import CommunitySnapshot, observe_community
 from agents.decision_engine import AgentAction, DecisionEngine
+from agents.memory import MemoryStore
+from agents.memory_extractor import MemoryExtractor
+from agents.memory_formatter import MemoryFormatter
 from agents.persona import Persona
 
 logger = logging.getLogger(__name__)
@@ -46,6 +49,7 @@ class Agent:
         engine: DecisionEngine,
         user_id: str | None = None,
         user_name: str | None = None,
+        memory_store: MemoryStore | None = None,
     ):
         self.persona = persona
         self.client = client
@@ -65,6 +69,11 @@ class Agent:
         self._chat_this_round: int = 0  # rate limit: max 2 send_chat per round
         self._last_chat_read: datetime | None = None  # track when we last read chat for diff
         self.rounds_since_pulse: int = 0  # set by orchestrator before each round
+        # Memory system
+        self.memory_store = memory_store
+        self.memory_formatter = MemoryFormatter(memory_store, self.users_cache) if memory_store else None
+        self.memory_extractor = MemoryExtractor(memory_store, self.users_cache) if memory_store else None
+        self.current_round: int = 0  # set by orchestrator each round
 
     async def register(self) -> None:
         """Create the user account in the KBZ system."""
@@ -124,7 +133,17 @@ class Agent:
             users_cache=self.users_cache,
         )
 
-        # 2. THINK — ask the LLM for a list of decisions
+        # 2. READ MEMORY — fetch persistent memory context for LLM prompt
+        memory_context = ""
+        if self.memory_formatter and self.user_id:
+            try:
+                # Update the formatter's users_cache reference
+                self.memory_formatter.users_cache = self.users_cache
+                memory_context = await self.memory_formatter.build_memory_context(self.user_id)
+            except Exception as e:
+                logger.debug(f"[{self.persona.name}] Memory read failed: {e}")
+
+        # 3. THINK — ask the LLM for a list of decisions
         history_strings = [
             f"[{log.timestamp.strftime('%H:%M')}] {log.action_type}: {log.details}"
             for log in self.action_history[-6:]
@@ -169,6 +188,7 @@ class Agent:
             initiative=self.persona.traits.initiative,
             total_active_proposals=total_active,
             interview_context=interview_ctx,
+            memory_context=memory_context,
         )
 
         # 3. ACT — execute each decision, applying guards per action
@@ -208,6 +228,16 @@ class Agent:
         self.eagerness = best_eagerness
         self.eager_front = best_eager_front
         self.rounds_since_acted = 0
+
+        # 5. WRITE MEMORY — extract memories from this turn's actions
+        if self.memory_extractor and self.user_id:
+            try:
+                self.memory_extractor.users_cache = self.users_cache
+                await self.memory_extractor.extract_from_actions(
+                    self.user_id, logs, snapshot, self.current_round,
+                )
+            except Exception as e:
+                logger.debug(f"[{self.persona.name}] Memory write failed: {e}")
 
         return logs
 

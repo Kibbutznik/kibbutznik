@@ -152,6 +152,7 @@ def build_decision_prompt(
     initiative: float = 0.5,
     total_active_proposals: int = 0,
     interview_context: str = "",
+    memory_context: str = "",
 ) -> str:
     """Build the full prompt for the LLM to make a decision."""
 
@@ -198,13 +199,17 @@ def build_decision_prompt(
             f"Empty artifacts are the community's TOP priority. Propose EditArtifact or DelegateArtifact on them NOW.\n"
         )
 
+    memory_block = ""
+    if memory_context:
+        memory_block = f"\n{memory_context}\n"
+
     return f"""You are {persona_name}, {persona_role} in a KBZ community.
 
 {persona_trait_summary}
 Decision style: {persona_decision_style}
 
 {KBZ_RULES}
-
+{memory_block}
 ## Community State
 {community_summary}
 {unsupported_block}
@@ -430,6 +435,7 @@ class DecisionEngine:
         initiative: float = 0.5,
         total_active_proposals: int = 0,
         interview_context: str = "",
+        memory_context: str = "",
     ) -> list[AgentAction]:
         prompt = build_decision_prompt(
             persona_name=persona_name,
@@ -446,6 +452,7 @@ class DecisionEngine:
             initiative=initiative,
             total_active_proposals=total_active_proposals,
             interview_context=interview_context,
+            memory_context=memory_context,
         )
 
         last_error = None
