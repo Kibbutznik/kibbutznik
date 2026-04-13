@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="hf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="#0f3460"/>
+    </linearGradient>
+    <linearGradient id="hs" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4ecca3"/>
+      <stop offset="50%" stop-color="#e94560"/>
+      <stop offset="100%" stop-color="#f0c040"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexagon -->
+  <polygon
+    points="32,4 58,18 58,46 32,60 6,46 6,18"
+    fill="url(#hf)"
+    stroke="url(#hs)"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+  />
+  <!-- Pulse line -->
+  <polyline
+    points="10,32 20,32 24,24 28,42 32,18 36,46 40,26 44,36 48,32 54,32"
+    fill="none"
+    stroke="#e94560"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Pulse glow -->
+  <polyline
+    points="10,32 20,32 24,24 28,42 32,18 36,46 40,26 44,36 48,32 54,32"
+    fill="none"
+    stroke="#4ecca3"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-opacity="0.6"
+  />
+  <!-- Corner dots (members) -->
+  <circle cx="32" cy="4"  r="2.5" fill="#4ecca3"/>
+  <circle cx="58" cy="18" r="2.5" fill="#4ecca3"/>
+  <circle cx="58" cy="46" r="2.5" fill="#f0c040"/>
+  <circle cx="32" cy="60" r="2.5" fill="#e94560"/>
+  <circle cx="6"  cy="46" r="2.5" fill="#f0c040"/>
+  <circle cx="6"  cy="18" r="2.5" fill="#4ecca3"/>
+</svg>
