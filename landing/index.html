@@ -189,10 +189,14 @@ a:hover{color:var(--green)}
 #particleCanvas{position:absolute;inset:0;z-index:0}
 .hero-content{position:relative;z-index:1;max-width:700px}
 
-.hero-logo{width:140px;height:140px;margin-bottom:1.5rem;animation:logoPulse 3s ease-in-out infinite}
+.hero-logo{
+  width:160px;height:160px;margin-bottom:1.5rem;
+  animation:logoPulse 3s ease-in-out infinite;
+  filter:drop-shadow(0 0 20px rgba(233,69,96,.35)) drop-shadow(0 0 40px rgba(78,204,163,.2));
+}
 @keyframes logoPulse{
-  0%,100%{transform:scale(1);filter:drop-shadow(0 0 12px rgba(233,69,96,.3))}
-  50%{transform:scale(1.06);filter:drop-shadow(0 0 28px rgba(233,69,96,.5))}
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 20px rgba(233,69,96,.35)) drop-shadow(0 0 40px rgba(78,204,163,.2))}
+  50%{transform:scale(1.08);filter:drop-shadow(0 0 35px rgba(233,69,96,.55)) drop-shadow(0 0 60px rgba(78,204,163,.35)) drop-shadow(0 0 80px rgba(240,192,64,.2))}
 }
 
 .hero h1{
@@ -1027,35 +1031,42 @@ if(localStorage.getItem('kbz-theme')==='psych') _psychParticles = true;
   const c=document.getElementById('particleCanvas'),
         ctx=c.getContext('2d');
   let w,h,dots=[];
-  function resize(){w=c.width=c.offsetWidth;h=c.height=c.offsetHeight}
+  function resize(){
+    w=c.width=c.parentElement.offsetWidth;
+    h=c.height=c.parentElement.offsetHeight;
+    // Re-distribute dots across full area on resize
+    dots.forEach(d=>{ if(d.x>w) d.x=Math.random()*w; if(d.y>h) d.y=Math.random()*h; });
+  }
   window.addEventListener('resize',resize);resize();
 
   const psychColors = ['rgba(255,45,149,','rgba(123,45,255,','rgba(0,255,170,','rgba(68,238,255,','rgba(255,228,77,'];
+  const N = 120; // enough to fill the whole viewport
 
-  for(let i=0;i<60;i++) dots.push({
+  for(let i=0;i<N;i++) dots.push({
     x:Math.random()*w,y:Math.random()*h,
-    vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,
-    r:Math.random()*2+1,
+    vx:(Math.random()-.5)*.6,vy:(Math.random()-.5)*.6,
+    r:Math.random()*2.2+.8,
     ci:Math.floor(Math.random()*psychColors.length)
   });
   function draw(){
     ctx.clearRect(0,0,w,h);
     const isPsych = _psychParticles;
+    const connDist = isPsych ? 160 : 130;
     dots.forEach(d=>{
       d.x+=d.vx;d.y+=d.vy;
       if(d.x<0||d.x>w)d.vx*=-1;
       if(d.y<0||d.y>h)d.vy*=-1;
-      ctx.beginPath();ctx.arc(d.x,d.y,d.r*(isPsych?1.3:1),0,Math.PI*2);
-      ctx.fillStyle = isPsych ? psychColors[d.ci]+'.5)' : 'rgba(233,69,96,.35)';
+      ctx.beginPath();ctx.arc(d.x,d.y,d.r*(isPsych?1.4:1),0,Math.PI*2);
+      ctx.fillStyle = isPsych ? psychColors[d.ci]+'.5)' : 'rgba(233,69,96,.3)';
       ctx.fill();
     });
     for(let i=0;i<dots.length;i++)for(let j=i+1;j<dots.length;j++){
       const dx=dots[i].x-dots[j].x,dy=dots[i].y-dots[j].y,
             dist=Math.sqrt(dx*dx+dy*dy);
-      if(dist<(isPsych?180:150)){
+      if(dist<connDist){
         ctx.beginPath();ctx.moveTo(dots[i].x,dots[i].y);
         ctx.lineTo(dots[j].x,dots[j].y);
-        const a = (1-dist/(isPsych?180:150))*(isPsych?.18:.12);
+        const a = (1-dist/connDist)*(isPsych?.2:.1);
         ctx.strokeStyle = isPsych ? psychColors[dots[i].ci]+a+')' : 'rgba(233,69,96,'+a+')';
         ctx.stroke();
       }
