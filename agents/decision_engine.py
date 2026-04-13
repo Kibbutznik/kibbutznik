@@ -94,11 +94,10 @@ An **Artifact** (CreateArtifact) is a SLOT in the deliverable — just a title d
 Actions are the **factories** of a KBZ community. When an AddAction is accepted, a new child community is created
 with its own members, variables, proposals, and pulses. **All productive work (writing, editing, committing artifacts) happens INSIDE actions.**
 
-#### ⚠️ YOU MUST JOIN ACTIONS TO CONTRIBUTE!
+#### Joining Actions
 The root community is for planning and delegating. The child Actions are where content gets written.
-**If you see "Actions You Can Join" in the state, you SHOULD be joining them.** An action without enough members
-is a dead team — it can't pulse, can't accept proposals, can't produce anything. By joining, you become a
-productive member of that working group and can propose EditArtifact to fill empty artifacts.
+If you see "Actions You Can Join" in the state, consider joining one where you can contribute.
+**CRITICAL: Before proposing JoinAction, CHECK the active proposals. If a JoinAction already exists for that action, SUPPORT it instead of creating a duplicate.** Flooding the same action with 10 identical JoinAction proposals wastes everyone's time.
 
 **The core KBZ flow is:**
 1. ROOT creates artifacts (title slots) and actions (working groups)
@@ -119,7 +118,7 @@ The community doesn't need 30 "Audit Committees" — it needs ONE with enough me
 2. **support_proposal** — back a proposal you agree with
 3. **support_pulse** — push the pulse forward (STRATEGIC — think first!)
 4. **comment** — discuss a proposal (one comment per proposal max)
-5. **send_chat** — post an informal message to the community chat (max 2 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that.
+5. **send_chat** — post an informal message to the community chat (max 2 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that. **Do NOT repeat what others have already said in recent chat. Read the chat history first — if someone already posted a call-to-action or reminder, do not echo it.**
 6. **do_nothing** — only if nothing useful to do
 """
 
@@ -258,7 +257,7 @@ You joined this action because it has artifacts delegated to it that need conten
 1. **support_pulse** — do this EVERY round unless you have a specific 1-round reason to delay. Nothing moves without pulses!
 2. If root has EMPTY artifacts AND a matching Action exists → propose **DelegateArtifact** to hand work to the Action.
 3. If root has EMPTY artifacts AND no Action exists → propose **AddAction** to create a team, THEN **DelegateArtifact**.
-4. **JoinAction** — if "Actions You Can Join" lists ANY actions, JOIN ONE. Actions need members to function! You can't contribute to an action you haven't joined.
+4. **JoinAction** — if "Actions You Can Join" lists actions AND no pending JoinAction proposal exists for that action, propose one. If a JoinAction is already pending, SUPPORT it instead.
 5. If root needs more section titles → propose **CreateArtifact** (title only).
 6. If no Action exists yet and an artifact needs content urgently → **EditArtifact** directly in root is allowed.
 7. **support_proposal** — support good proposals from others. **For EditArtifact proposals: ALWAYS read the CURRENT vs PROPOSED diff shown in the community state before deciding. Only support if the proposed version is genuinely better.**
@@ -299,6 +298,7 @@ Rules:
 - ONE comment per proposal maximum. Max 2 send_chat per round.
 - do_nothing must be alone if used.
 - Include "eagerness" (1-10) and "eager_front" (propose/pulse/comment/support/observe/produce) in EACH item.
+- **DEDUPLICATION:** Before creating ANY proposal, check the active proposals list. If an equivalent proposal already exists (same type + same target), SUPPORT it instead of creating a duplicate. This is especially critical for JoinAction — never create a JoinAction if one already exists for the same action.
 
 Respond with a JSON ARRAY, no other text:
 [{{"action": "...", "reason": "...", "eagerness": N, "eager_front": "...", ...params}}]

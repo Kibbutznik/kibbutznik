@@ -278,11 +278,10 @@ class CommunitySnapshot:
                         " 💤 IDLE — consider proposing EndAction to close it"
                         if idle else ""
                     )
-                    understaffed = " ⚠️ UNDERSTAFFED — needs more members via JoinAction!" if len(members) < 3 and not idle else ""
                     lines.append(
                         f"  - [{name}] id={aid} ({len(members)} members, "
                         f"{pulses} pulses fired, {active_props} active proposals, "
-                        f"{accepted} accepted / {rejected} rejected){status_tag}{understaffed}"
+                        f"{accepted} accepted / {rejected} rejected){status_tag}"
                     )
                     if idle:
                         lines.append(
@@ -372,6 +371,18 @@ class CommunitySnapshot:
             if will_pass or will_fail:
                 lines.append(f"  >>> PULSE IMPACT: {len(will_pass)} would PASS, {len(will_fail)} would FAIL")
 
+        # Warn about JoinAction flooding
+        ja_flood: dict[str, int] = {}
+        for p in self.proposals_out_there + self.proposals_on_the_air:
+            if p.get("proposal_type") == "JoinAction" and p.get("val_uuid"):
+                target = p.get("_display") or p["val_uuid"][:12]
+                ja_flood[target] = ja_flood.get(target, 0) + 1
+        flooded = {k: v for k, v in ja_flood.items() if v >= 2}
+        if flooded:
+            lines.append("\n### ⚠️ DUPLICATE JOINACTION WARNING — DO NOT ADD MORE!")
+            for target, count in sorted(flooded.items(), key=lambda x: -x[1]):
+                lines.append(f"  - {target}: {count} pending proposals — SUPPORT one, do NOT create another")
+
         if self.recent_accepted:
             lines.append(f"\n### Recently Accepted ({len(self.recent_accepted)}):")
             for p in self.recent_accepted[:5]:
@@ -394,14 +405,19 @@ class CommunitySnapshot:
                     name = self.action_names.get(a["action_id"], "Unnamed")
                     joinable.append((name, a["action_id"]))
             if joinable:
-                lines.append(f"\n### ⚠️ Actions You Can Join ({len(joinable)}) — YOU SHOULD JOIN THESE!")
-                lines.append("  Actions are where the real work happens. Without members, actions are dead.")
+                # Count existing JoinAction proposals per action to prevent duplicates
+                ja_counts: dict[str, int] = {}
+                for p in self.proposals_out_there + self.proposals_on_the_air:
+                    if p.get("proposal_type") == "JoinAction" and p.get("val_uuid"):
+                        ja_counts[p["val_uuid"]] = ja_counts.get(p["val_uuid"], 0) + 1
+
+                lines.append(f"\n### Actions You Can Join ({len(joinable)})")
                 lines.append("  Propose JoinAction (from ROOT) to become a contributing member.")
                 for name, aid in joinable:
-                    # Show member count so agents know which actions are understaffed
                     member_count = len(self.action_members.get(aid, []))
-                    urgency = " ← NEEDS MEMBERS!" if member_count < 3 else ""
-                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid} ({member_count} members){urgency}")
+                    pending = ja_counts.get(aid, 0)
+                    pending_note = f" — ⚠️ {pending} JoinAction proposals already pending, SUPPORT one instead of creating another!" if pending > 0 else ""
+                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid} ({member_count} members){pending_note}")
 
         # Members list (with user_ids for ThrowOut targeting)
         if self.members:
