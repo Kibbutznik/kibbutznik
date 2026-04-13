@@ -1891,3 +1891,88 @@ body {
     color: var(--accent) !important;
     font-weight: 700;
 }
+
+/* ── News Ticker ──────────────────────────────── */
+.news-ticker {
+    display: flex;
+    align-items: center;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    height: 32px;
+    overflow: hidden;
+    font-size: 0.78rem;
+    position: sticky;
+    top: 0;
+    z-index: 90;
+}
+.news-ticker-label {
+    flex-shrink: 0;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    padding: 2px 10px;
+    margin-right: 12px;
+    border-radius: 2px;
+    animation: livePulse 2s ease-in-out infinite;
+}
+@keyframes livePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.news-ticker-track {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 3%, black 97%, transparent 100%);
+}
+.news-ticker-scroll {
+    display: flex;
+    gap: 2rem;
+    animation: tickerScroll 30s linear infinite;
+    white-space: nowrap;
+}
+@keyframes tickerScroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+.news-ticker-item {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.news-ticker-item::before {
+    content: "•";
+    margin-right: 6px;
+    color: var(--text-muted);
+}
+.news-ticker-item.news-accept {
+    color: var(--success);
+}
+.news-ticker-item.news-accept::before {
+    content: "✓";
+    color: var(--success);
+}
+.news-ticker-item.news-reject {
+    color: #f88;
+}
+.news-ticker-item.news-reject::before {
+    content: "✗";
+    color: #f88;
+}
+.news-ticker-item.news-pulse {
+    color: var(--accent);
+    font-weight: 600;
+}
+.news-ticker-item.news-pulse::before {
+    content: "⚡";
+}
+.news-ticker-item.news-empty {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.news-ticker-item.news-empty::before {
+    content: "";
+}

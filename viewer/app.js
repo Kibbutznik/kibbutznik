@@ -3202,6 +3202,92 @@ function PulsesTab({ pulses, communityId, openDetail }) {
     );
 }
 
+// ── News Ticker ─────────────────────────────────────────
+// Global news queue that WebSocket events feed into
+const _newsQueue = [];
+const _newsListeners = new Set();
+const MAX_NEWS = 40;
+
+function addNewsItem(event) {
+    const item = formatNewsEvent(event);
+    if (!item) return;
+    _newsQueue.unshift({ id: Date.now() + Math.random(), text: item, time: new Date(), type: event.event_type });
+    if (_newsQueue.length > MAX_NEWS) _newsQueue.length = MAX_NEWS;
+    _newsListeners.forEach(fn => fn([..._newsQueue]));
+}
+
+function formatNewsEvent(event) {
+    const d = event.data || {};
+    const agentName = d.agent_name || d.user_name || null;
+    const communityName = d.community_name || null;
+    const prefix = communityName ? `[${communityName}] ` : '';
+
+    switch (event.event_type) {
+        case 'proposal.accepted': {
+            const pType = d.proposal_type || 'proposal';
+            return `${prefix}${pType} proposal accepted`;
+        }
+        case 'proposal.rejected': {
+            const pType = d.proposal_type || 'proposal';
+            return `${prefix}${pType} proposal rejected`;
+        }
+        case 'pulse.executed':
+            return `${prefix}Pulse fired!`;
+        case 'round.start':
+            return `Round ${d.round || '?'} started`;
+        case 'round.end':
+            return `Round ${d.round || '?'} ended`;
+        case 'agent.action': {
+            const action = d.action_type || d.action || '';
+            const name = agentName || 'Agent';
+            if (action === 'send_chat') return `${prefix}${name} posted in chat`;
+            if (action === 'comment') return `${prefix}${name} commented on a proposal`;
+            if (action === 'create_proposal') {
+                const pType = d.proposal_type || '';
+                return `${prefix}${name} proposed ${pType}`;
+            }
+            if (action === 'support_proposal') return `${prefix}${name} supported a proposal`;
+            if (action === 'support_pulse') return `${prefix}${name} supported the pulse`;
+            if (action) return `${prefix}${name}: ${action}`;
+            return null;
+        }
+        default:
+            return null;
+    }
+}
+
+function NewsTicker() {
+    const [items, setItems] = useState([..._newsQueue]);
+
+    useEffect(() => {
+        _newsListeners.add(setItems);
+        return () => _newsListeners.delete(setItems);
+    }, []);
+
+    if (items.length === 0) {
+        return React.createElement('div', { className: 'news-ticker' },
+            React.createElement('span', { className: 'news-ticker-label' }, 'LIVE'),
+            React.createElement('div', { className: 'news-ticker-track' },
+                React.createElement('span', { className: 'news-ticker-item news-empty' }, 'Waiting for events...')
+            )
+        );
+    }
+
+    return React.createElement('div', { className: 'news-ticker' },
+        React.createElement('span', { className: 'news-ticker-label' }, 'LIVE'),
+        React.createElement('div', { className: 'news-ticker-track' },
+            React.createElement('div', { className: 'news-ticker-scroll' },
+                items.map(item =>
+                    React.createElement('span', {
+                        key: item.id,
+                        className: `news-ticker-item ${item.type === 'proposal.accepted' ? 'news-accept' : ''} ${item.type === 'proposal.rejected' ? 'news-reject' : ''} ${item.type === 'pulse.executed' ? 'news-pulse' : ''}`
+                    }, item.text)
+                )
+            )
+        )
+    );
+}
+
 // ── Main App ────────────────────────────────────────────
 function App() {
     const [activeTab, setActiveTab] = useState("dashboard");
@@ -3291,11 +3377,20 @@ function App() {
             ws.onmessage = (e) => {
                 try {
                     const event = JSON.parse(e.data);
-                    // Only refresh on round.end — avoids rapid re-renders (and flickering when
-                    // viewing an action sub-community) caused by per-agent-action WS events.
-                    // The 5s polling handles incremental updates within a round.
+                    // Refresh on round boundaries and pulse execution
                     if (event.event_type === "round.end" || event.event_type === "pulse.executed") {
+                        // Clear API cache so fresh data is fetched
+                        Object.keys(_cache).forEach(k => delete _cache[k]);
                         fetchData();
+                    }
+                    // Also refresh when proposals are accepted/rejected (new artifacts, actions, etc.)
+                    if (event.event_type === "proposal.accepted" || event.event_type === "proposal.rejected") {
+                        Object.keys(_cache).forEach(k => delete _cache[k]);
+                        fetchData();
+                    }
+                    // Feed the news ticker
+                    if (typeof addNewsItem === 'function') {
+                        addNewsItem(event);
                     }
                 } catch (err) {
                     console.warn("WS parse error:", err);
@@ -3409,6 +3504,7 @@ function App() {
                 activeCommunityName={activeCommunityName}
                 onBackToRoot={handleBackToRoot}
             />
+            <NewsTicker />
             <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
             <div className="app-body">
                 <ActionSidebar
