@@ -3367,7 +3367,7 @@ function App() {
     useEffect(() => {
         function connectWS() {
             const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-            const ws = new WebSocket(`${proto}//${window.location.host}/ws/events`);
+            const ws = new WebSocket(`${proto}//${window.location.host}${BASE}/ws/events`);
 
             ws.onopen = () => {
                 setConnected(true);
