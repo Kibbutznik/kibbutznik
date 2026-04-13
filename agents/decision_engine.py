@@ -119,7 +119,7 @@ The community doesn't need 30 "Audit Committees" — it needs ONE with enough me
 3. **support_pulse** — push the pulse forward (STRATEGIC — think first!)
 4. **comment** — discuss a proposal (one comment per proposal max)
 5. **send_chat** — post an informal message to the community chat (max 2 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that. **Do NOT repeat what others have already said in recent chat. Read the chat history first — if someone already posted a call-to-action or reminder, do not echo it.**
-6. **do_nothing** — only if nothing useful to do
+6. **do_nothing** — LAST RESORT. There is almost always something productive: support a proposal, support the pulse, write content. Doing nothing is FAILURE.
 """
 
 
@@ -265,13 +265,14 @@ You joined this action because it has artifacts delegated to it that need conten
 
 **Action priority per round (child ACTION):**
 1. **EditArtifact on EMPTY artifacts** — ⚡ MANDATORY. You MUST propose this before anything else. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
-2. **support_pulse** — every round. Your EditArtifact won't execute without it.
-3. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
-4. **support_proposal** — support good proposals from others. **For EditArtifact: read the CURRENT vs PROPOSED diff first — only support if the new version is better.**
-5. NOTHING ELSE until artifacts are filled. Do NOT propose AddStatement, governance, or other distractions unless all artifacts have content.
-6. If ALL artifacts are filled AND a task is too large for the current team → propose **AddAction** to create a sub-action. Actions can nest as deep as needed.
+2. **support_pulse** — EVERY round. Your EditArtifact won't execute without it. Nothing moves without pulses!
+3. **support_proposal** — support ANY good proposals. Without support, proposals die. This is just as important as in root!
+4. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
+5. **For EditArtifact proposals by others: read the CURRENT vs PROPOSED diff first — only support if the new version is better.**
+6. NOTHING ELSE until artifacts are filled. Do NOT propose AddStatement, governance, or other distractions unless all artifacts have content.
+7. If ALL artifacts are filled AND a task is too large for the current team → propose **AddAction** to create a sub-action. Actions can nest as deep as needed.
 
-**DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" — if a similar one exists, join it instead. One focused team per topic is enough.
+**DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" AND pending AddAction proposals. If a similar action or pending AddAction proposal already exists for that topic, DO NOT create another. Support the existing one instead. Creating duplicate actions for the same topic (e.g., multiple "Conflict Resolution" teams) is a waste that fragments the community.
 
 ## PULSE STRATEGY — DEFAULT IS TO SUPPORT!
 ⚡ Remember: proposals ROT if the community doesn't pulse. You should `support_pulse` EVERY round
@@ -291,7 +292,7 @@ Available actions:
 - **support_proposal** — back a proposal (use EXACT id from state)
 - **comment** — ONE brief comment per proposal (never repeat)
 - **send_chat** — informal community-wide message (max 2 per round)
-- **do_nothing** — only if truly nothing useful to do (use alone, RARE)
+- **do_nothing** — FAILURE. You almost certainly have something useful to do: support a proposal, support the pulse, or write an EditArtifact. Only use if you've exhausted EVERY option. Use alone, EXTREMELY RARE.
 
 Rules:
 - Combine actions freely in one turn.
@@ -467,7 +468,15 @@ class DecisionEngine:
                     f"[LLM] {persona_name} responded in {elapsed:.1f}s "
                     f"(avg {self.stats['avg_latency_s']}s over {self._call_count} calls)"
                 )
-                return self._parse_response(response_text)
+                actions = self._parse_response(response_text)
+                # If parse failed (returned do_nothing with parse reason), retry once
+                if (len(actions) == 1
+                        and actions[0].action_type == "do_nothing"
+                        and "parse" in (actions[0].reason or "").lower()
+                        and attempt < self.max_retries):
+                    logger.info(f"[LLM] {persona_name} parse failure on attempt {attempt}, retrying...")
+                    continue
+                return actions
 
             except Exception as e:
                 elapsed = time.monotonic() - t0

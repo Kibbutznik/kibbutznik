@@ -11,19 +11,20 @@ from kbz.models.support import Support
 
 
 class ClosenessService:
-    """Tracks affinity between members using covariance-per-proposal scoring.
+    """Tracks affinity between members using entropy-weighted agreement scoring.
 
     For each proposal p with support rate s_p = supporters / members, each pair (A, B)
     of community members contributes:
 
-        both supported  →  + (1 − s_p)²
-        both abstained  →  +   s_p²
-        split support   →  − s_p · (1 − s_p)
+        weight = 2 · s_p · (1 − s_p)   # peaks at 0.5, zero when unanimous
+        both supported  →  + weight
+        both abstained  →  + weight
+        split support   →  − weight
 
-    This is the covariance contribution of a single Bernoulli outcome. A unanimous
-    proposal (s_p ≈ 1) gives negligible bonus for mutual support; a niche proposal
-    (s_p ≈ 0.1) gives a strong bonus. Split votes on close calls (s_p ≈ 0.5) cost
-    the most. Prolific supporters no longer earn a free lunch on popular proposals.
+    This gives equal positive/negative signals for agreement/disagreement, weighted
+    by how informative the proposal is. Unanimous proposals carry near-zero weight
+    (everyone agreed, no signal). Divisive proposals carry strong weight. This avoids
+    the old covariance formula's bias toward negative scores in consensus communities.
 
     Scores accumulate as floats, can go negative, and are written incrementally at
     pulse execution time via Postgres upsert.
@@ -82,9 +83,13 @@ class ClosenessService:
             return
         s_p = k / n
 
-        both_sup_delta = (1.0 - s_p) ** 2
-        both_abs_delta = s_p ** 2
-        split_delta = -s_p * (1.0 - s_p)
+        # Entropy-weighted ±1 signal: weight peaks at s_p=0.5, vanishes at 0 or 1
+        weight = 2.0 * s_p * (1.0 - s_p)
+        if weight < 0.01:
+            return  # near-unanimous, no meaningful signal
+
+        agree_delta = weight
+        split_delta = -weight
 
         for i in range(n):
             a = member_ids[i]
@@ -92,10 +97,8 @@ class ClosenessService:
             for j in range(i + 1, n):
                 b = member_ids[j]
                 b_sup = b in supporters
-                if a_sup and b_sup:
-                    await self._bump(a, b, both_sup_delta)
-                elif not a_sup and not b_sup:
-                    await self._bump(a, b, both_abs_delta)
+                if a_sup == b_sup:
+                    await self._bump(a, b, agree_delta)
                 else:
                     await self._bump(a, b, split_delta)
 

@@ -383,6 +383,13 @@ class CommunitySnapshot:
             for target, count in sorted(flooded.items(), key=lambda x: -x[1]):
                 lines.append(f"  - {target}: {count} pending proposals — SUPPORT one, do NOT create another")
 
+        # Warn about AddAction duplication
+        aa_count = sum(1 for p in self.proposals_out_there + self.proposals_on_the_air
+                       if p.get("proposal_type") == "AddAction")
+        if aa_count >= 2:
+            lines.append(f"\n### ⚠️ {aa_count} ADDACTION PROPOSALS ALREADY PENDING — DO NOT CREATE MORE!")
+            lines.append("  Support an existing AddAction proposal instead of creating a duplicate team.")
+
         if self.recent_accepted:
             lines.append(f"\n### Recently Accepted ({len(self.recent_accepted)}):")
             for p in self.recent_accepted[:5]:
