@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <!-- STATEMENT: A tablet/constitution with a shield - binding community rules -->
+  <circle cx="40" cy="40" r="36" fill="#1a1a2e" stroke="#e94560" stroke-width="2" opacity="0.9"/>
+  <!-- Stone tablet -->
+  <rect x="20" y="16" width="28" height="36" rx="3" fill="#e94560" opacity="0.15"
+    stroke="#e94560" stroke-width="1.5"/>
+  <!-- Carved text lines -->
+  <line x1="25" y1="25" x2="43" y2="25" stroke="#e94560" stroke-width="1.5" opacity="0.6"/>
+  <line x1="25" y1="31" x2="40" y2="31" stroke="#e94560" stroke-width="1.5" opacity="0.5"/>
+  <line x1="25" y1="37" x2="43" y2="37" stroke="#e94560" stroke-width="1.5" opacity="0.4"/>
+  <line x1="25" y1="43" x2="38" y2="43" stroke="#e94560" stroke-width="1.5" opacity="0.3"/>
+  <!-- Shield badge (rule enforcement) -->
+  <g transform="translate(54,42)">
+    <path d="M0,-12 L10,-6 L10,4 C10,10 0,14 0,14 C0,14 -10,10 -10,4 L-10,-6 Z"
+      fill="#e94560" opacity="0.3" stroke="#e94560" stroke-width="1.2"/>
+    <!-- Checkmark inside shield -->
+    <polyline points="-4,1 -1,5 5,-3" fill="none" stroke="#fff" stroke-width="1.5"
+      stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+    <animate attributeName="opacity" values="0.8;1;0.8" dur="3s" repeatCount="indefinite"/>
+  </g>
+  <!-- Subtle glow -->
+  <circle cx="54" cy="42" r="14" fill="none" stroke="#e94560" stroke-width="0.5" opacity="0">
+    <animate attributeName="opacity" values="0;0.3;0" dur="3s" repeatCount="indefinite"/>
+    <animate attributeName="r" values="14;20;14" dur="3s" repeatCount="indefinite"/>
+  </circle>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <!-- PULSE: The heartbeat of governance. Lightning bolt + heartbeat line -->
+  <defs>
+    <linearGradient id="pg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e94560"/>
+      <stop offset="100%" stop-color="#f0c040"/>
+    </linearGradient>
+    <filter id="pgl"><feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <circle cx="40" cy="40" r="36" fill="#1a1a2e" stroke="#e94560" stroke-width="2" opacity="0.9">
+    <animate attributeName="r" values="34;37;34" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Heartbeat line -->
+  <polyline points="8,40 22,40 27,40 30,28 34,52 40,20 46,58 50,32 53,45 56,40 60,40 72,40"
+    fill="none" stroke="url(#pg)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+    filter="url(#pgl)">
+    <animate attributeName="stroke-dasharray" values="0,200;200,0" dur="1.5s" repeatCount="indefinite"/>
+  </polyline>
+  <!-- Glow ring -->
+  <circle cx="40" cy="40" r="36" fill="none" stroke="#e94560" stroke-width="1" opacity="0.3">
+    <animate attributeName="r" values="36;42;36" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite"/>
+  </circle>
+</svg>

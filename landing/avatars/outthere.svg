@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <!-- OUTTHERE: A megaphone/broadcast - proposal published for discussion -->
+  <circle cx="40" cy="40" r="36" fill="#1a1a2e" stroke="#f0c040" stroke-width="2" opacity="0.9"/>
+  <!-- Megaphone shape -->
+  <g transform="translate(36,40) rotate(-15)">
+    <!-- Cone -->
+    <path d="M-8,-4 L12,-14 L12,14 L-8,4 Z" fill="#f0c040" opacity="0.3"
+      stroke="#f0c040" stroke-width="1.5" stroke-linejoin="round"/>
+    <!-- Handle -->
+    <rect x="-14" y="-5" width="8" height="10" rx="2" fill="#f0c040" opacity="0.4"
+      stroke="#f0c040" stroke-width="1"/>
+  </g>
+  <!-- Sound waves emanating -->
+  <g transform="translate(52,36)" opacity="0.5">
+    <path d="M0,-8 Q8,-8 8,0 Q8,8 0,8" fill="none" stroke="#f0c040" stroke-width="1.5">
+      <animate attributeName="opacity" values="0.6;0;0.6" dur="1.5s" repeatCount="indefinite"/>
+    </path>
+    <path d="M4,-14 Q16,-14 16,0 Q16,14 4,14" fill="none" stroke="#f0c040" stroke-width="1">
+      <animate attributeName="opacity" values="0;0.5;0" dur="1.5s" repeatCount="indefinite"/>
+    </path>
+    <path d="M8,-20 Q24,-20 24,0 Q24,20 8,20" fill="none" stroke="#f0c040" stroke-width="0.8">
+      <animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>

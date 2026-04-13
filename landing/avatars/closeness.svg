@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <!-- CLOSENESS: Two magnets / overlapping circles - affinity between members -->
+  <circle cx="40" cy="40" r="36" fill="#1a1a2e" stroke="#4ecca3" stroke-width="2" opacity="0.9"/>
+  <!-- Two overlapping circles (Venn diagram style) -->
+  <circle cx="32" cy="38" r="14" fill="#4ecca3" opacity="0.15" stroke="#4ecca3" stroke-width="1.5">
+    <animate attributeName="cx" values="34;30;34" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="48" cy="38" r="14" fill="#e94560" opacity="0.15" stroke="#e94560" stroke-width="1.5">
+    <animate attributeName="cx" values="46;50;46" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Overlap highlight -->
+  <ellipse cx="40" cy="38" rx="6" ry="12" fill="#f0c040" opacity="0.2">
+    <animate attributeName="rx" values="6;4;6" dur="3s" repeatCount="indefinite"/>
+  </ellipse>
+  <!-- Connection spark in center -->
+  <circle cx="40" cy="38" r="2" fill="#f0c040" opacity="0.7">
+    <animate attributeName="r" values="1.5;3;1.5" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <!-- +/- indicators -->
+  <text x="25" y="58" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#4ecca3" opacity="0.5">+</text>
+  <text x="55" y="58" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#e94560" opacity="0.5">-</text>
+</svg>

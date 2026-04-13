@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <!-- COMMENT: A speech bubble with typing dots -->
+  <circle cx="40" cy="40" r="36" fill="#1a1a2e" stroke="#90caf9" stroke-width="2" opacity="0.9"/>
+  <!-- Speech bubble -->
+  <g transform="translate(40,36)">
+    <path d="M-18,-14 L18,-14 Q22,-14 22,-10 L22,6 Q22,10 18,10 L4,10 L-2,18 L-2,10 L-18,10 Q-22,10 -22,6 L-22,-10 Q-22,-14 -18,-14 Z"
+      fill="#90caf9" opacity="0.15" stroke="#90caf9" stroke-width="1.5"/>
+    <!-- Typing dots -->
+    <circle cx="-8" cy="-2" r="2.5" fill="#90caf9" opacity="0.5">
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.2s" begin="0s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="0" cy="-2" r="2.5" fill="#90caf9" opacity="0.5">
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.2s" begin="0.3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="8" cy="-2" r="2.5" fill="#90caf9" opacity="0.5">
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.2s" begin="0.6s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg>

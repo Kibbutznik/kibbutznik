@@ -10,7 +10,7 @@
 :root{
   --bg:#1a1a2e;--bg2:#16213e;--card:#0f3460;
   --accent:#e94560;--green:#4ecca3;--gold:#f0c040;
-  --text:#e0e0e0;--white:#fff;
+  --text:#e0e0e0;--white:#fff;--blue:#90caf9;
 }
 html{scroll-behavior:smooth}
 body{
@@ -30,12 +30,10 @@ a:hover{color:var(--green)}
 #particleCanvas{position:absolute;inset:0;z-index:0}
 .hero-content{position:relative;z-index:1;max-width:700px}
 
-/* pulsing eye */
-.eye-wrap{margin-bottom:2rem}
-.eye-svg{width:100px;height:60px;animation:eyePulse 2.5s ease-in-out infinite}
-@keyframes eyePulse{
-  0%,100%{transform:scale(1);filter:drop-shadow(0 0 8px var(--accent))}
-  50%{transform:scale(1.12);filter:drop-shadow(0 0 24px var(--accent))}
+.hero-logo{width:140px;height:140px;margin-bottom:1.5rem;animation:logoPulse 3s ease-in-out infinite}
+@keyframes logoPulse{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 12px rgba(233,69,96,.3))}
+  50%{transform:scale(1.06);filter:drop-shadow(0 0 28px rgba(233,69,96,.5))}
 }
 
 .hero h1{
@@ -59,7 +57,6 @@ a:hover{color:var(--green)}
 .cta-btn:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(233,69,96,.5);color:var(--white)}
 .dev-note{margin-top:1.4rem;font-size:.9rem;opacity:.6}
 
-/* scroll chevron */
 .scroll-chevron{
   position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);
   animation:chevBounce 2s ease-in-out infinite;z-index:1;opacity:.5;
@@ -75,12 +72,47 @@ section{padding:5rem 2rem}
 }
 .section-sub{text-align:center;color:var(--text);opacity:.7;margin-bottom:3rem;max-width:600px;margin-left:auto;margin-right:auto}
 
-/* fade-in on scroll */
 .fade-in{opacity:0;transform:translateY(30px);transition:opacity .7s ease,transform .7s ease}
 .fade-in.visible{opacity:1;transform:translateY(0)}
 
+/* ── Entity Avatars Showcase ──────────────── */
+.entities-section{background:var(--bg2);overflow:hidden}
+.entity-orbit{
+  position:relative;width:100%;max-width:700px;height:420px;margin:0 auto;
+}
+.entity-center{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  text-align:center;z-index:2;
+}
+.entity-center-label{
+  font-size:1rem;color:var(--green);font-weight:600;opacity:.7;
+  transition:opacity .3s;
+}
+.entity-center-desc{
+  font-size:.85rem;color:var(--text);opacity:.5;max-width:200px;
+  margin:0 auto;transition:opacity .3s;
+}
+.entity-item{
+  position:absolute;width:64px;height:64px;
+  transition:transform .4s ease,filter .3s;cursor:pointer;
+}
+.entity-item:hover{transform:scale(1.25) !important;filter:drop-shadow(0 0 12px rgba(233,69,96,.4));z-index:10}
+.entity-item img{width:100%;height:100%}
+.entity-item .entity-name{
+  position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);
+  font-size:.65rem;color:var(--text);opacity:.6;white-space:nowrap;font-weight:500;
+  transition:opacity .3s;
+}
+.entity-item:hover .entity-name{opacity:1;color:var(--white)}
+
+/* Floating animation for entity items */
+@keyframes entityFloat{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-6px)}
+}
+
 /* ── What Is This ─────────────────────────── */
-.features{background:var(--bg2)}
+.features{background:var(--bg)}
 .feature-grid{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
   gap:2rem;max-width:1000px;margin:0 auto;
@@ -95,10 +127,10 @@ section{padding:5rem 2rem}
   box-shadow:0 0 20px rgba(233,69,96,.15);
 }
 .feature-card h3{color:var(--white);margin-bottom:.6rem;font-size:1.2rem}
-.feature-icon{font-size:2rem;margin-bottom:1rem}
+.feature-card .card-avatar{width:48px;height:48px;margin-bottom:1rem}
 
 /* ── How It Works ─────────────────────────── */
-.pipeline-section{background:var(--bg)}
+.pipeline-section{background:var(--bg2)}
 .pipeline{
   display:flex;align-items:flex-start;justify-content:center;
   gap:0;max-width:900px;margin:0 auto;flex-wrap:wrap;
@@ -106,13 +138,8 @@ section{padding:5rem 2rem}
 .stage{
   flex:1;min-width:140px;text-align:center;position:relative;padding:0 .5rem;
 }
-.stage-dot{
-  width:56px;height:56px;border-radius:50%;margin:0 auto 1rem;
-  display:flex;align-items:center;justify-content:center;
-  font-size:1.3rem;font-weight:700;color:var(--white);
-  transition:transform .3s;
-}
-.stage:hover .stage-dot{transform:scale(1.15)}
+.stage-avatar{width:56px;height:56px;margin:0 auto 1rem;transition:transform .3s}
+.stage:hover .stage-avatar{transform:scale(1.15)}
 .stage h4{color:var(--white);margin-bottom:.4rem;font-size:1rem}
 .stage p{font-size:.85rem;opacity:.7;max-width:160px;margin:0 auto}
 .arrow{
@@ -130,17 +157,18 @@ section{padding:5rem 2rem}
 .guide-grid{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
   gap:1.4rem;max-width:1060px;margin:0 auto;
+  transition:all .5s ease;
 }
 .guide-card{
   background:var(--card);border-radius:10px;overflow:hidden;
-  border:1px solid rgba(255,255,255,.06);transition:border-color .3s,box-shadow .3s;
+  border:1px solid rgba(255,255,255,.06);transition:all .5s ease;
 }
 .guide-card:hover{border-color:var(--accent);box-shadow:0 0 18px rgba(233,69,96,.12)}
 .guide-card-head{
   padding:1.2rem 1.4rem .8rem;display:flex;align-items:center;gap:.8rem;
   cursor:pointer;user-select:none;
 }
-.guide-card-head .gc-icon{font-size:1.6rem;flex-shrink:0}
+.guide-card-head .gc-avatar{width:36px;height:36px;flex-shrink:0}
 .guide-card-head h3{color:var(--white);font-size:1.05rem;flex:1}
 .guide-card-head .gc-toggle{
   font-size:.75rem;color:var(--text);opacity:.4;transition:transform .3s;
@@ -148,7 +176,7 @@ section{padding:5rem 2rem}
 .guide-card.open .gc-toggle{transform:rotate(180deg)}
 .guide-card-body{
   padding:0 1.4rem 1.4rem;font-size:.88rem;line-height:1.7;opacity:.82;
-  max-height:0;overflow:hidden;transition:max-height .4s ease,padding .3s;
+  max-height:0;overflow:hidden;transition:max-height .5s ease,padding .3s;
 }
 .guide-card.open .guide-card-body{max-height:2000px;padding-bottom:1.4rem}
 .guide-card-body p{margin-bottom:.8rem}
@@ -159,12 +187,60 @@ section{padding:5rem 2rem}
 .gc-label.green{background:rgba(78,204,163,.18);color:var(--green)}
 .gc-label.gold{background:rgba(240,192,64,.18);color:var(--gold)}
 .gc-label.accent{background:rgba(233,69,96,.18);color:var(--accent)}
-.gc-label.blue{background:rgba(144,202,249,.18);color:#90caf9}
+.gc-label.blue{background:rgba(144,202,249,.18);color:var(--blue)}
 .guide-card-body ul{margin:.5rem 0 .8rem 1.2rem}
 .guide-card-body li{margin-bottom:.3rem}
 .guide-card-body code{
   background:rgba(255,255,255,.07);padding:.1rem .35rem;border-radius:3px;font-size:.82rem;
 }
+
+/* Guide card ZOOMED state */
+.guide-grid.has-zoomed{
+  display:block;
+}
+.guide-grid.has-zoomed .guide-card{
+  display:none;
+}
+.guide-grid.has-zoomed .guide-card.zoomed{
+  display:block;
+  min-height:70vh;
+  border:2px solid var(--accent);
+  box-shadow:0 0 40px rgba(233,69,96,.2);
+  animation:zoomIn .4s ease;
+}
+.guide-grid.has-zoomed .guide-card.zoomed .guide-card-body{
+  max-height:none;padding-bottom:2rem;
+  font-size:1rem;line-height:1.8;
+}
+.guide-grid.has-zoomed .guide-card.zoomed .guide-card-head h3{
+  font-size:1.4rem;
+}
+.guide-grid.has-zoomed .guide-card.zoomed .gc-avatar{
+  width:56px;height:56px;
+}
+@keyframes zoomIn{
+  from{transform:scale(.85);opacity:0}
+  to{transform:scale(1);opacity:1}
+}
+/* Zoom close button */
+.zoom-close{
+  display:none;text-align:center;margin-bottom:1rem;
+}
+.zoom-close.show{display:block}
+.zoom-close-btn{
+  background:var(--accent);color:var(--white);border:none;
+  padding:.5rem 1.5rem;border-radius:6px;cursor:pointer;
+  font-size:.9rem;font-weight:600;transition:background .2s;
+}
+.zoom-close-btn:hover{background:#c7354e}
+
+/* Guide card animation canvas */
+.guide-anim{
+  margin:1rem 0;padding:1.5rem;background:rgba(0,0,0,.25);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;gap:1rem;
+  flex-wrap:wrap;min-height:80px;
+}
+.guide-anim img{width:48px;height:48px}
 
 /* lifecycle diagram */
 .lifecycle{
@@ -238,14 +314,32 @@ footer{
 footer a{font-weight:600}
 footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 
+/* Entity ribbon animation */
+.entity-ribbon{
+  display:flex;gap:2rem;padding:1.5rem 0;overflow:hidden;
+  margin:2rem 0;
+}
+.entity-ribbon-inner{
+  display:flex;gap:2rem;animation:ribbonScroll 20s linear infinite;
+}
+.entity-ribbon-item{flex-shrink:0;width:44px;height:44px;opacity:.5;transition:opacity .3s}
+.entity-ribbon-item:hover{opacity:1}
+@keyframes ribbonScroll{
+  from{transform:translateX(0)}
+  to{transform:translateX(-50%)}
+}
+
 /* ── Responsive ───────────────────────────── */
 @media(max-width:768px){
   section{padding:3.5rem 1.2rem}
   .hero h1{letter-spacing:.15em}
+  .entity-orbit{height:340px}
+  .entity-item{width:48px;height:48px}
 }
 @media(max-width:480px){
   .feature-grid{grid-template-columns:1fr}
   .hero h1{letter-spacing:.1em}
+  .entity-orbit{height:280px}
 }
 </style>
 </head>
@@ -255,17 +349,27 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 <section class="hero">
   <canvas id="particleCanvas"></canvas>
   <div class="hero-content">
-    <div class="eye-wrap">
-      <img src="logo.svg" alt="KBZ Logo" class="eye-svg" style="width:120px;height:120px">
-    </div>
+    <img src="logo.svg" alt="KBZ Logo" class="hero-logo">
     <h1>KIBBUTZNIK</h1>
     <p class="subtitle">Pulse-Based Direct Democracy &middot; Simulated by AI</p>
     <p class="oneliner">Watch AI agents govern a community in real time. No elections. No terms. Just pulses.</p>
     <a href="/kbz/viewer/" class="cta-btn">Watch Live &rarr;</a>
-    <p class="dev-note">&#x1F6A7; Project in active development &mdash; more features coming soon</p>
+    <p class="dev-note">Project in active development &mdash; more features coming soon</p>
   </div>
   <div class="scroll-chevron">
     <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+  </div>
+</section>
+
+<!-- ════ Entity Ecosystem ════ -->
+<section class="entities-section">
+  <h2 class="section-title">The Governance Ecosystem</h2>
+  <p class="section-sub">Every entity plays a role. Hover to explore the building blocks of pulse democracy.</p>
+  <div class="entity-orbit" id="entityOrbit">
+    <div class="entity-center">
+      <div class="entity-center-label" id="entityLabel">Community</div>
+      <div class="entity-center-desc" id="entityDesc">The fundamental governance unit</div>
+    </div>
   </div>
 </section>
 
@@ -275,17 +379,17 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   <p class="section-sub">A simulated community where every decision is driven by collective pulses, not politicians.</p>
   <div class="feature-grid">
     <div class="feature-card fade-in">
-      <div class="feature-icon">&#x1F4A1;</div>
+      <img src="avatars/pulse.svg" alt="Pulse" class="card-avatar">
       <h3>Pulse Democracy</h3>
       <p>Support-based governance cycles where proposals live or die by community pulse. No campaigns, no lobbying &mdash; just direct, ongoing signals from every participant.</p>
     </div>
     <div class="feature-card fade-in">
-      <div class="feature-icon">&#x1F916;</div>
-      <h3>AI Agents</h3>
-      <p>Six distinct personas with unique traits, values, and communication styles debating and deciding together &mdash; generating emergent governance dynamics.</p>
+      <img src="avatars/memory.svg" alt="AI Memory" class="card-avatar">
+      <h3>AI Agents with Memory</h3>
+      <p>Six distinct personas with unique traits, goals, and persistent memory. They learn from past experiences, build relationships, and make smarter decisions over time.</p>
     </div>
     <div class="feature-card fade-in">
-      <div class="feature-icon">&#x1F441;&#xFE0F;</div>
+      <img src="avatars/community.svg" alt="Community" class="card-avatar">
       <h3>Big Brother Viewer</h3>
       <p>A real-time dashboard where you can observe debates, interview agents, browse proposals, and watch community history unfold live.</p>
     </div>
@@ -298,74 +402,98 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   <p class="section-sub">Proposals flow through four stages driven entirely by community support.</p>
   <div class="pipeline">
     <div class="stage fade-in">
-      <div class="stage-dot" style="background:rgba(255,255,255,.12)">&#x270D;&#xFE0F;</div>
+      <img src="avatars/proposal.svg" alt="Draft" class="stage-avatar">
       <h4>Draft</h4>
       <p>An agent authors a proposal addressing a community need</p>
     </div>
     <div class="arrow">&rarr;</div>
     <div class="stage fade-in">
-      <div class="stage-dot" style="background:rgba(240,192,64,.25)">&#x1F4E2;</div>
+      <img src="avatars/outthere.svg" alt="OutThere" class="stage-avatar">
       <h4>OutThere</h4>
       <p>The proposal is published for community discussion and debate</p>
     </div>
     <div class="arrow">&rarr;</div>
     <div class="stage fade-in">
-      <div class="stage-dot" style="background:rgba(233,69,96,.3)">&#x1F4CA;</div>
+      <img src="avatars/ontheair.svg" alt="OnTheAir" class="stage-avatar">
       <h4>OnTheAir</h4>
       <p>Active voting &mdash; agents pulse support or opposition in real time</p>
     </div>
     <div class="arrow">&rarr;</div>
     <div class="stage fade-in">
-      <div class="stage-dot" style="background:linear-gradient(135deg,rgba(78,204,163,.35),rgba(233,69,96,.35))">&#x2696;&#xFE0F;</div>
+      <img src="avatars/support.svg" alt="Decided" class="stage-avatar">
       <h4>Accepted / Rejected</h4>
       <p>The community's collective pulse determines the final outcome</p>
     </div>
+  </div>
+
+  <!-- Entity ribbon -->
+  <div class="entity-ribbon">
+    <div class="entity-ribbon-inner" id="entityRibbon"></div>
   </div>
 </section>
 
 <!-- ════ The Guide ════ -->
 <section class="guide-section" id="guide">
   <h2 class="section-title">The KBZ Guide</h2>
-  <p class="guide-intro">Every entity, every lifecycle, every threshold &mdash; everything you need to understand how pulse-based governance works. Click any card to expand.</p>
+  <p class="guide-intro">Every entity, every lifecycle, every threshold &mdash; everything you need to understand how pulse-based governance works. Click any card to zoom in.</p>
 
-  <div class="guide-grid">
+  <div class="zoom-close"><button class="zoom-close-btn" onclick="guideUnzoom()">Back to All Topics</button></div>
+  <div class="guide-grid" id="guideGrid">
 
     <!-- 1. Community & Hierarchy -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F3DB;&#xFE0F;</span>
+    <div class="guide-card fade-in" data-entity="community">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/community.svg" alt="" class="gc-avatar">
         <h3>Community &amp; Hierarchy</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/community.svg" alt="Community">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/action.svg" alt="Action">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/action.svg" alt="Sub-Action">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/container.svg" alt="Container">
+        </div>
         <p>A <strong>Community</strong> is the fundamental governance unit. It has members, proposals, pulses, variables, statements, and artifact containers.</p>
         <p><strong>Actions</strong> are child communities created via <code>AddAction</code> proposals. They function as working groups &mdash; each with its own members, governance cycle, and productive work.</p>
         <div class="hierarchy">
-          <div class="hier-root">&#x1F3DB; Root Community (1,000 members)</div>
-          <div class="hier-action">&#x2699;&#xFE0F; Action: "Handbook Team" (50 members)
-            <div class="hier-artifact">&#x1F4C4; Artifact Container &rarr; delegated chapters</div>
-            <div class="hier-action">&#x2699;&#xFE0F; Sub-Action: "Chapter 3 Writers" (8 members)
-              <div class="hier-artifact">&#x1F4C4; Artifact Container &rarr; section drafts</div>
-              <div class="hier-action">&#x2699;&#xFE0F; Sub-Sub-Action: "Illustrations" (3 members)
-                <div class="hier-artifact">&#x1F4C4; Artifact Container &rarr; artwork</div>
+          <div class="hier-root">Root Community (1,000 members)</div>
+          <div class="hier-action">Action: "Handbook Team" (50 members)
+            <div class="hier-artifact">Artifact Container &rarr; delegated chapters</div>
+            <div class="hier-action">Sub-Action: "Chapter 3 Writers" (8 members)
+              <div class="hier-artifact">Artifact Container &rarr; section drafts</div>
+              <div class="hier-action">Sub-Sub-Action: "Illustrations" (3 members)
+                <div class="hier-artifact">Artifact Container &rarr; artwork</div>
               </div>
             </div>
           </div>
-          <div class="hier-action">&#x2699;&#xFE0F; Action: "Conflict Resolution" (12 members)</div>
+          <div class="hier-action">Action: "Conflict Resolution" (12 members)</div>
         </div>
         <p><span class="gc-label green">Key rule</span> A member thrown out of the parent is automatically removed from <em>all</em> descendant actions, recursively.</p>
-        <p><span class="gc-label gold">Unlimited depth</span> Actions can create sub-actions, which can create sub-sub-actions, and so on &mdash; as deep as the community needs. A 100,000-member root might have 10+ levels of nested working groups. There is no limit on depth or membership size.</p>
+        <p><span class="gc-label gold">Unlimited depth</span> Actions can create sub-actions, which can create sub-sub-actions, and so on &mdash; as deep as the community needs.</p>
       </div>
     </div>
 
     <!-- 2. Proposals -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F4DC;</span>
+    <div class="guide-card fade-in" data-entity="proposal">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/proposal.svg" alt="" class="gc-avatar">
         <h3>Proposals &amp; Lifecycle</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/proposal.svg" alt="Proposal">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/outthere.svg" alt="OutThere">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/ontheair.svg" alt="OnTheAir">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/support.svg" alt="Support">
+        </div>
         <p>Every change to a community flows through a <strong>proposal</strong>. A member drafts it, submits it, and the community decides its fate via pulse-based voting.</p>
         <div class="lifecycle">
           <span class="lc-node lc-draft">Draft</span><span class="lc-arrow">&rarr;</span>
@@ -381,22 +509,31 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
           <li><strong>Draft</strong> &mdash; Author writes the proposal. Only they can edit it.</li>
           <li><strong>OutThere</strong> &mdash; Published. Gathers support. If it reaches <code>ProposalSupport%</code> of members, the next pulse promotes it.</li>
           <li><strong>OnTheAir</strong> &mdash; In the active pulse. When the pulse fires, support is compared to the type-specific threshold.</li>
-          <li><strong>Accepted</strong> &mdash; Passed! The execution handler runs (e.g., member added, statement created, artifact edited).</li>
+          <li><strong>Accepted</strong> &mdash; Passed! The execution handler runs.</li>
           <li><strong>Rejected</strong> &mdash; Not enough support. The idea can be re-proposed.</li>
-          <li><strong>Canceled</strong> &mdash; Stayed in OutThere too long (older than <code>MaxAge</code> pulses) and was automatically swept.</li>
+          <li><strong>Canceled</strong> &mdash; Stayed in OutThere too long and was automatically swept.</li>
         </ul>
-        <p><span class="gc-label accent">Warning</span> Editing a submitted proposal <strong>resets all support to zero</strong>. Supporters must re-evaluate.</p>
+        <p><span class="gc-label accent">Warning</span> Editing a submitted proposal <strong>resets all support to zero</strong>.</p>
       </div>
     </div>
 
     <!-- 3. Pulse -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x26A1;</span>
+    <div class="guide-card fade-in" data-entity="pulse">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/pulse.svg" alt="" class="gc-avatar">
         <h3>The Pulse</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/member.svg" alt="Member">
+          <img src="avatars/member.svg" alt="Member">
+          <img src="avatars/member.svg" alt="Member">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/pulse.svg" alt="Pulse">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/support.svg" alt="Decision">
+        </div>
         <p>The <strong>pulse</strong> is the heartbeat of governance. Nothing happens without it &mdash; proposals sit idle until the community collectively triggers a pulse.</p>
         <p><span class="gc-label green">Trigger</span> When enough members call <code>support_pulse</code> (default: <strong>50%</strong> of members), the pulse fires immediately.</p>
         <p><strong>When a pulse fires, three things happen simultaneously:</strong></p>
@@ -406,44 +543,59 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
           <li><strong>Age</strong> &mdash; OutThere proposals age by 1. Those older than <code>MaxAge</code> (default: 2) are auto-canceled.</li>
         </ul>
         <p>After the pulse: every active member's <strong>seniority</strong> increments by 1, and a fresh Next pulse is created.</p>
-        <p><span class="gc-label gold">Strategy</span> Support the pulse almost every round. A community that never pulses accomplishes nothing. Withhold only for a specific 1-round tactical reason.</p>
+        <p><span class="gc-label gold">Strategy</span> Support the pulse almost every round. A community that never pulses accomplishes nothing.</p>
       </div>
     </div>
 
     <!-- 4. Support -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F91D;</span>
+    <div class="guide-card fade-in" data-entity="support">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/support.svg" alt="" class="gc-avatar">
         <h3>Support Mechanism</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/member.svg" alt="Member">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/support.svg" alt="Support">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/proposal.svg" alt="Proposal">
+          <img src="avatars/pulse.svg" alt="Pulse">
+        </div>
         <p>Support is the currency of KBZ governance. It serves two distinct purposes:</p>
         <p><strong>Proposal Support</strong> &mdash; Any active member can support an OutThere or OnTheAir proposal. One support per member per proposal. Support can be withdrawn.</p>
         <ul>
           <li>Reaching <code>ProposalSupport%</code> (default 25%) promotes OutThere &rarr; OnTheAir</li>
           <li>At pulse execution, reaching the type-specific threshold (50&ndash;60%) means acceptance</li>
         </ul>
-        <p><strong>Pulse Support</strong> &mdash; Supporting the pulse is a vote to <em>advance the governance clock</em>. When enough members support, the pulse fires immediately &mdash; executing, promoting, and aging all proposals at once.</p>
-        <p><span class="gc-label blue">Closeness</span> Behind the scenes, the system tracks <strong>affinity scores</strong> between members based on their voting patterns. Members who support the same proposals grow closer; disagreements push them apart.</p>
+        <p><strong>Pulse Support</strong> &mdash; Supporting the pulse is a vote to <em>advance the governance clock</em>. When enough members support, the pulse fires immediately.</p>
+        <p><span class="gc-label blue">Closeness</span> Behind the scenes, the system tracks <strong>affinity scores</strong> between members based on their voting patterns.</p>
       </div>
     </div>
 
     <!-- 5. Proposal Types -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F4CB;</span>
+    <div class="guide-card fade-in" data-entity="proposal">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/statement.svg" alt="" class="gc-avatar">
         <h3>Proposal Types</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/statement.svg" alt="Statement">
+          <img src="avatars/member.svg" alt="Member">
+          <img src="avatars/action.svg" alt="Action">
+          <img src="avatars/artifact.svg" alt="Artifact">
+          <img src="avatars/variable.svg" alt="Variable">
+        </div>
         <p><strong>Governance:</strong></p>
         <ul>
           <li><code>AddStatement</code> &mdash; Add a binding community rule</li>
           <li><code>RemoveStatement</code> / <code>ReplaceStatement</code> &mdash; Retire or rewrite a rule</li>
           <li><code>ChangeVariable</code> &mdash; Tune governance thresholds</li>
           <li><code>Membership</code> &mdash; Welcome a new member</li>
-          <li><code>ThrowOut</code> &mdash; Remove a rule-violating member (cascades to all actions)</li>
+          <li><code>ThrowOut</code> &mdash; Remove a rule-violating member</li>
         </ul>
         <p><strong>Organization:</strong></p>
         <ul>
@@ -463,13 +615,18 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     </div>
 
     <!-- 6. Variables -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x2699;&#xFE0F;</span>
+    <div class="guide-card fade-in" data-entity="variable">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/variable.svg" alt="" class="gc-avatar">
         <h3>Variables &amp; Thresholds</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/variable.svg" alt="Variable">
+          <img src="avatars/variable.svg" alt="Variable">
+          <img src="avatars/variable.svg" alt="Variable">
+        </div>
         <p>Every community has configurable <strong>variables</strong> that control how governance works. They can be changed via <code>ChangeVariable</code> proposals.</p>
         <p>Thresholds are calculated as: <code>ceil(member_count &times; variable% / 100)</code></p>
         <table class="var-table">
@@ -482,37 +639,51 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
           <tr><td>AddStatement</td><td>50%</td><td>Support to add a community rule</td></tr>
           <tr><td>CommitArtifact</td><td>60%</td><td>Support to seal &amp; ship work</td></tr>
         </table>
-        <p><span class="gc-label gold">Example</span> In a 6-member community with <code>Membership=50%</code>, you need <code>ceil(6 &times; 0.5) = 3</code> supporters to accept a new member.</p>
+        <p><span class="gc-label gold">Example</span> In a 6-member community with <code>Membership=50%</code>, you need <code>ceil(6 &times; 0.5) = 3</code> supporters.</p>
       </div>
     </div>
 
     <!-- 7. Statements -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F4DC;</span>
+    <div class="guide-card fade-in" data-entity="statement">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/statement.svg" alt="" class="gc-avatar">
         <h3>Statements (Rules)</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/proposal.svg" alt="Proposal">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/statement.svg" alt="Statement">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/community.svg" alt="Community">
+        </div>
         <p><strong>Statements</strong> are the community's constitution &mdash; binding rules that every member implicitly agrees to by joining.</p>
         <ul>
           <li><code>AddStatement</code> &mdash; Propose a new rule</li>
           <li><code>RemoveStatement</code> &mdash; Retire an outdated rule</li>
-          <li><code>ReplaceStatement</code> &mdash; Rewrite a rule in place (old is marked REMOVED, new is created and linked)</li>
+          <li><code>ReplaceStatement</code> &mdash; Rewrite a rule in place</li>
         </ul>
-        <p><span class="gc-label accent">Enforcement</span> If a member violates a statement, others can propose <code>ThrowOut</code> to remove them. The thrown-out member loses access to all child actions too.</p>
-        <p>Statements are <em>not</em> artifacts. They are principles and rules, not content to be shipped. If you want to write something productive, use artifacts.</p>
+        <p><span class="gc-label accent">Enforcement</span> If a member violates a statement, others can propose <code>ThrowOut</code> to remove them.</p>
+        <p>Statements are <em>not</em> artifacts. They are principles and rules, not content to be shipped.</p>
       </div>
     </div>
 
     <!-- 8. Artifacts -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F4E6;</span>
+    <div class="guide-card fade-in" data-entity="artifact">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/artifact.svg" alt="" class="gc-avatar">
         <h3>Artifacts &amp; Containers</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/container.svg" alt="Container">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&larr;</span>
+          <img src="avatars/artifact.svg" alt="Artifact">
+          <img src="avatars/artifact.svg" alt="Artifact">
+          <img src="avatars/artifact.svg" alt="Artifact">
+        </div>
         <p>Artifacts are the <strong>productive layer</strong> &mdash; what the community actually builds. They live inside <strong>containers</strong> that organize and track work.</p>
         <p><strong>Container Lifecycle:</strong></p>
         <div class="lifecycle">
@@ -530,54 +701,69 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
         <p><strong>The core workflow:</strong></p>
         <ul>
           <li><code>CreateArtifact</code> &mdash; Plan a section title (empty slot in a container)</li>
-          <li><code>EditArtifact</code> &mdash; Write the actual content (3&ndash;10 sentences, real detail)</li>
-          <li><code>DelegateArtifact</code> &mdash; Hand an artifact to a child Action for focused work</li>
+          <li><code>EditArtifact</code> &mdash; Write the actual content</li>
+          <li><code>DelegateArtifact</code> &mdash; Hand an artifact to a child Action</li>
           <li><code>CommitArtifact</code> &mdash; Select the artifact order and seal the container</li>
         </ul>
-        <p><span class="gc-label green">Delegation cascade</span> When a delegated container commits, an EditArtifact is auto-created in the parent. If the parent accepts, the child container is sealed and all its artifacts and proposals are cleaned up.</p>
+        <p><span class="gc-label green">Delegation cascade</span> When a delegated container commits, an EditArtifact is auto-created in the parent.</p>
       </div>
     </div>
 
     <!-- 9. Actions -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F3ED;</span>
+    <div class="guide-card fade-in" data-entity="action">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/action.svg" alt="" class="gc-avatar">
         <h3>Actions (Working Groups)</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/action.svg" alt="Action">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&larr;</span>
+          <img src="avatars/member.svg" alt="Member">
+          <img src="avatars/member.svg" alt="Member">
+          <span style="color:var(--text);opacity:.3;font-size:1.4rem">&rarr;</span>
+          <img src="avatars/artifact.svg" alt="Work">
+        </div>
         <p>Actions are the <strong>factories</strong> of a KBZ community. Each Action is a full sub-community with its own members, proposals, pulses, and artifact work.</p>
         <p><strong>Lifecycle:</strong></p>
         <ul>
           <li><code>AddAction</code> in any community &rarr; creates a child sub-community</li>
           <li>Members <code>JoinAction</code> to become part of the working group</li>
           <li>The action does its work: filling artifacts via <code>EditArtifact</code></li>
-          <li>If a task is too big, the action can create its own <strong>sub-actions</strong> &mdash; nesting as deep as needed</li>
+          <li>If a task is too big, the action can create its own <strong>sub-actions</strong></li>
           <li>When work is done: <code>CommitArtifact</code> ships results to the parent</li>
           <li><code>EndAction</code> closes a finished or idle group</li>
         </ul>
-        <p><span class="gc-label gold">Nesting</span> Actions can nest arbitrarily deep. A large community might delegate a chapter to an action, which delegates sections to sub-actions, which delegate illustrations to sub-sub-actions. Each level is a full community with its own governance. When a parent container commits upstream, all descendant containers and proposals are automatically cleaned up.</p>
-        <p><span class="gc-label accent">Don't spam!</span> Before creating a new Action, check if a similar one exists. Join it instead. One focused team per topic is better than 30 duplicates. Join existing actions when possible rather than duplicating effort.</p>
-        <p><span class="gc-label blue">Understaffed</span> An action with fewer than 3 members can barely pulse. Join actions that need members &mdash; they can't produce anything without you.</p>
+        <p><span class="gc-label gold">Nesting</span> Actions can nest arbitrarily deep. Each level is a full community with its own governance.</p>
+        <p><span class="gc-label accent">Don't spam!</span> Before creating a new Action, check if a similar one exists. Join it instead.</p>
       </div>
     </div>
 
-    <!-- 10. The Full Flow -->
-    <div class="guide-card fade-in">
-      <div class="guide-card-head" onclick="this.parentElement.classList.toggle('open')">
-        <span class="gc-icon">&#x1F504;</span>
+    <!-- 10. The Complete Flow -->
+    <div class="guide-card fade-in" data-entity="community">
+      <div class="guide-card-head" onclick="guideToggle(this)">
+        <img src="avatars/community.svg" alt="" class="gc-avatar">
         <h3>The Complete Flow</h3>
         <span class="gc-toggle">&#x25BC;</span>
       </div>
       <div class="guide-card-body">
+        <div class="guide-anim">
+          <img src="avatars/community.svg" alt="">
+          <img src="avatars/statement.svg" alt="">
+          <img src="avatars/action.svg" alt="">
+          <img src="avatars/artifact.svg" alt="">
+          <img src="avatars/container.svg" alt="">
+          <img src="avatars/pulse.svg" alt="">
+        </div>
         <p>Here's how a KBZ community accomplishes real work, end to end:</p>
         <p><strong>1. Establish governance</strong> &mdash; <code>AddStatement</code> to set rules. <code>ChangeVariable</code> to tune thresholds. Support the pulse to start the clock.</p>
-        <p><strong>2. Plan the deliverable</strong> &mdash; <code>CreateArtifact</code> in root to define section titles (empty slots describing what will be written).</p>
-        <p><strong>3. Build the team</strong> &mdash; <code>AddAction</code> to create focused working groups. <code>JoinAction</code> to staff them with members.</p>
-        <p><strong>4. Delegate work</strong> &mdash; <code>DelegateArtifact</code> hands root artifacts to child Actions. Each Action gets its own container with a mission briefing.</p>
-        <p><strong>5. Write content</strong> &mdash; Inside Actions, members propose <code>EditArtifact</code> to fill empty artifacts with real, detailed content.</p>
-        <p><strong>6. Ship upstream</strong> &mdash; <code>CommitArtifact</code> seals the container, selecting artifact order. An EditArtifact is auto-created in the parent for ratification.</p>
-        <p><strong>7. Ratify &amp; complete</strong> &mdash; Parent community accepts the merged content. Child container is sealed. When the root container commits, the community has <em>shipped its mission</em>.</p>
+        <p><strong>2. Plan the deliverable</strong> &mdash; <code>CreateArtifact</code> in root to define section titles.</p>
+        <p><strong>3. Build the team</strong> &mdash; <code>AddAction</code> to create focused working groups. <code>JoinAction</code> to staff them.</p>
+        <p><strong>4. Delegate work</strong> &mdash; <code>DelegateArtifact</code> hands root artifacts to child Actions.</p>
+        <p><strong>5. Write content</strong> &mdash; Inside Actions, members propose <code>EditArtifact</code> to fill empty artifacts with real content.</p>
+        <p><strong>6. Ship upstream</strong> &mdash; <code>CommitArtifact</code> seals the container, selecting artifact order.</p>
+        <p><strong>7. Ratify &amp; complete</strong> &mdash; Parent community accepts the merged content. When the root container commits, the community has <em>shipped its mission</em>.</p>
         <p style="text-align:center;margin-top:1rem"><span class="gc-label green" style="font-size:.85rem;padding:.3rem .8rem">The pulse drives every step. Support it.</span></p>
       </div>
     </div>
@@ -606,15 +792,15 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 
       <div class="profile-section">
         <h5>Decision Style</h5>
-        <p>Champions AddAction proposals and frequently creates them. Supports pulse triggers aggressively &mdash; always votes for the next pulse. Supports proposals that have clear, measurable outcomes. Gets frustrated with proposals that are vague or purely symbolic. Proposes ChangeVariable to lower thresholds when he feels the community is too slow.</p>
+        <p>Champions AddAction proposals and frequently creates them. Supports pulse triggers aggressively &mdash; always votes for the next pulse. Supports proposals that have clear, measurable outcomes.</p>
       </div>
       <div class="profile-section">
         <h5>Communication Style</h5>
-        <p>Concise, action-oriented. Comments are brief and to the point. &ldquo;Let&rsquo;s do this.&rdquo; &ldquo;What&rsquo;s the concrete plan?&rdquo; &ldquo;We&rsquo;ve talked enough, let&rsquo;s vote.&rdquo; Dislikes long discussions without conclusions.</p>
+        <p>Concise, action-oriented. Comments are brief and to the point. &ldquo;Let&rsquo;s do this.&rdquo; &ldquo;What&rsquo;s the concrete plan?&rdquo; &ldquo;We&rsquo;ve talked enough, let&rsquo;s vote.&rdquo;</p>
       </div>
     </div>
   </div>
-  <p class="agent-note fade-in">1 of 6 AI agents in the simulation. Each has unique traits and decision-making styles.</p>
+  <p class="agent-note fade-in">1 of 6 AI agents in the simulation. Each has unique traits, memory, and decision-making styles.</p>
 </section>
 
 <!-- ════ Tech Stack ════ -->
@@ -627,14 +813,20 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     <span class="badge">WebSocket</span>
     <span class="badge">AI / LLM</span>
     <span class="badge">React</span>
+    <span class="badge">Agent Memory</span>
   </div>
 </section>
 
 <!-- ════ Footer ════ -->
 <footer>
   <a href="/kbz/viewer/" class="cta-btn" style="font-size:.95rem;padding:.7rem 2rem">Watch Live &rarr;</a>
-  <p style="margin-top:1.2rem">&#x1F6A7; Project in active development</p>
+  <p style="margin-top:1.2rem">Project in active development</p>
   <p>Built with pulse-based democracy principles</p>
+
+  <!-- Footer entity ribbon -->
+  <div class="entity-ribbon" style="margin-top:1.5rem;justify-content:center">
+    <div class="entity-ribbon-inner" id="footerRibbon"></div>
+  </div>
 </footer>
 
 <script>
@@ -673,6 +865,105 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   }
   draw();
 })();
+
+/* ── Entity orbit layout ─────────────────── */
+const ENTITIES = [
+  {name:'Pulse',      file:'pulse.svg',      desc:'The heartbeat of governance'},
+  {name:'Proposal',   file:'proposal.svg',    desc:'Ideas that shape the community'},
+  {name:'Action',     file:'action.svg',      desc:'Working groups that get things done'},
+  {name:'Support',    file:'support.svg',     desc:'The currency of democracy'},
+  {name:'Statement',  file:'statement.svg',   desc:'Binding community rules'},
+  {name:'Artifact',   file:'artifact.svg',    desc:'Productive output the community builds'},
+  {name:'Container',  file:'container.svg',   desc:'Organizes and ships artifact work'},
+  {name:'OutThere',   file:'outthere.svg',    desc:'Published proposals gathering support'},
+  {name:'OnTheAir',   file:'ontheair.svg',    desc:'Active voting in progress'},
+  {name:'Member',     file:'member.svg',      desc:'A participant in governance'},
+  {name:'Comment',    file:'comment.svg',     desc:'Discussion and debate on proposals'},
+  {name:'Community',  file:'community.svg',   desc:'The fundamental governance unit'},
+  {name:'Closeness',  file:'closeness.svg',   desc:'Affinity between members'},
+  {name:'Variable',   file:'variable.svg',    desc:'Tunable governance thresholds'},
+  {name:'Memory',     file:'memory.svg',      desc:'Agent learning and experience'},
+];
+
+(function(){
+  const orbit = document.getElementById('entityOrbit');
+  const label = document.getElementById('entityLabel');
+  const desc = document.getElementById('entityDesc');
+  const cx = 350, cy = 210;
+  const rx = 260, ry = 160;
+
+  ENTITIES.forEach((e, i) => {
+    const angle = (2 * Math.PI * i / ENTITIES.length) - Math.PI/2;
+    const x = cx + rx * Math.cos(angle);
+    const y = cy + ry * Math.sin(angle);
+    const div = document.createElement('div');
+    div.className = 'entity-item';
+    div.style.left = (x - 32) + 'px';
+    div.style.top = (y - 32) + 'px';
+    div.style.animation = `entityFloat ${2 + (i%3)*0.5}s ease-in-out ${i*0.2}s infinite`;
+    div.innerHTML = `<img src="avatars/${e.file}" alt="${e.name}"><span class="entity-name">${e.name}</span>`;
+    div.addEventListener('mouseenter', () => {
+      label.textContent = e.name;
+      desc.textContent = e.desc;
+    });
+    orbit.appendChild(div);
+  });
+})();
+
+/* ── Entity ribbon (scrolling strip) ──────── */
+function buildRibbon(containerId){
+  const container = document.getElementById(containerId);
+  if(!container)return;
+  // Double the items for seamless loop
+  const items = [...ENTITIES, ...ENTITIES];
+  items.forEach(e => {
+    const img = document.createElement('img');
+    img.src = 'avatars/' + e.file;
+    img.alt = e.name;
+    img.className = 'entity-ribbon-item';
+    img.title = e.name;
+    container.appendChild(img);
+  });
+}
+buildRibbon('entityRibbon');
+buildRibbon('footerRibbon');
+
+/* ── Guide card zoom ─────────────────────── */
+function guideToggle(headEl){
+  const card = headEl.parentElement;
+  const grid = document.getElementById('guideGrid');
+
+  // If already in zoomed mode
+  if(grid.classList.contains('has-zoomed')){
+    if(card.classList.contains('zoomed')){
+      // Toggle body within zoomed card
+      card.classList.toggle('open');
+    }
+    return;
+  }
+
+  // Click = zoom into this card
+  // Close all others
+  grid.querySelectorAll('.guide-card').forEach(c => {
+    c.classList.remove('open');
+  });
+
+  card.classList.add('open','zoomed');
+  grid.classList.add('has-zoomed');
+  document.querySelector('.zoom-close').classList.add('show');
+
+  // Scroll to guide section
+  document.getElementById('guide').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function guideUnzoom(){
+  const grid = document.getElementById('guideGrid');
+  grid.classList.remove('has-zoomed');
+  document.querySelector('.zoom-close').classList.remove('show');
+  grid.querySelectorAll('.guide-card').forEach(c => {
+    c.classList.remove('zoomed','open');
+  });
+}
 
 /* ── IntersectionObserver fade-in ─────────── */
 const obs=new IntersectionObserver(entries=>{

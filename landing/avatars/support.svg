@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <!-- SUPPORT: Two hands clasping / thumbs up - the currency of democracy -->
+  <circle cx="40" cy="40" r="36" fill="#1a1a2e" stroke="#4ecca3" stroke-width="2" opacity="0.9"/>
+  <!-- Handshake simplified as two curved arrows meeting -->
+  <g transform="translate(40,40)" opacity="0.85">
+    <!-- Left hand arc -->
+    <path d="M-18,5 C-18,-8 -5,-15 0,-5" fill="none" stroke="#4ecca3" stroke-width="2.5" stroke-linecap="round">
+      <animate attributeName="d" values="M-18,5 C-18,-8 -5,-15 0,-5;M-16,3 C-16,-10 -5,-17 0,-7;M-18,5 C-18,-8 -5,-15 0,-5" dur="2.5s" repeatCount="indefinite"/>
+    </path>
+    <!-- Right hand arc -->
+    <path d="M18,5 C18,-8 5,-15 0,-5" fill="none" stroke="#f0c040" stroke-width="2.5" stroke-linecap="round">
+      <animate attributeName="d" values="M18,5 C18,-8 5,-15 0,-5;M16,3 C16,-10 5,-17 0,-7;M18,5 C18,-8 5,-15 0,-5" dur="2.5s" repeatCount="indefinite"/>
+    </path>
+    <!-- Central connection point -->
+    <circle r="3" fill="#fff" opacity="0.6">
+      <animate attributeName="r" values="2.5;4;2.5" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.4;0.8;0.4" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Rising sparkles -->
+    <circle cx="-5" cy="-12" r="1.5" fill="#4ecca3" opacity="0">
+      <animate attributeName="cy" values="-8;-20" dur="1.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;0" dur="1.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="5" cy="-12" r="1.5" fill="#f0c040" opacity="0">
+      <animate attributeName="cy" values="-8;-22" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;0" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <!-- Outer pulse -->
+  <circle cx="40" cy="40" r="36" fill="none" stroke="#4ecca3" stroke-width="1" opacity="0">
+    <animate attributeName="r" values="30;40" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.4;0" dur="2s" repeatCount="indefinite"/>
+  </circle>
+</svg>
