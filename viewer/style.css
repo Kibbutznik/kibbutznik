@@ -2105,6 +2105,16 @@ body {
 .news-ticker-item.news-pulse::before {
     content: "⚡";
 }
+.news-ticker-item.news-clickable {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+.news-ticker-item.news-clickable:hover {
+    color: var(--text-primary);
+    text-decoration-style: solid;
+}
 .news-ticker-item.news-empty {
     color: var(--text-muted);
     font-style: italic;

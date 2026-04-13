@@ -3260,10 +3260,32 @@ const _newsQueue = [];
 const _newsListeners = new Set();
 const MAX_NEWS = 40;
 
+// Dedup: track last N event signatures to avoid repeats
+const _recentNewsKeys = [];
+const MAX_RECENT_KEYS = 60;
+
 function addNewsItem(event) {
-    const item = formatNewsEvent(event);
-    if (!item) return;
-    _newsQueue.unshift({ id: Date.now() + Math.random(), text: item, time: new Date(), type: event.event_type });
+    const parsed = formatNewsEvent(event);
+    if (!parsed) return;
+
+    // Dedup by content + event_type + timestamp (within 2s window)
+    const dedupKey = `${event.event_type}:${parsed.text}:${Math.floor(Date.now() / 2000)}`;
+    if (_recentNewsKeys.includes(dedupKey)) return;
+    _recentNewsKeys.push(dedupKey);
+    if (_recentNewsKeys.length > MAX_RECENT_KEYS) _recentNewsKeys.shift();
+
+    _newsQueue.unshift({
+        id: Date.now() + Math.random(),
+        text: parsed.text,
+        time: new Date(),
+        type: event.event_type,
+        // Entity link data for clickable news
+        linkType: parsed.linkType || null,
+        linkId: parsed.linkId || null,
+        linkLabel: parsed.linkLabel || null,
+        // For chat links — store community + tab info
+        linkTab: parsed.linkTab || null,
+    });
     if (_newsQueue.length > MAX_NEWS) _newsQueue.length = MAX_NEWS;
     _newsListeners.forEach(fn => fn([..._newsQueue]));
 }
@@ -3277,27 +3299,27 @@ function formatNewsEvent(event) {
     switch (event.event_type) {
         case 'proposal.accepted': {
             const pType = d.proposal_type || 'proposal';
-            return `${prefix}${pType} proposal accepted`;
+            return { text: `${prefix}${pType} proposal accepted`, linkType: 'proposal', linkId: d.proposal_id, linkLabel: pType };
         }
         case 'proposal.rejected': {
             const pType = d.proposal_type || 'proposal';
-            return `${prefix}${pType} proposal rejected`;
+            return { text: `${prefix}${pType} proposal rejected`, linkType: 'proposal', linkId: d.proposal_id, linkLabel: pType };
         }
         case 'pulse.executed':
-            return `${prefix}Pulse fired!`;
+            return { text: `${prefix}Pulse fired!`, linkType: d.pulse_id ? 'pulse' : null, linkId: d.pulse_id };
         case 'round.start':
-            return `Round ${d.round || '?'} started`;
+            return { text: `Round ${d.round || '?'} started` };
         case 'round.end':
-            return `Round ${d.round || '?'} ended`;
+            return { text: `Round ${d.round || '?'} ended` };
         case 'agent.action': {
             const action = d.action_type || d.action || '';
             const name = agentName || 'Agent';
             // Skip noisy/uninteresting events
             if (action === 'do_nothing' || action === 'create_proposal') return null;
             if (action === 'support_proposal' || action === 'support_pulse') return null;
-            if (action === 'send_chat') return `${prefix}${name} posted in chat`;
-            if (action === 'comment') return `${prefix}${name} commented on a proposal`;
-            if (action) return `${prefix}${name}: ${action}`;
+            if (action === 'send_chat') return { text: `${prefix}${name} posted in chat`, linkTab: 'chat' };
+            if (action === 'comment') return { text: `${prefix}${name} commented on a proposal`, linkType: 'proposal', linkId: d.ref_id || d.proposal_id, linkLabel: 'comment' };
+            if (action) return { text: `${prefix}${name}: ${action}` };
             return null;
         }
         default:
@@ -3305,7 +3327,7 @@ function formatNewsEvent(event) {
     }
 }
 
-function NewsTicker() {
+function NewsTicker({ openDetail, setActiveTab }) {
     const [items, setItems] = useState([..._newsQueue]);
     const prevLenRef = useRef(items.length);
     const scrollRef = useRef(null);
@@ -3321,23 +3343,28 @@ function NewsTicker() {
         if (!el || items.length === 0) { prevLenRef.current = items.length; return; }
         const newCount = items.length - prevLenRef.current;
         if (newCount > 0) {
-            // Measure width of newly prepended items
             let shiftPx = 0;
             const children = el.children;
             const gap = parseFloat(getComputedStyle(el).gap) || 24;
             for (let i = 0; i < Math.min(newCount, children.length); i++) {
                 shiftPx += children[i].offsetWidth + gap;
             }
-            // Instantly jump right (so new items are off-screen left)
             el.style.transition = 'none';
             el.style.transform = `translateX(-${shiftPx}px)`;
-            // Force reflow then animate back to 0
             void el.offsetWidth;
             el.style.transition = 'transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
             el.style.transform = 'translateX(0)';
         }
         prevLenRef.current = items.length;
     }, [items]);
+
+    function handleClick(item) {
+        if (item.linkTab && setActiveTab) {
+            setActiveTab(item.linkTab);
+        } else if (item.linkType && item.linkId && openDetail) {
+            openDetail(item.linkType, item.linkId, item.linkLabel || item.linkType);
+        }
+    }
 
     if (items.length === 0) {
         return React.createElement('div', { className: 'news-ticker' },
@@ -3352,12 +3379,14 @@ function NewsTicker() {
         React.createElement('span', { className: 'news-ticker-label' }, 'LIVE'),
         React.createElement('div', { className: 'news-ticker-track' },
             React.createElement('div', { className: 'news-ticker-scroll', ref: scrollRef },
-                items.map((item, i) =>
-                    React.createElement('span', {
+                items.map((item, i) => {
+                    const hasLink = !!(item.linkType && item.linkId) || !!item.linkTab;
+                    return React.createElement('span', {
                         key: item.id,
-                        className: `news-ticker-item ${item.type === 'proposal.accepted' ? 'news-accept' : ''} ${item.type === 'proposal.rejected' ? 'news-reject' : ''} ${item.type === 'pulse.executed' ? 'news-pulse' : ''}`
-                    }, item.text)
-                )
+                        className: `news-ticker-item ${hasLink ? 'news-clickable' : ''} ${item.type === 'proposal.accepted' ? 'news-accept' : ''} ${item.type === 'proposal.rejected' ? 'news-reject' : ''} ${item.type === 'pulse.executed' ? 'news-pulse' : ''}`,
+                        onClick: hasLink ? () => handleClick(item) : undefined,
+                    }, item.text);
+                })
             )
         )
     );
@@ -3448,7 +3477,18 @@ function App() {
         fetchData();
     }, [activeCommunityId]);
 
-    // WebSocket connection
+    // Debounced fetch — coalesces rapid WS events into a single fetch
+    const fetchTimerRef = useRef(null);
+    function debouncedFetch() {
+        if (fetchTimerRef.current) return;  // already scheduled
+        fetchTimerRef.current = setTimeout(() => {
+            fetchTimerRef.current = null;
+            Object.keys(_cache).forEach(k => delete _cache[k]);
+            fetchData();
+        }, 800);
+    }
+
+    // WebSocket connection — stable deps, never reconnects on community change
     useEffect(() => {
         function connectWS() {
             const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -3462,16 +3502,10 @@ function App() {
             ws.onmessage = (e) => {
                 try {
                     const event = JSON.parse(e.data);
-                    // Refresh on round boundaries and pulse execution
-                    if (event.event_type === "round.end" || event.event_type === "pulse.executed") {
-                        // Clear API cache so fresh data is fetched
-                        Object.keys(_cache).forEach(k => delete _cache[k]);
-                        fetchData();
-                    }
-                    // Also refresh when proposals are accepted/rejected (new artifacts, actions, etc.)
-                    if (event.event_type === "proposal.accepted" || event.event_type === "proposal.rejected") {
-                        Object.keys(_cache).forEach(k => delete _cache[k]);
-                        fetchData();
+                    // Debounced refresh for state-changing events
+                    if (event.event_type === "round.end" || event.event_type === "pulse.executed" ||
+                        event.event_type === "proposal.accepted" || event.event_type === "proposal.rejected") {
+                        debouncedFetch();
                     }
                     // Feed the news ticker
                     if (typeof addNewsItem === 'function') {
@@ -3496,7 +3530,7 @@ function App() {
         return () => {
             if (wsRef.current) wsRef.current.close();
         };
-    }, [fetchData]);
+    }, []);  // stable — connect once
 
     // Fetch action community details when activeCommunityId changes
     useEffect(() => {
@@ -3590,7 +3624,7 @@ function App() {
                 onBackToRoot={handleBackToRoot}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
             />
-            <NewsTicker />
+            <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} />
             <ActionBreadcrumb
                 activeCommunityId={activeCommunityId}
                 rootCommunityId={rootCommunityId}
