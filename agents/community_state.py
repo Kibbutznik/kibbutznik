@@ -152,7 +152,7 @@ class CommunitySnapshot:
             st = status_label.get(c.get("status"), str(c.get("status")))
             is_delegated_container = bool(c.get("delegated_from_artifact_id"))
             origin = " (root)" if not is_delegated_container else f" (delegated from parent — YOUR WORK CONTAINER)"
-            lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid}] — {st}{origin}")
+            lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid[:8]}] — {st}{origin}")
             mission = (c.get("mission") or "").strip()
             if mission:
                 lines.append(f"    >>> MISSION: {mission}")
@@ -184,37 +184,37 @@ class CommunitySnapshot:
                 deleg = self.delegations_out.get(aid)
                 if deleg:
                     lines.append(
-                        f"    [{aid}] \"{title}\" by {author} — DELEGATED to action "
+                        f"    [{aid[:8]}] \"{title}\" by {author} — DELEGATED to action "
                         f"\"{deleg['action_name']}\" "
                         f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
                     )
                 elif not (a.get("content") or "").strip():
                     if is_delegated_container:
                         lines.append(
-                            f"    [{aid}] \"{title}\" by {author} — "
-                            f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid}"
+                            f"    [{aid[:8]}] \"{title}\" by {author} — "
+                            f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid[:8]}"
                         )
                     else:
                         lines.append(
-                            f"    [{aid}] \"{title}\" by {author} — "
-                            f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={aid}, val_text=<action_id>), "
-                            f"or EditArtifact directly if no suitable Action exists (val_uuid={aid})"
+                            f"    [{aid[:8]}] \"{title}\" by {author} — "
+                            f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={aid[:8]}, val_text=<action_id>), "
+                            f"or EditArtifact directly if no suitable Action exists (val_uuid={aid[:8]})"
                         )
                 else:
                     full_content = (a.get("content") or "").strip()
-                    lines.append(f"    [{aid}] \"{title}\" by {author} — current content:")
+                    lines.append(f"    [{aid[:8]}] \"{title}\" by {author} — current content:")
                     lines.append(f"      {full_content}")
-                    lines.append(f"      → To improve: EditArtifact val_uuid={aid}")
+                    lines.append(f"      → To improve: EditArtifact val_uuid={aid[:8]}")
             if c.get("status") == 1 and arts:
                 all_filled = all((a.get("content") or "").strip() for a in arts if not self.delegations_out.get(a["id"]))
                 if all_filled and is_delegated_container:
                     lines.append(
-                        f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid} "
+                        f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid[:8]} "
                         f"val_text=JSON list of artifact ids in order"
                     )
                 elif not is_delegated_container:
                     lines.append(
-                        f"    → To commit: CommitArtifact with val_uuid={cid} "
+                        f"    → To commit: CommitArtifact with val_uuid={cid[:8]} "
                         f"and val_text=JSON list of artifact ids in chosen order"
                     )
             if c.get("status") == 2:
@@ -223,9 +223,10 @@ class CommunitySnapshot:
         # Bridge reminder to actions section below
         lines.append("\n  → See \"Active Actions\" and \"Actions You Can Join\" below — create or join actions when artifacts need teams to work on them.")
 
-    def summarize(self, my_user_id: str = "", users_cache: dict[str, str] | None = None) -> str:
+    def summarize(self, my_user_id: str = "", users_cache: dict[str, str] | None = None, supported_proposals: set[str] | None = None) -> str:
         """Generate a human-readable summary of the community state for the LLM."""
         users_cache = users_cache or {}
+        supported_proposals = supported_proposals or set()
         lines = []
         lines.append(f"## Community: {self.community_name}")
         lines.append(f"Members: {self.member_count}")
@@ -246,7 +247,7 @@ class CommunitySnapshot:
             lines.append("   Outdated or harmful rules can be retired via RemoveStatement,")
             lines.append("   or rewritten in place via ReplaceStatement — both target the rule by id.)")
             for i, s in enumerate(self.statements, 1):
-                lines.append(f"  {i}. [id={s['id']}] {s['statement_text']}")
+                lines.append(f"  {i}. [id={s['id'][:8]}] {s['statement_text']}")
         else:
             lines.append("\n### Community Rules: None yet — consider proposing AddStatement to establish community values!")
 
@@ -279,20 +280,20 @@ class CommunitySnapshot:
                         if idle else ""
                     )
                     lines.append(
-                        f"  - [{name}] id={aid} ({len(members)} members, "
+                        f"  - [{name}] id={aid[:8]} ({len(members)} members, "
                         f"{pulses} pulses fired, {active_props} active proposals, "
                         f"{accepted} accepted / {rejected} rejected){status_tag}"
                     )
                     if idle:
                         lines.append(
-                            f"    → To close: create EndAction proposal with val_uuid={aid}"
+                            f"    → To close: create EndAction proposal with val_uuid={aid[:8]}"
                         )
             if ended_actions:
                 lines.append(f"\n### Ended Actions ({len(ended_actions)}): (already closed, no action needed)")
                 for a in ended_actions:
                     aid = a['action_id']
                     name = self.action_names.get(aid, "Unnamed")
-                    lines.append(f"  - [{name}] id={aid}")
+                    lines.append(f"  - [{name}] id={aid[:8]}")
 
         promote_threshold = self._proposal_support_threshold()
 
@@ -325,10 +326,11 @@ class CommunitySnapshot:
                 will_promote = "WILL promote to OnTheAir" if support >= promote_threshold else f"needs {promote_threshold - support} more to promote"
                 age_warn = f" !! age {age}/{max_age} — will be CANCELED if pulse fires!" if age >= int(max_age) else f" age {age}/{max_age}"
                 desc = _proposal_display_text(p)
+                you_supported = " (YOU SUPPORTED)" if p['id'] in supported_proposals else ""
                 lines.append(
                     f"  - [{p['proposal_type']}] \"{desc}\" "
                     f"by {creator} | support: {support}/{accept_threshold} | {will_promote} |{age_warn}"
-                    f" | id: {p['id']}"
+                    f" | id: {p['id'][:8]}{you_supported}"
                 )
                 _append_edit_diff(p, lines)
                 # Warn agents NOT to JoinAction for AddAction proposals that haven't been accepted yet
@@ -357,10 +359,11 @@ class CommunitySnapshot:
                 else:
                     will_fail.append(p["proposal_type"])
                 desc = _proposal_display_text(p)
+                you_supported = " (YOU SUPPORTED)" if p['id'] in supported_proposals else ""
                 lines.append(
                     f"  - [{p['proposal_type']}] \"{desc}\" "
                     f"by {creator} | support: {support}/{threshold} needed → **{verdict}**"
-                    f" | id: {p['id']}"
+                    f" | id: {p['id'][:8]}{you_supported}"
                 )
                 _append_edit_diff(p, lines)
                 if p["proposal_type"] == "AddAction":
@@ -424,7 +427,7 @@ class CommunitySnapshot:
                     member_count = len(self.action_members.get(aid, []))
                     pending = ja_counts.get(aid, 0)
                     pending_note = f" — ⚠️ {pending} JoinAction proposals already pending, SUPPORT one instead of creating another!" if pending > 0 else ""
-                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid} ({member_count} members){pending_note}")
+                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid[:8]} ({member_count} members){pending_note}")
 
         # Members list (with user_ids for ThrowOut targeting)
         if self.members:
@@ -433,7 +436,7 @@ class CommunitySnapshot:
                 name = users_cache.get(m["user_id"], m["user_id"][:8])
                 seniority = m.get("seniority", 0)
                 me_marker = " ← you" if m["user_id"] == my_user_id else ""
-                lines.append(f"  - {name} (user_id={m['user_id']}, seniority={seniority}){me_marker}")
+                lines.append(f"  - {name} (user_id={m['user_id'][:8]}, seniority={seniority}){me_marker}")
 
         # Community chat — recent messages (or new since last read)
         if self.chat_messages:

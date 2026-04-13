@@ -131,6 +131,7 @@ class Agent:
         community_summary = snapshot.summarize(
             my_user_id=self.user_id,
             users_cache=self.users_cache,
+            supported_proposals=self.supported_proposals,
         )
 
         # 2. READ MEMORY — fetch persistent memory context for LLM prompt
@@ -151,9 +152,14 @@ class Agent:
 
         all_active = snapshot.proposals_out_there + snapshot.proposals_on_the_air
         unsupported = [
-            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id']}"
+            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id'][:8]}"
             for p in all_active
             if p["id"] not in self.supported_proposals
+        ]
+        already_supported = [
+            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id'][:8]}"
+            for p in all_active
+            if p["id"] in self.supported_proposals
         ]
 
         consecutive_do_nothings = 0
@@ -183,6 +189,7 @@ class Agent:
             community_summary=community_summary,
             action_history=history_strings,
             unsupported_proposals=unsupported,
+            already_supported_proposals=already_supported,
             already_commented=list(self.commented_proposals),
             consecutive_do_nothings=consecutive_do_nothings,
             initiative=self.persona.traits.initiative,
@@ -337,6 +344,38 @@ class Agent:
                     return c["id"]
         return short_id
 
+    def _resolve_val_uuid(self, short_id: str, snapshot: CommunitySnapshot) -> str:
+        """Resolve a potentially truncated val_uuid to a full UUID.
+
+        Searches across artifacts, containers, actions, statements, and members.
+        """
+        if not short_id:
+            return ""
+        if len(short_id) >= 36:
+            return short_id
+        # Search artifacts
+        for arts in snapshot.container_artifacts.values():
+            for a in arts:
+                if a["id"].startswith(short_id):
+                    return a["id"]
+        # Search containers
+        for c in snapshot.containers:
+            if c["id"].startswith(short_id):
+                return c["id"]
+        # Search actions
+        for a in snapshot.actions:
+            if a["action_id"].startswith(short_id):
+                return a["action_id"]
+        # Search statements
+        for s in snapshot.statements:
+            if s["id"].startswith(short_id):
+                return s["id"]
+        # Search members
+        for m in snapshot.members:
+            if m["user_id"].startswith(short_id):
+                return m["user_id"]
+        return short_id  # return as-is if no match found
+
     async def _execute_action(self, decision: AgentAction, snapshot: CommunitySnapshot) -> ActionLog:
         """Execute the decided action via the API."""
         now = datetime.now(timezone.utc)
@@ -375,7 +414,8 @@ class Agent:
                 ptype = decision.params.get("proposal_type", "AddStatement")
                 ptext = decision.params.get("proposal_text", "")
                 val_text = decision.params.get("val_text", "")
-                val_uuid = decision.params.get("val_uuid")
+                raw_val_uuid = decision.params.get("val_uuid")
+                val_uuid = self._resolve_val_uuid(raw_val_uuid or "", snapshot) if raw_val_uuid else None
 
                 # Append the agent's reason/pitch to the proposal text so it's
                 # persisted and visible when viewers zoom into the proposal.
@@ -412,7 +452,10 @@ class Agent:
                 # --- DelegateArtifact pre-flight validation ---
                 if ptype == "DelegateArtifact":
                     artifact_id = val_uuid or ""
-                    action_community_id = (val_text or "").strip()
+                    raw_action_id = (val_text or "").strip()
+                    # Resolve short action ID in val_text
+                    action_community_id = self._resolve_val_uuid(raw_action_id, snapshot) if raw_action_id else ""
+                    val_text = action_community_id  # update for the API call
 
                     # Guard 1: artifact must exist in this community
                     all_artifact_ids = {
@@ -445,6 +488,17 @@ class Agent:
                     ):
                         return ActionLog(now, "do_nothing", decision.reason,
                             f"DelegateArtifact skipped: delegation of {artifact_id[:8]} → {action_community_id[:8]} already exists", False)
+
+                # --- CommitArtifact: resolve short artifact IDs in val_text JSON list ---
+                if ptype == "CommitArtifact" and val_text:
+                    import json as _json
+                    try:
+                        art_ids = _json.loads(val_text)
+                        if isinstance(art_ids, list):
+                            resolved_ids = [self._resolve_val_uuid(aid, snapshot) for aid in art_ids]
+                            val_text = _json.dumps(resolved_ids)
+                    except (ValueError, TypeError):
+                        pass  # leave val_text as-is if not valid JSON
 
                 proposal = await self.client.create_proposal(
                     community_id=self.community_id,

@@ -147,6 +147,7 @@ def build_decision_prompt(
     community_summary: str,
     action_history: list[str],
     unsupported_proposals: list[str] | None = None,
+    already_supported_proposals: list[str] | None = None,
     already_commented: list[str] | None = None,
     consecutive_do_nothings: int = 0,
     initiative: float = 0.5,
@@ -161,8 +162,13 @@ def build_decision_prompt(
     unsupported_block = ""
     if unsupported_proposals:
         unsupported_block = (
-            "\n## Proposals You Have NOT Supported Yet\n"
+            "\n## Proposals You Have NOT Supported Yet (use support_proposal on these!)\n"
             + "\n".join(f"  - {pid}" for pid in unsupported_proposals)
+        )
+    if already_supported_proposals:
+        unsupported_block += (
+            "\n## Proposals You Already Support (DO NOT support_proposal on these again)\n"
+            + "\n".join(f"  - {pid}" for pid in already_supported_proposals)
         )
 
     force_action = ""
@@ -430,6 +436,7 @@ class DecisionEngine:
         community_summary: str,
         action_history: list[str],
         unsupported_proposals: list[str] | None = None,
+        already_supported_proposals: list[str] | None = None,
         already_commented: list[str] | None = None,
         consecutive_do_nothings: int = 0,
         initiative: float = 0.5,
@@ -447,6 +454,7 @@ class DecisionEngine:
             community_summary=community_summary,
             action_history=action_history,
             unsupported_proposals=unsupported_proposals,
+            already_supported_proposals=already_supported_proposals,
             already_commented=already_commented,
             consecutive_do_nothings=consecutive_do_nothings,
             initiative=initiative,
