@@ -5,7 +5,8 @@ from fastapi import HTTPException
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kbz.enums import PulseStatus, ProposalStatus
+from kbz.enums import MemberStatus, PulseStatus, ProposalStatus
+from kbz.models.member import Member
 from kbz.models.proposal import Proposal
 from kbz.models.pulse import Pulse
 from kbz.models.support import Support, PulseSupport
@@ -105,6 +106,24 @@ class SupportService:
             .where(Pulse.id == pulse.id)
             .values(support_count=Pulse.support_count + 1)
         )
+        # Recalculate threshold from current membership (may have changed since
+        # the pulse was created — e.g. members left or were thrown out).
+        member_result = await self.db.execute(
+            select(Member).where(
+                Member.community_id == community_id,
+                Member.status == MemberStatus.ACTIVE,
+            )
+        )
+        current_members = len(member_result.scalars().all())
+        if current_members > 0:
+            from kbz.services.community_service import CommunityService
+            csvc = CommunityService(self.db)
+            pct_str = await csvc.get_variable_value(community_id, "PulseSupport")
+            pulse_support_pct = int(float(pct_str)) if pct_str else 50
+            correct_threshold = max(1, math.ceil(current_members * pulse_support_pct / 100))
+            if pulse.threshold != correct_threshold:
+                pulse.threshold = correct_threshold
+
         await self.db.commit()
 
         # Refresh and check threshold
