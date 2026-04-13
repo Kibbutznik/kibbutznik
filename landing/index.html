@@ -12,11 +12,170 @@
   --accent:#e94560;--green:#4ecca3;--gold:#f0c040;
   --text:#e0e0e0;--white:#fff;--blue:#90caf9;
 }
+
+/* ── Psych Theme ─────────────────────────── */
+[data-theme="psych"]{
+  --bg:#0a0012;--bg2:#120024;--card:#1a0040;
+  --accent:#ff2d95;--green:#00ffaa;--gold:#ffe44d;
+  --text:#f0ddff;--white:#fff;--blue:#44eeff;
+}
+[data-theme="psych"] body{
+  background:var(--bg);
+}
+[data-theme="psych"] .hero::before{
+  content:'';position:absolute;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse at 20% 50%,rgba(255,0,200,.12) 0%,transparent 50%),
+    radial-gradient(ellipse at 80% 30%,rgba(0,255,180,.1) 0%,transparent 50%),
+    radial-gradient(ellipse at 50% 80%,rgba(100,0,255,.12) 0%,transparent 50%);
+  animation:psychBgShift 8s ease-in-out infinite;
+}
+@keyframes psychBgShift{
+  0%,100%{filter:hue-rotate(0deg)}
+  50%{filter:hue-rotate(40deg)}
+}
+[data-theme="psych"] .hero-logo{
+  animation:psychLogo 3s ease-in-out infinite;
+}
+@keyframes psychLogo{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 15px #ff2d95) drop-shadow(0 0 30px #7b2dff)}
+  50%{transform:scale(1.08);filter:drop-shadow(0 0 25px #00ffaa) drop-shadow(0 0 50px #ff2d95)}
+}
+[data-theme="psych"] .hero h1{
+  background:linear-gradient(90deg,#ff2d95,#7b2dff,#00ffaa,#ffe44d,#ff2d95);
+  background-size:300% 100%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:psychText 4s linear infinite;
+}
+@keyframes psychText{
+  0%{background-position:0% 50%}
+  100%{background-position:300% 50%}
+}
+[data-theme="psych"] .hero .subtitle{
+  color:#00ffaa;text-shadow:0 0 10px rgba(0,255,170,.4);
+}
+[data-theme="psych"] .cta-btn{
+  background:linear-gradient(135deg,#ff2d95,#7b2dff);
+  box-shadow:0 4px 25px rgba(255,45,149,.4),0 0 40px rgba(123,45,255,.2);
+}
+[data-theme="psych"] .cta-btn:hover{
+  box-shadow:0 6px 35px rgba(255,45,149,.6),0 0 60px rgba(123,45,255,.3);
+}
+[data-theme="psych"] .section-title{
+  background:linear-gradient(90deg,#ff2d95,#7b2dff,#00ffaa);
+  background-size:200% 100%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:psychText 6s linear infinite;
+}
+[data-theme="psych"] .feature-card{
+  border:1px solid rgba(123,45,255,.2);
+  background:linear-gradient(135deg,rgba(26,0,64,.8),rgba(18,0,36,.9));
+}
+[data-theme="psych"] .feature-card:hover{
+  border-color:#ff2d95;
+  box-shadow:0 0 25px rgba(255,45,149,.2),0 0 50px rgba(123,45,255,.1);
+}
+[data-theme="psych"] .guide-card{
+  border:1px solid rgba(123,45,255,.35);
+  background:linear-gradient(135deg,rgba(40,0,80,.6),rgba(20,0,40,.8));
+}
+[data-theme="psych"] .guide-card h3{
+  background:linear-gradient(90deg,#ff2d95,#d4aaff);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+[data-theme="psych"] .guide-card:hover{
+  border-color:#ff2d95;
+  box-shadow:0 0 25px rgba(255,45,149,.2),0 0 50px rgba(123,45,255,.15);
+}
+[data-theme="psych"] .guide-grid.has-zoomed .guide-card.zoomed{
+  border-color:#ff2d95;
+  box-shadow:0 0 50px rgba(255,45,149,.2),0 0 100px rgba(123,45,255,.15);
+}
+[data-theme="psych"] .entity-item:hover{
+  filter:drop-shadow(0 0 15px #ff2d95) drop-shadow(0 0 25px #7b2dff) !important;
+}
+[data-theme="psych"] .entity-center-label{
+  color:#00ffaa;text-shadow:0 0 8px rgba(0,255,170,.4);
+}
+[data-theme="psych"] .gc-label.green{background:rgba(0,255,170,.15);color:#00ffaa}
+[data-theme="psych"] .gc-label.gold{background:rgba(255,228,77,.15);color:#ffe44d}
+[data-theme="psych"] .gc-label.accent{background:rgba(255,45,149,.15);color:#ff2d95}
+[data-theme="psych"] .gc-label.blue{background:rgba(68,238,255,.15);color:#44eeff}
+[data-theme="psych"] code{
+  background:rgba(123,45,255,.12);color:#d4aaff;
+}
+[data-theme="psych"] .badge{
+  border:1px solid rgba(123,45,255,.3);
+  background:linear-gradient(135deg,rgba(26,0,64,.6),rgba(10,0,18,.7));
+}
+[data-theme="psych"] .badge:hover{border-color:#ff2d95}
+[data-theme="psych"] .agent-profile{
+  background:linear-gradient(135deg,rgba(26,0,64,.7),rgba(10,0,18,.8));
+}
+[data-theme="psych"] .agent-bar{
+  background:linear-gradient(90deg,#ff2d95,#7b2dff,#00ffaa) !important;
+}
+[data-theme="psych"] .trait-fill{
+  background:linear-gradient(90deg,#ff2d95,#7b2dff) !important;
+}
+[data-theme="psych"] footer{
+  border-top:1px solid rgba(123,45,255,.2);
+  background:var(--bg2);
+}
+[data-theme="psych"] .zoom-close-btn{
+  background:linear-gradient(135deg,#ff2d95,#7b2dff);
+}
+[data-theme="psych"] .zoom-close-btn:hover{
+  background:linear-gradient(135deg,#ff2d95,#9b4dff);
+}
+[data-theme="psych"] .lc-node{text-shadow:0 0 6px currentColor}
+[data-theme="psych"] .hier-root{color:#00ffaa;text-shadow:0 0 6px rgba(0,255,170,.3)}
+[data-theme="psych"] .hier-action{color:#ffe44d;border-left-color:rgba(255,228,77,.3)}
+[data-theme="psych"] .hier-artifact{color:#ff2d95;border-left-color:rgba(255,45,149,.3)}
+[data-theme="psych"] .var-table td:first-child{color:#00ffaa}
+[data-theme="psych"] .lifecycle{background:rgba(123,45,255,.08)}
+[data-theme="psych"] .hierarchy{background:rgba(123,45,255,.08)}
+[data-theme="psych"] .guide-anim{background:rgba(123,45,255,.1)}
+[data-theme="psych"] .entity-ribbon-item{filter:saturate(1.5) brightness(1.2)}
+/* Psych: pulsing border glow on sections */
+[data-theme="psych"] .entities-section,
+[data-theme="psych"] .pipeline-section{
+  border-top:1px solid rgba(123,45,255,.15);
+  border-bottom:1px solid rgba(255,45,149,.1);
+}
+
+/* ── Theme Toggle Button ─────────────────── */
+.theme-toggle{
+  position:fixed;top:1rem;right:1rem;z-index:999;
+  width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.15);
+  background:var(--card);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.2rem;
+  transition:all .3s ease;
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
+}
+.theme-toggle:hover{
+  border-color:var(--accent);
+  box-shadow:0 2px 20px rgba(233,69,96,.3);
+  transform:scale(1.1);
+}
+[data-theme="psych"] .theme-toggle{
+  border-color:rgba(123,45,255,.4);
+  box-shadow:0 0 15px rgba(255,45,149,.3),0 0 30px rgba(123,45,255,.2);
+}
+[data-theme="psych"] .theme-toggle:hover{
+  box-shadow:0 0 25px rgba(255,45,149,.5),0 0 50px rgba(123,45,255,.3);
+}
+
 html{scroll-behavior:smooth}
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:var(--bg);color:var(--text);line-height:1.6;
   overflow-x:hidden;
+  transition:background .5s ease,color .3s ease;
 }
 a{color:var(--accent);text-decoration:none;transition:color .2s}
 a:hover{color:var(--green)}
@@ -829,35 +988,75 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   </div>
 </footer>
 
+<!-- Theme toggle -->
+<button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Switch theme">🌙</button>
+
 <script>
+/* ── Theme Toggle ─────────────────────────── */
+function toggleTheme(){
+  const html = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  if(html.getAttribute('data-theme') === 'psych'){
+    html.removeAttribute('data-theme');
+    btn.textContent = '🌙';
+    localStorage.setItem('kbz-theme','dark');
+    updateParticleColors(false);
+  } else {
+    html.setAttribute('data-theme','psych');
+    btn.textContent = '🔮';
+    localStorage.setItem('kbz-theme','psych');
+    updateParticleColors(true);
+  }
+}
+// Restore saved theme
+(function(){
+  const saved = localStorage.getItem('kbz-theme');
+  if(saved === 'psych'){
+    document.documentElement.setAttribute('data-theme','psych');
+    document.getElementById('themeToggle').textContent = '🔮';
+  }
+})();
+
 /* ── Particle canvas ──────────────────────── */
+let _psychParticles = false;
+function updateParticleColors(isPsych){ _psychParticles = isPsych; }
+// Init from saved theme
+if(localStorage.getItem('kbz-theme')==='psych') _psychParticles = true;
+
 (function(){
   const c=document.getElementById('particleCanvas'),
         ctx=c.getContext('2d');
   let w,h,dots=[];
   function resize(){w=c.width=c.offsetWidth;h=c.height=c.offsetHeight}
   window.addEventListener('resize',resize);resize();
-  for(let i=0;i<50;i++) dots.push({
+
+  const psychColors = ['rgba(255,45,149,','rgba(123,45,255,','rgba(0,255,170,','rgba(68,238,255,','rgba(255,228,77,'];
+
+  for(let i=0;i<60;i++) dots.push({
     x:Math.random()*w,y:Math.random()*h,
     vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,
-    r:Math.random()*2+1
+    r:Math.random()*2+1,
+    ci:Math.floor(Math.random()*psychColors.length)
   });
   function draw(){
     ctx.clearRect(0,0,w,h);
+    const isPsych = _psychParticles;
     dots.forEach(d=>{
       d.x+=d.vx;d.y+=d.vy;
       if(d.x<0||d.x>w)d.vx*=-1;
       if(d.y<0||d.y>h)d.vy*=-1;
-      ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);
-      ctx.fillStyle='rgba(233,69,96,.35)';ctx.fill();
+      ctx.beginPath();ctx.arc(d.x,d.y,d.r*(isPsych?1.3:1),0,Math.PI*2);
+      ctx.fillStyle = isPsych ? psychColors[d.ci]+'.5)' : 'rgba(233,69,96,.35)';
+      ctx.fill();
     });
     for(let i=0;i<dots.length;i++)for(let j=i+1;j<dots.length;j++){
       const dx=dots[i].x-dots[j].x,dy=dots[i].y-dots[j].y,
             dist=Math.sqrt(dx*dx+dy*dy);
-      if(dist<150){
+      if(dist<(isPsych?180:150)){
         ctx.beginPath();ctx.moveTo(dots[i].x,dots[i].y);
         ctx.lineTo(dots[j].x,dots[j].y);
-        ctx.strokeStyle='rgba(233,69,96,'+(1-dist/150)*.12+')';
+        const a = (1-dist/(isPsych?180:150))*(isPsych?.18:.12);
+        ctx.strokeStyle = isPsych ? psychColors[dots[i].ci]+a+')' : 'rgba(233,69,96,'+a+')';
         ctx.stroke();
       }
     }
