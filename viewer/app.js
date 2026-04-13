@@ -3381,6 +3381,7 @@ function App() {
     const [activeCommunityName, setActiveCommunityName] = useState(null);
     const [activeCommunity, setActiveCommunity] = useState(null);  // full community object for the active action
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const activeCommunityIdRef = useRef(null);
 
     // Detail panel navigation stack
     const [detailStack, setDetailStack] = useState([]);
@@ -3411,7 +3412,10 @@ function App() {
     // For backward compat, keep communityId pointing to effective
     const communityId = effectiveCommunityId;
 
-    // Fetch all data
+    // Keep ref in sync so fetchData always reads current value without recreating
+    useEffect(() => { activeCommunityIdRef.current = activeCommunityId; }, [activeCommunityId]);
+
+    // Fetch all data — uses ref so it never needs to be recreated on community change
     const fetchData = useCallback(async () => {
         try {
             const [statusData, agentsData, eventsData] = await Promise.all([
@@ -3425,7 +3429,7 @@ function App() {
             if (statusData?.paused !== undefined) setPaused(statusData.paused);
 
             // Fetch proposals/pulses for the effective community (could be root or action)
-            const cid = activeCommunityId || statusData?.community?.id;
+            const cid = activeCommunityIdRef.current || statusData?.community?.id;
             if (cid) {
                 const [proposalsData, pulsesData] = await Promise.all([
                     API.get(`/communities/${cid}/proposals`),
@@ -3437,6 +3441,11 @@ function App() {
         } catch (err) {
             console.log("Waiting for simulation...", err.message);
         }
+    }, []);  // stable — never recreated
+
+    // Re-fetch proposals/pulses immediately when community changes
+    useEffect(() => {
+        fetchData();
     }, [activeCommunityId]);
 
     // WebSocket connection
