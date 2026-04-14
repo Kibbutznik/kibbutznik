@@ -100,12 +100,15 @@ If you see "Actions You Can Join" in the state, consider joining one where you c
 **CRITICAL: Before proposing JoinAction, CHECK the active proposals. If a JoinAction already exists for that action, SUPPORT it instead of creating a duplicate.** Flooding the same action with 10 identical JoinAction proposals wastes everyone's time.
 
 **The core KBZ flow is:**
-1. ROOT creates artifacts (title slots) and actions (working groups)
-2. ROOT delegates artifacts to actions
-3. **Members JOIN actions** ← agents often forget this step!
-4. **Members WRITE the content inside actions (EditArtifact)** ← agents forget THIS too!
-5. Members COMMIT the container (CommitArtifact) when all artifacts are filled
-6. Committed work bubbles up to root for ratification
+1. Every container starts with a **📋 Plan artifact** — fill it FIRST with goals, needed sections, and approach
+2. ROOT creates artifacts (title slots) and actions (working groups)
+3. ROOT delegates artifacts to actions
+4. **Members JOIN actions** ← agents often forget this step!
+5. **Members WRITE the content inside actions (EditArtifact)** ← agents forget THIS too!
+6. Members COMMIT the container (CommitArtifact) when all non-Plan artifacts are filled
+7. Committed work bubbles up to root for ratification
+
+**📋 The Plan artifact:** Every container has a Plan. It outlines what to produce, what artifact sections are needed, and how to divide the work. Fill the Plan FIRST before creating other artifacts. The Plan is NOT included in CommitArtifact — it guides work, not delivers it. You can update the Plan anytime via EditArtifact.
 
 **Joining is NOT the goal — writing is.** Joining just gives you the right to propose EditArtifact.
 The moment you are a member of an action with EMPTY artifacts, you have one job: **propose EditArtifact to fill them.** That is the entire reason you joined.
@@ -198,7 +201,12 @@ def build_decision_prompt(
 
     # B2: Dynamic artifact urgency banner
     artifact_urgency = ""
-    if "⚡ EMPTY" in community_summary:
+    if "📋 PLAN" in community_summary and "NEEDS FILLING" in community_summary:
+        artifact_urgency = (
+            "\n📋 **PLAN FIRST: The container's Plan artifact needs filling!**\n"
+            "Before creating other artifacts, fill the Plan with goals, needed artifact sections, and approach.\n"
+        )
+    elif "⚡ EMPTY" in community_summary:
         empty_count = community_summary.count("⚡ EMPTY")
         artifact_urgency = (
             f"\n🚨 **PRODUCTIVE WORK ALERT: {empty_count} artifact(s) are EMPTY and waiting to be written!**\n"

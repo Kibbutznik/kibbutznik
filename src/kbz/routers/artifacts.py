@@ -94,7 +94,8 @@ async def get_work_tree(community_id: uuid.UUID, db: AsyncSession = Depends(get_
                     "title": a.title,
                     "content": a.content,
                     "author_user_id": str(a.author_user_id),
-                    "proposal_id": str(a.proposal_id),
+                    "proposal_id": str(a.proposal_id) if a.proposal_id else None,
+                    "is_plan": getattr(a, 'is_plan', False),
                     "status": a.status,
                     "delegated_to": children,
                 }

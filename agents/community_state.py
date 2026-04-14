@@ -177,7 +177,29 @@ class CommunitySnapshot:
                     lines.append("    (no artifacts yet — the root community needs to CreateArtifact and DelegateArtifact here first)")
                 else:
                     lines.append("    (empty — no artifacts yet, propose CreateArtifact to add one)")
+
+            # Separate Plan artifact from regular artifacts — show Plan first
+            plan_art = None
+            regular_arts = []
             for a in arts:
+                if a.get("is_plan"):
+                    plan_art = a
+                else:
+                    regular_arts.append(a)
+
+            if plan_art:
+                pid = plan_art["id"]
+                plan_content = (plan_art.get("content") or "").strip()
+                plan_is_template = plan_content.startswith("## Plan") and "(What is this" in plan_content
+                if plan_content and not plan_is_template:
+                    lines.append(f"    📋 PLAN [{pid[:8]}]:")
+                    lines.append(f"      {plan_content}")
+                    lines.append(f"      → To update the plan: EditArtifact val_uuid={pid[:8]}")
+                else:
+                    lines.append(f"    📋 PLAN [{pid[:8]}] — ⚡ NEEDS FILLING — fill this FIRST before creating other artifacts!")
+                    lines.append(f"      → Propose EditArtifact val_uuid={pid[:8]} to outline goals, needed sections, and approach")
+
+            for a in regular_arts:
                 aid = a["id"]
                 author = users_cache.get(a["author_user_id"], a["author_user_id"][:8])
                 title = a.get("title") or "(untitled)"
@@ -206,7 +228,9 @@ class CommunitySnapshot:
                     lines.append(f"      {full_content}")
                     lines.append(f"      → To improve: EditArtifact val_uuid={aid[:8]}")
             if c.get("status") == 1 and arts:
-                all_filled = all((a.get("content") or "").strip() for a in arts if not self.delegations_out.get(a["id"]))
+                # Exclude plan from "all filled" check
+                non_plan = [a for a in arts if not a.get("is_plan")]
+                all_filled = all((a.get("content") or "").strip() for a in non_plan if not self.delegations_out.get(a["id"])) if non_plan else False
                 if all_filled and is_delegated_container:
                     lines.append(
                         f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid[:8]} "

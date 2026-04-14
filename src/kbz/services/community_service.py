@@ -61,6 +61,7 @@ class CommunityService:
             await ArtifactService(self.db).create_root_container(
                 community_id,
                 mission=data.initial_artifact_mission,
+                founder_user_id=data.founder_user_id,
             )
 
         await self.db.flush()

@@ -69,16 +69,29 @@ class MemoryExtractor:
             short_text = self._extract_quote(log.details, 80)
 
             if ptype == "EditArtifact":
-                # Goal: working on an artifact
-                await self.store.add(
-                    user_id=user_id,
-                    memory_type="goal",
-                    content=f"Working on artifact content: {short_text}",
-                    importance=0.7,
-                    category="artifact_work",
-                    round_num=round_num,
-                    related_id=log.ref_id,
-                )
+                # Check if this targets a Plan artifact
+                is_plan_edit = self._is_plan_edit(log.details, snapshot)
+                if is_plan_edit:
+                    await self.store.add(
+                        user_id=user_id,
+                        memory_type="goal",
+                        content=f"Updated Plan: {short_text}",
+                        importance=0.9,
+                        category="plan",
+                        round_num=round_num,
+                        related_id=log.ref_id,
+                    )
+                else:
+                    # Goal: working on a regular artifact
+                    await self.store.add(
+                        user_id=user_id,
+                        memory_type="goal",
+                        content=f"Working on artifact content: {short_text}",
+                        importance=0.7,
+                        category="artifact_work",
+                        round_num=round_num,
+                        related_id=log.ref_id,
+                    )
             elif ptype == "AddAction":
                 await self.store.add(
                     user_id=user_id,
@@ -216,12 +229,13 @@ class MemoryExtractor:
                 )
                 # If it was an EditArtifact, mark the goal as progressing
                 if ptype == "EditArtifact":
+                    is_plan = self._is_plan_edit_from_proposal(p)
                     await self.store.add(
                         user_id=user_id,
                         memory_type="goal",
-                        content=f"Artifact content accepted: \"{ptext}\"",
-                        importance=0.8,
-                        category="artifact_work",
+                        content=f"Plan accepted: \"{ptext}\"" if is_plan else f"Artifact content accepted: \"{ptext}\"",
+                        importance=0.9 if is_plan else 0.8,
+                        category="plan" if is_plan else "artifact_work",
                         round_num=round_num,
                         related_id=pid,
                     )
@@ -286,6 +300,36 @@ class MemoryExtractor:
             if p.get("id") == proposal_id:
                 return p.get("user_id")
         return None
+
+    @staticmethod
+    def _is_plan_edit(details: str, snapshot: "CommunitySnapshot") -> bool:
+        """Detect if an EditArtifact action targets a Plan artifact.
+
+        Heuristics: look for 'Plan' in the artifact title referenced in the
+        action details, or check the snapshot's containers for matching artifact.
+        """
+        # Check details text for plan references
+        lower = details.lower()
+        if "plan" in lower and ("📋" in details or "is_plan" in lower):
+            return True
+        # Check if the val_uuid (artifact being edited) is a plan artifact
+        # Details format: 'Created [EditArtifact] val_uuid=XXXXXXXX ...'
+        if "val_uuid=" in details:
+            uuid_part = details.split("val_uuid=")[1].split()[0].strip('"').strip("'")
+            # Search snapshot containers for this artifact
+            for c in getattr(snapshot, "containers", []):
+                for a in c.get("artifacts", []):
+                    aid = a.get("id", "")
+                    if aid.startswith(uuid_part) or uuid_part.startswith(aid[:8]):
+                        if a.get("is_plan") or a.get("title", "").lower() == "plan":
+                            return True
+        return False
+
+    @staticmethod
+    def _is_plan_edit_from_proposal(proposal: dict) -> bool:
+        """Detect if an accepted EditArtifact proposal targeted a Plan artifact."""
+        ptext = (proposal.get("proposal_text") or "").lower()
+        return "plan" in ptext and ("📋" in (proposal.get("proposal_text") or "") or "is_plan" in ptext)
 
     @staticmethod
     def _find_proposal_type(proposal_id: str | None, snapshot: "CommunitySnapshot") -> str:

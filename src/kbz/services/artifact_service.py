@@ -44,6 +44,7 @@ class ArtifactService:
         self,
         community_id: uuid.UUID,
         mission: str | None = None,
+        founder_user_id: uuid.UUID | None = None,
     ) -> ArtifactContainer:
         """Seed the primordial container for a root community.
 
@@ -62,6 +63,11 @@ class ArtifactService:
         )
         self.db.add(container)
         await self.db.flush()
+
+        # Auto-create the Plan artifact
+        if founder_user_id:
+            await self.create_plan_artifact(container.id, community_id, founder_user_id, mission)
+
         return container
 
     async def get_container(self, container_id: uuid.UUID) -> ArtifactContainer | None:
@@ -139,6 +145,38 @@ class ArtifactService:
             proposal_id=proposal_id,
             prev_artifact_id=None,
             status=ArtifactStatus.ACTIVE,
+        )
+        self.db.add(artifact)
+        await self.db.flush()
+        return artifact
+
+    async def create_plan_artifact(
+        self,
+        container_id: uuid.UUID,
+        community_id: uuid.UUID,
+        author_user_id: uuid.UUID,
+        mission: str | None = None,
+    ) -> Artifact:
+        """Auto-create the Plan artifact for a new container."""
+        template = "## Plan\n\n"
+        if mission:
+            template += f"**Mission:** {mission}\n\n"
+        template += (
+            "### Goals\n- (What is this community/container trying to produce?)\n\n"
+            "### Artifacts Needed\n- (What sections/pieces should be created?)\n\n"
+            "### Approach\n- (How should the work be divided and sequenced?)\n"
+        )
+        artifact = Artifact(
+            id=uuid.uuid4(),
+            container_id=container_id,
+            community_id=community_id,
+            title="Plan",
+            content=template,
+            author_user_id=author_user_id,
+            proposal_id=None,
+            prev_artifact_id=None,
+            status=ArtifactStatus.ACTIVE,
+            is_plan=True,
         )
         self.db.add(artifact)
         await self.db.flush()
@@ -253,6 +291,13 @@ class ArtifactService:
         )
         self.db.add(container)
         await self.db.flush()
+
+        # Auto-create the Plan artifact in the delegated container
+        await self.create_plan_artifact(
+            container.id, target_action_community_id,
+            delegating_proposal.user_id, inherited_mission,
+        )
+
         return container
 
     async def commit_container(
@@ -275,15 +320,22 @@ class ArtifactService:
             )
 
         # Validate every id is an ACTIVE artifact in this container.
+        # Plan artifacts are excluded — they guide work but are not deliverables.
         active_artifacts = await self.list_artifacts(container_id, include_history=False)
-        active_by_id = {a.id: a for a in active_artifacts}
+        active_by_id = {a.id: a for a in active_artifacts if not a.is_plan}
         ordered: list[Artifact] = []
         for aid in ordered_artifact_ids:
-            if aid not in active_by_id:
+            # Silently skip Plan artifacts if included
+            art = active_by_id.get(aid)
+            if not art:
+                # Check if it's a plan artifact being accidentally included
+                plan_check = {a.id for a in active_artifacts if a.is_plan}
+                if aid in plan_check:
+                    continue  # skip plan silently
                 raise ArtifactServiceError(
                     f"Artifact {aid} is not an ACTIVE member of container {container_id}"
                 )
-            ordered.append(active_by_id[aid])
+            ordered.append(art)
 
         unified = "\n\n".join(a.content for a in ordered)
         container.committed_content = unified
