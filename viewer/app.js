@@ -248,7 +248,7 @@ async function resolveProposalRefs(proposal, agentsByUserId) {
         }
         // Artifact title (EditArtifact, RemoveArtifact, DelegateArtifact)
         else if (["EditArtifact", "RemoveArtifact", "DelegateArtifact"].includes(pt)) {
-            try { const hist = await API.getCached(`/artifacts/${proposal.val_uuid}/history`); if (hist.length) result.valUuid = hist[hist.length-1].title || "(untitled)"; } catch {}
+            try { const a = await API.getCached(`/artifacts/${proposal.val_uuid}`); result.valUuid = a?.title || "(untitled)"; } catch {}
         }
         // Container (CreateArtifact, CommitArtifact) — show container title
         else if (["CreateArtifact", "CommitArtifact"].includes(pt)) {
@@ -345,7 +345,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
         setResolvedNames({});
         setOldArtifact(null);
         setDiffReviewed(false);
-        setDiffExpanded(false);
+        setDiffExpanded(true);  // auto-expand so content is visible by default
         Promise.all([
             API.getCached(`/proposals/${id}`),
             API.getCached(`/entities/proposal/${id}/comments`).catch(() => []),
@@ -355,10 +355,13 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
             setComments(c);
             setSupporters(s || []);
             resolveProposalRefs(p, agentsByUserId).then(setResolvedNames);
-            // For EditArtifact, fetch the current (old) artifact content
-            if (p.proposal_type === "EditArtifact" && p.val_uuid) {
-                API.getCached(`/artifacts/${p.val_uuid}/history`).then(history => {
-                    if (history?.length) setOldArtifact(history[history.length - 1]);
+            // For any artifact-referencing proposal, fetch the live artifact row so
+            // reviewers (and agents looking at the same data) can see the current
+            // title, content, and is_plan flag.
+            const artifactRefTypes = ["EditArtifact", "DelegateArtifact", "RemoveArtifact"];
+            if (artifactRefTypes.includes(p.proposal_type) && p.val_uuid) {
+                API.getCached(`/artifacts/${p.val_uuid}`).then(art => {
+                    if (art) setOldArtifact(art);
                 }).catch(() => {});
             }
         }).finally(() => setLoading(false));
@@ -424,22 +427,36 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
                 </div>
             </div>
 
+            {/* ── Target Artifact full content (Delegate / Remove) ── */}
+            {!isEdit && ["DelegateArtifact","RemoveArtifact"].includes(proposal.proposal_type) && oldArtifact && (
+                <div className="detail-section" style={{ border: "1px solid rgba(78,204,163,0.3)", borderRadius: 8, padding: "0.8rem" }}>
+                    <div className="detail-section-title">
+                        {oldArtifact.is_plan ? "📋 " : ""}Artifact: {oldArtifact.title || "(untitled)"}
+                        {oldArtifact.is_plan && <span style={{ fontSize: "0.7rem", color: "var(--gold)", marginLeft: 8 }}>(Plan)</span>}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: 4 }}>
+                        {(oldArtifact.content || "").length} chars
+                    </div>
+                    <pre className="edit-diff-pre edit-diff-current">{oldArtifact.content || "(empty)"}</pre>
+                </div>
+            )}
+
             {/* ── EditArtifact Diff View ─────────────────── */}
-            {isEdit && oldArtifact && (
+            {isEdit && (
                 <div className="detail-section" style={{ border: "1px solid rgba(78,204,163,0.3)", borderRadius: 8, padding: "0.8rem" }}>
                     <div className="detail-section-title"
                          style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                          onClick={() => { setDiffExpanded(e => !e); setDiffReviewed(true); }}>
-                        <span>📝 Review Changes {diffReviewed ? "✓" : "(click to review)"}</span>
+                        <span>📝 Review Changes {diffReviewed ? "✓" : ""}</span>
                         <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{diffExpanded ? "▲ collapse" : "▼ expand"}</span>
                     </div>
                     {diffExpanded && (
                         <div style={{ marginTop: "0.6rem" }}>
                             {/* Title change */}
-                            {proposal.val_text && proposal.val_text !== oldArtifact.title && (
+                            {proposal.val_text && oldArtifact && proposal.val_text !== oldArtifact.title && (
                                 <div style={{ marginBottom: "0.8rem" }}>
                                     <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--gold)", marginBottom: 4 }}>Title</div>
-                                    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.82rem" }}>
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap" }}>
                                         <span style={{ background: "rgba(233,69,96,0.15)", padding: "2px 8px", borderRadius: 4, textDecoration: "line-through", color: "#e94560" }}>
                                             {oldArtifact.title}
                                         </span>
@@ -450,23 +467,19 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
                                     </div>
                                 </div>
                             )}
-                            {/* Content comparison */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                            {/* Content comparison — stacks on narrow screens */}
+                            <div className="edit-diff-grid">
                                 <div>
-                                    <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#e94560", marginBottom: 4 }}>Current Version</div>
-                                    <pre style={{
-                                        background: "rgba(233,69,96,0.08)", border: "1px solid rgba(233,69,96,0.2)",
-                                        borderRadius: 6, padding: "0.5rem", fontSize: "0.72rem", whiteSpace: "pre-wrap",
-                                        wordBreak: "break-word", maxHeight: 300, overflow: "auto", color: "#ccc", margin: 0
-                                    }}>{oldArtifact.content || "(empty)"}</pre>
+                                    <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#e94560", marginBottom: 4 }}>
+                                        Current Version {oldArtifact ? `(${(oldArtifact.content || "").length} chars)` : "(loading…)"}
+                                    </div>
+                                    <pre className="edit-diff-pre edit-diff-current">{oldArtifact ? (oldArtifact.content || "(empty)") : "…"}</pre>
                                 </div>
                                 <div>
-                                    <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#4ecca3", marginBottom: 4 }}>Proposed Version</div>
-                                    <pre style={{
-                                        background: "rgba(78,204,163,0.08)", border: "1px solid rgba(78,204,163,0.2)",
-                                        borderRadius: 6, padding: "0.5rem", fontSize: "0.72rem", whiteSpace: "pre-wrap",
-                                        wordBreak: "break-word", maxHeight: 300, overflow: "auto", color: "#ccc", margin: 0
-                                    }}>{proposal.proposal_text || "(empty)"}</pre>
+                                    <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#4ecca3", marginBottom: 4 }}>
+                                        Proposed Version ({(proposal.proposal_text || "").length} chars)
+                                    </div>
+                                    <pre className="edit-diff-pre edit-diff-proposed">{proposal.proposal_text || "(empty)"}</pre>
                                 </div>
                             </div>
                         </div>
@@ -534,7 +547,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
                         <EntityLink
                             type={["Membership","ThrowOut"].includes(proposal.proposal_type) ? "user" : "entity"}
                             id={proposal.val_uuid}
-                            label={resolvedNames.valUuid ? proposal.val_uuid.slice(0, 12) : proposal.val_uuid.slice(0, 12)}
+                            label={proposal.val_uuid.slice(0, 8)}
                             openDetail={["Membership","ThrowOut"].includes(proposal.proposal_type) ? openDetail : () => {}}
                         />
                     </div>

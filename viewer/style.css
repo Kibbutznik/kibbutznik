@@ -2122,3 +2122,34 @@ body {
 .news-ticker-item.news-empty::before {
     content: "";
 }
+
+/* ── EditArtifact / Artifact preview diff view ── */
+.edit-diff-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+@media (max-width: 900px) {
+    .edit-diff-grid { grid-template-columns: 1fr; }
+}
+.edit-diff-pre {
+    border-radius: 6px;
+    padding: 0.6rem 0.7rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 480px;
+    overflow: auto;
+    color: #e8e8ee;
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.edit-diff-current {
+    background: rgba(233,69,96,0.06);
+    border: 1px solid rgba(233,69,96,0.22);
+}
+.edit-diff-proposed {
+    background: rgba(78,204,163,0.06);
+    border: 1px solid rgba(78,204,163,0.25);
+}

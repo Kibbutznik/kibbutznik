@@ -56,6 +56,27 @@ async def get_container(
     )
 
 
+@router.get("/{artifact_id}")
+async def get_artifact(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Return the current state of a single artifact."""
+    svc = ArtifactService(db)
+    a = await svc.get_artifact(artifact_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return {
+        "id": str(a.id),
+        "container_id": str(a.container_id),
+        "community_id": str(a.community_id),
+        "title": a.title,
+        "content": a.content,
+        "author_user_id": str(a.author_user_id) if a.author_user_id else None,
+        "proposal_id": str(a.proposal_id) if a.proposal_id else None,
+        "status": int(a.status),
+        "is_plan": getattr(a, "is_plan", False),
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    }
+
+
 @router.get("/{artifact_id}/history")
 async def get_artifact_history(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Edit history reconstructed from accepted EditArtifact proposals.
