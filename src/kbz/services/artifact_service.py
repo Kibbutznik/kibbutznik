@@ -204,6 +204,23 @@ class ArtifactService:
             raise ArtifactServiceError(
                 f"Container {old.container_id} is PENDING_PARENT — wait for parent community verdict before editing"
             )
+        # Plan artifacts are living documents — edited IN PLACE so the single
+        # Plan row persists through the container's lifetime until CommitArtifact.
+        # No new version row, no SUPERSEDED, no prev_artifact_id chain.
+        if old.is_plan:
+            if new_content is not None:
+                old.content = new_content
+            if new_title is not None:
+                old.title = new_title
+            # Track latest editor + proposal that approved the edit
+            old.author_user_id = author_user_id
+            old.proposal_id = proposal_id
+            await self.db.flush()
+            if container.status == ContainerStatus.COMMITTED:
+                container.status = ContainerStatus.OPEN
+                await self.db.flush()
+            return old
+
         new = Artifact(
             id=uuid.uuid4(),
             container_id=old.container_id,
@@ -233,6 +250,10 @@ class ArtifactService:
             raise ArtifactServiceError(
                 f"Artifact {artifact_id} is not ACTIVE — already superseded or retired"
             )
+        if artifact.is_plan:
+            raise ArtifactServiceError(
+                f"Artifact {artifact_id} is a Plan — Plans cannot be removed, only edited"
+            )
         container = await self.get_container(artifact.container_id)
         if not container or container.status != ContainerStatus.OPEN:
             raise ArtifactServiceError(
@@ -253,6 +274,10 @@ class ArtifactService:
         if source.status != ArtifactStatus.ACTIVE:
             raise ArtifactServiceError(
                 f"Source artifact {source_artifact_id} is not ACTIVE"
+            )
+        if source.is_plan:
+            raise ArtifactServiceError(
+                f"Source artifact {source_artifact_id} is a Plan — Plans cannot be delegated"
             )
 
         # Validate target is a direct child Action of the proposing community.

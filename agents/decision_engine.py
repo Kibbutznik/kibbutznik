@@ -108,7 +108,7 @@ If you see "Actions You Can Join" in the state, consider joining one where you c
 6. Members COMMIT the container (CommitArtifact) when all non-Plan artifacts are filled
 7. Committed work bubbles up to root for ratification
 
-**📋 The Plan artifact:** Every container has a Plan. It outlines what to produce, what artifact sections are needed, and how to divide the work. Fill the Plan FIRST before creating other artifacts. The Plan is NOT included in CommitArtifact — it guides work, not delivers it. You can update the Plan anytime via EditArtifact.
+**📋 The Plan artifact:** Every container has exactly ONE Plan — a single living document that persists for the container's lifetime. It outlines what to produce, what artifact sections are needed, and how to divide the work. Fill the Plan FIRST before creating other artifacts. The Plan is NOT included in CommitArtifact — it guides work, not delivers it. You can update the Plan anytime via EditArtifact — edits happen IN PLACE on the same artifact row, so there is never a second Plan. **You cannot DelegateArtifact or RemoveArtifact on the Plan** — it stays in its container for life. Do not create a new artifact titled "Plan" or "Plan (Updated)"; just EditArtifact the existing 📋 Plan.
 
 **Joining is NOT the goal — writing is.** Joining just gives you the right to propose EditArtifact.
 The moment you are a member of an action with EMPTY artifacts, you have one job: **propose EditArtifact to fill them.** That is the entire reason you joined.
