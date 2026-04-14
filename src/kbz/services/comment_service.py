@@ -1,11 +1,43 @@
+import re
 import uuid
 from datetime import datetime
 
+from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kbz.enums import ProposalType
 from kbz.models.comment import Comment
+from kbz.models.proposal import Proposal
 from kbz.schemas.comment import CommentCreate
+
+
+_WS = re.compile(r"\s+")
+
+
+def _normalize(text: str) -> str:
+    return _WS.sub(" ", (text or "").lower()).strip()
+
+
+def _comment_quotes_proposal(comment_text: str, proposal_text: str, window: int = 5) -> bool:
+    """True if `comment_text` contains any `window`-word run from `proposal_text`.
+
+    Strips quotes and punctuation noise via lower+collapse-whitespace. Requires
+    a literal copied substring of >= `window` consecutive words from the
+    proposal — defends against agents fabricating details that aren't in the
+    proposal at all.
+    """
+    norm_comment = _normalize(comment_text)
+    norm_proposal = _normalize(proposal_text)
+    words = norm_proposal.split(" ")
+    if len(words) < window:
+        # Proposal too short to require a windowed quote — let it through.
+        return True
+    for i in range(len(words) - window + 1):
+        run = " ".join(words[i : i + window])
+        if run and run in norm_comment:
+            return True
+    return False
 
 
 class CommentService:
@@ -15,6 +47,23 @@ class CommentService:
     async def add_comment(
         self, entity_id: uuid.UUID, entity_type: str, data: CommentCreate
     ) -> Comment:
+        # Anti-hallucination guard for EditArtifact proposal comments:
+        # the comment must literally quote at least 5 consecutive words from
+        # the proposal text, otherwise the agent is making it up.
+        if entity_type == "proposal":
+            prop = (
+                await self.db.execute(select(Proposal).where(Proposal.id == entity_id))
+            ).scalar_one_or_none()
+            if prop and prop.proposal_type == ProposalType.EDIT_ARTIFACT.value:
+                if not _comment_quotes_proposal(data.comment_text or "", prop.proposal_text or ""):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            "EditArtifact comment must quote a 5+ word literal substring "
+                            "from the proposal_text. Read the actual PROPOSED content and "
+                            "quote a phrase from it — do not fabricate details."
+                        ),
+                    )
         comment = Comment(
             id=uuid.uuid4(),
             entity_id=entity_id,

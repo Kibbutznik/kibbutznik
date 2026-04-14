@@ -330,15 +330,19 @@ class CommunitySnapshot:
             new_title = (p.get("val_text") or "").strip()
             if not old and not new:
                 return
-            lines.append("    ┌─ REVIEW CHANGES (compare before supporting!) ─┐")
+            lines.append("    ┌─ REVIEW CHANGES (compare before supporting / commenting!) ─┐")
             if new_title:
                 lines.append(f"    │ New title: \"{new_title}\"")
-            # Truncate to keep summary manageable
-            old_preview = old[:500] + ("…" if len(old) > 500 else "")
-            new_preview = new[:500] + ("…" if len(new) > 500 else "")
+            # Show enough text that an agent cannot honestly claim ignorance.
+            # Comments MUST quote a literal substring from PROPOSED below.
+            old_preview = old[:2000] + ("…" if len(old) > 2000 else "")
+            new_preview = new[:2000] + ("…" if len(new) > 2000 else "")
             lines.append(f"    │ CURRENT: {old_preview if old else '(empty)'}")
             lines.append(f"    │ PROPOSED: {new_preview if new else '(empty)'}")
-            lines.append("    └─ Support ONLY if the proposed version is an improvement ─┘")
+            lines.append(
+                "    └─ Support ONLY if PROPOSED is an improvement. If you comment, you MUST "
+                "quote a literal phrase from the PROPOSED text above — do NOT invent content. ─┘"
+            )
 
         if self.proposals_out_there:
             lines.append(f"\n### Proposals Gathering Support — need {promote_threshold} to reach OnTheAir ({len(self.proposals_out_there)}):")
