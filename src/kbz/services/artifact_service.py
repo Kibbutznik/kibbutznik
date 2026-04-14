@@ -128,8 +128,8 @@ class ArtifactService:
         q = await self.db.execute(
             select(Proposal)
             .where(Proposal.val_uuid == artifact_id)
-            .where(Proposal.proposal_type == ProposalType.EditArtifact)
-            .where(Proposal.proposal_status == ProposalStatus.Accepted)
+            .where(Proposal.proposal_type == ProposalType.EDIT_ARTIFACT)
+            .where(Proposal.proposal_status == ProposalStatus.ACCEPTED)
             .order_by(Proposal.created_at)
         )
         edits = list(q.scalars().all())
