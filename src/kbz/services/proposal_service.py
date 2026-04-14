@@ -28,6 +28,33 @@ class ProposalService:
             if not await member_svc.is_active_member(community_id, data.user_id):
                 raise HTTPException(status_code=403, detail="User is not an active member")
 
+        # Block duplicate DelegateArtifact: same artifact (val_uuid) + same target
+        # action (val_text) already in flight in this community.
+        if data.proposal_type == ProposalType.DELEGATE_ARTIFACT and data.val_uuid is not None:
+            ACTIVE_STATUSES = (
+                ProposalStatus.DRAFT,
+                ProposalStatus.OUT_THERE,
+                ProposalStatus.ON_THE_AIR,
+            )
+            dup_q = select(Proposal).where(
+                Proposal.community_id == community_id,
+                Proposal.proposal_type == ProposalType.DELEGATE_ARTIFACT,
+                Proposal.val_uuid == data.val_uuid,
+                Proposal.proposal_status.in_(ACTIVE_STATUSES),
+            )
+            if data.val_text is not None:
+                dup_q = dup_q.where(Proposal.val_text == data.val_text)
+            existing = (await self.db.execute(dup_q)).scalars().first()
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"DelegateArtifact already in flight for this artifact"
+                        f" → action (proposal {existing.id}, status {existing.proposal_status})."
+                        f" Support that one instead of creating a duplicate."
+                    ),
+                )
+
         proposal = Proposal(
             id=uuid.uuid4(),
             community_id=community_id,
