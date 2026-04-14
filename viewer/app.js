@@ -382,31 +382,20 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
 
     const isEdit = proposal.proposal_type === "EditArtifact";
     const isActive = proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir";
-    const alreadySupports = bbUserId && supporters.some(s => s.user_id === bbUserId);
-    // For EditArtifact: must review diff before supporting. For others: always allowed.
-    const canSupport = bbUserId && isActive && !alreadySupports && (isEdit ? diffReviewed : true);
-    const canUnsupport = bbUserId && isActive && alreadySupports;
+    // Ghost-support: BB viewer can bump the count without being a member.
+    // Track per-session clicks in localStorage so the viewer can't spam +1
+    // on the same proposal across reloads.
+    const ghostKey = `bb_ghost_support_${proposal.id}`;
+    const alreadyGhostSupported = typeof localStorage !== "undefined" && localStorage.getItem(ghostKey) === "1";
+    const canSupport = isActive && !alreadyGhostSupported && (isEdit ? diffReviewed : true);
 
     const handleSupport = async () => {
         setSupportBusy(true);
         try {
-            await API.post(`/proposals/${proposal.id}/support`, { user_id: bbUserId });
-            // Refresh supporters
-            const s = await API.getCached(`/proposals/${proposal.id}/supporters`).catch(() => []);
-            setSupporters(s || []);
+            await API.post(`/proposals/${proposal.id}/ghost_support`, {});
+            try { localStorage.setItem(ghostKey, "1"); } catch {}
             setProposal(prev => ({ ...prev, support_count: (prev.support_count || 0) + 1 }));
         } catch (e) { alert("Support failed: " + e); }
-        finally { setSupportBusy(false); }
-    };
-
-    const handleUnsupport = async () => {
-        setSupportBusy(true);
-        try {
-            await API.delete(`/proposals/${proposal.id}/support/${bbUserId}`);
-            const s = await API.getCached(`/proposals/${proposal.id}/supporters`).catch(() => []);
-            setSupporters(s || []);
-            setProposal(prev => ({ ...prev, support_count: Math.max(0, (prev.support_count || 0) - 1) }));
-        } catch (e) { alert("Unsupport failed: " + e); }
         finally { setSupportBusy(false); }
     };
 
@@ -554,24 +543,22 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
                 </div>
             )}
 
-            {/* ── BB Support / Unsupport Button ─────────── */}
-            {bbUserId && isActive && (
+            {/* ── BB Ghost Support Button ─────────── */}
+            {isActive && (
                 <div className="detail-section" style={{ textAlign: "center" }}>
                     {canSupport && (
                         <button onClick={handleSupport} disabled={supportBusy}
                             style={{ background: "#4ecca3", color: "#111", border: "none", padding: "0.5rem 1.5rem",
-                                     borderRadius: 6, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", marginRight: 8 }}>
+                                     borderRadius: 6, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                             {supportBusy ? "…" : "👍 Support"}
                         </button>
                     )}
-                    {canUnsupport && (
-                        <button onClick={handleUnsupport} disabled={supportBusy}
-                            style={{ background: "#e94560", color: "#fff", border: "none", padding: "0.5rem 1.5rem",
-                                     borderRadius: 6, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
-                            {supportBusy ? "…" : "👎 Unsupport"}
-                        </button>
+                    {alreadyGhostSupported && (
+                        <div style={{ fontSize: "0.8rem", color: "#4ecca3" }}>
+                            ✓ You supported this proposal
+                        </div>
                     )}
-                    {isEdit && !diffReviewed && !alreadySupports && (
+                    {isEdit && !diffReviewed && !alreadyGhostSupported && (
                         <div style={{ fontSize: "0.75rem", color: "var(--gold)", marginTop: 6 }}>
                             ⚠️ Review the changes above before you can support this proposal
                         </div>

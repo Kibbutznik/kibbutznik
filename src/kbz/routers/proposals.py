@@ -70,6 +70,31 @@ async def add_support(proposal_id: uuid.UUID, data: SupportCreate, db: AsyncSess
     return {"status": "supported"}
 
 
+@router.post("/proposals/{proposal_id}/ghost_support", status_code=201)
+async def add_ghost_support(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Big Brother viewer support: bumps support_count by 1 with no trace.
+
+    No membership check, no row written to the `supports` table, no user
+    recorded. The only side effect is incrementing `proposals.support_count`.
+    """
+    from sqlalchemy import select, update
+    from kbz.models.proposal import Proposal
+    from kbz.enums import ProposalStatus
+    result = await db.execute(select(Proposal).where(Proposal.id == proposal_id))
+    proposal = result.scalar_one_or_none()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.proposal_status not in (ProposalStatus.OUT_THERE, ProposalStatus.ON_THE_AIR):
+        raise HTTPException(status_code=400, detail="Proposal is not in a supportable state")
+    await db.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal_id)
+        .values(support_count=Proposal.support_count + 1)
+    )
+    await db.commit()
+    return {"status": "ghost_supported"}
+
+
 @router.get("/proposals/{proposal_id}/supporters")
 async def get_supporters(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     svc = SupportService(db)
