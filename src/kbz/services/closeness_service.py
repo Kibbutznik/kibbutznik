@@ -11,23 +11,34 @@ from kbz.models.support import Support
 
 
 class ClosenessService:
-    """Tracks affinity between members using entropy-weighted agreement scoring.
+    """Tracks affinity between members using zero-sum agreement scoring.
 
-    For each proposal p with support rate s_p = supporters / members, each pair (A, B)
-    of community members contributes:
+    For each proposal p with support rate s_p = k/n (k supporters out of n active
+    members), we count pair categories:
 
-        weight = 2 · s_p · (1 − s_p)   # peaks at 0.5, zero when unanimous
-        both supported  →  + weight
-        both abstained  →  + weight
-        split support   →  − weight
+        n_agree = C(k,2) + C(n-k,2)   # both supported OR both abstained
+        n_split = k · (n - k)          # one supported, one didn't
+        total   = C(n,2) = n_agree + n_split
 
-    This gives equal positive/negative signals for agreement/disagreement, weighted
-    by how informative the proposal is. Unanimous proposals carry near-zero weight
-    (everyone agreed, no signal). Divisive proposals carry strong weight. This avoids
-    the old covariance formula's bias toward negative scores in consensus communities.
+    A naïve scheme of  +weight / -weight  per pair is structurally biased: for any
+    k close to n/2 there are quadratically more split pairs than agree pairs, so
+    every proposal drifts the whole graph negative. Concretely for n=6,k=3 the
+    naïve formula yields a net of -1.5 per proposal — over a long simulation
+    every relationship turns sad even when no one is genuinely fighting.
 
-    Scores accumulate as floats, can go negative, and are written incrementally at
-    pulse execution time via Postgres upsert.
+    Instead we make each proposal **zero-sum** across all pairs by rebalancing
+    the per-pair deltas so n_agree · agree_delta + n_split · split_delta = 0:
+
+        agree_delta = +weight · (n_split / total)
+        split_delta = -weight · (n_agree / total)
+
+    where weight = 2 · s_p · (1 − s_p) still gates by informativeness (peaks at
+    s_p=0.5, vanishes at unanimity). Pairs that consistently align accumulate
+    positive scores; pairs that consistently split accumulate negative scores;
+    the graph itself has no systematic drift in either direction.
+
+    Scores accumulate as floats, can go negative, and are written incrementally
+    at pulse execution time via Postgres upsert.
     """
 
     def __init__(self, db: AsyncSession):
@@ -88,8 +99,16 @@ class ClosenessService:
         if weight < 0.01:
             return  # near-unanimous, no meaningful signal
 
-        agree_delta = weight
-        split_delta = -weight
+        # Zero-sum rebalance: per-proposal sum across all pairs is exactly 0.
+        # See class docstring for the derivation. n_split = k(n-k);
+        # n_agree = C(k,2) + C(n-k,2); total = C(n,2) = n_agree + n_split.
+        n_split = k * (n - k)
+        n_agree = (k * (k - 1)) // 2 + ((n - k) * (n - k - 1)) // 2
+        total = n_agree + n_split  # = n*(n-1)/2
+        if total == 0:
+            return
+        agree_delta = weight * (n_split / total)
+        split_delta = -weight * (n_agree / total)
 
         for i in range(n):
             a = member_ids[i]

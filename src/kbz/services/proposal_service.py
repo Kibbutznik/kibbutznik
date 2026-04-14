@@ -124,6 +124,19 @@ class ProposalService:
                         ),
                     )
 
+        # For EditArtifact, snapshot the artifact's CURRENT content so the
+        # diff (what was replaced) survives even after the artifact moves on.
+        prev_content = None
+        if ptype_enum == ProposalType.EDIT_ARTIFACT and data.val_uuid is not None:
+            from kbz.models.artifact import Artifact
+            art = (
+                await self.db.execute(
+                    select(Artifact).where(Artifact.id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if art is not None:
+                prev_content = art.content
+
         proposal = Proposal(
             id=uuid.uuid4(),
             community_id=community_id,
@@ -133,6 +146,7 @@ class ProposalService:
             proposal_text=data.proposal_text,
             val_uuid=data.val_uuid,
             val_text=data.val_text,
+            prev_content=prev_content,
             age=0,
             support_count=0,
         )

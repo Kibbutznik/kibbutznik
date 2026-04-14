@@ -193,7 +193,7 @@ function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agent
     let content;
     switch (current.type) {
         case "proposal":
-            content = <ProposalDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} communityId={communityId} bbUserId={bbUserId} />;
+            content = <ProposalDetail id={current.id} openDetail={openDetail} agentsByUserId={agentsByUserId} communityId={communityId} bbUserId={bbUserId} highlightCommentByUser={current.extra?.commentByUser || null} />;
             break;
         case "user":
             content = <MemberDetail id={current.id} openDetail={openDetail} agents={agents} agentsByUserId={agentsByUserId} communityId={communityId} events={events} />;
@@ -327,7 +327,7 @@ function buildProposalTitle(proposal, resolvedNames) {
     }
 }
 
-function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId }) {
+function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId, highlightCommentByUser }) {
     const [proposal, setProposal] = useState(null);
     const [comments, setComments] = useState([]);
     const [supporters, setSupporters] = useState([]);
@@ -458,12 +458,28 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
                             )}
                             {/* Content comparison — stacks on narrow screens */}
                             <div className="edit-diff-grid">
-                                <div>
-                                    <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#e94560", marginBottom: 4 }}>
-                                        Current Version {oldArtifact ? `(${(oldArtifact.content || "").length} chars)` : "(loading…)"}
-                                    </div>
-                                    <pre className="edit-diff-pre edit-diff-current">{oldArtifact ? (oldArtifact.content || "(empty)") : "…"}</pre>
-                                </div>
+                                {(() => {
+                                    // Prefer the snapshot stored on the proposal at create-time
+                                    // (prev_content). It survives acceptance — the live
+                                    // oldArtifact.content is overwritten once the edit lands.
+                                    const hasSnapshot = proposal.prev_content !== null && proposal.prev_content !== undefined;
+                                    const replacedText = hasSnapshot
+                                        ? proposal.prev_content
+                                        : (oldArtifact ? (oldArtifact.content || "") : null);
+                                    const label = hasSnapshot
+                                        ? `Replaced Text (${(replacedText || "").length} chars)`
+                                        : (oldArtifact
+                                            ? `Current Version (${(oldArtifact.content || "").length} chars)`
+                                            : "Current Version (loading…)");
+                                    return (
+                                        <div>
+                                            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#e94560", marginBottom: 4 }}>
+                                                {label}
+                                            </div>
+                                            <pre className="edit-diff-pre edit-diff-current">{replacedText !== null ? (replacedText || "(empty)") : "…"}</pre>
+                                        </div>
+                                    );
+                                })()}
                                 <div>
                                     <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#4ecca3", marginBottom: 4 }}>
                                         Proposed Version ({(proposal.proposal_text || "").length} chars)
@@ -606,14 +622,40 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId 
             )}
             <div className="detail-section">
                 <div className="detail-section-title">Discussion ({comments.length})</div>
-                <CommentThread comments={comments} openDetail={openDetail} agentsByUserId={agentsByUserId} />
+                <CommentThread comments={comments} openDetail={openDetail} agentsByUserId={agentsByUserId} highlightCommentByUser={highlightCommentByUser} />
             </div>
         </div>
     );
 }
 
 // ── CommentThread (recursive tree — HN-style) ────────────
-function CommentThread({ comments, openDetail, agentsByUserId }) {
+function CommentThread({ comments, openDetail, agentsByUserId, highlightCommentByUser }) {
+    // Find newest comment by the highlighted user (if any) so we can scroll to it.
+    const highlightId = useMemo(() => {
+        if (!highlightCommentByUser || !comments?.length) return null;
+        const matches = comments.filter(c => {
+            const a = agentsByUserId?.[c.user_id];
+            return (a?.name || "") === highlightCommentByUser;
+        });
+        if (!matches.length) return null;
+        matches.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return matches[0].id;
+    }, [comments, highlightCommentByUser, agentsByUserId]);
+
+    useEffect(() => {
+        if (!highlightId) return;
+        // Defer until DOM is painted
+        const t = setTimeout(() => {
+            const el = document.querySelector(`[data-comment-id="${highlightId}"]`);
+            if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                el.classList.add("hn-comment-flash");
+                setTimeout(() => el.classList.remove("hn-comment-flash"), 2400);
+            }
+        }, 60);
+        return () => clearTimeout(t);
+    }, [highlightId]);
+
     if (!comments || comments.length === 0) return <div className="empty-state" style={{ padding: 16 }}>No comments yet</div>;
 
     // Build tree from flat list
@@ -638,7 +680,7 @@ function CommentThread({ comments, openDetail, agentsByUserId }) {
         const authorName = authorAgent?.name || comment.user_id?.slice(0, 8);
         const colorClass = authorAgent ? agentColor(authorAgent.name) : "";
         return (
-            <div className={`hn-comment ${depth > 0 ? "hn-comment-nested" : ""}`}>
+            <div className={`hn-comment ${depth > 0 ? "hn-comment-nested" : ""}`} data-comment-id={comment.id}>
                 <div className="hn-comment-indent" style={{ paddingLeft: depth * 24 }}>
                     <div className="hn-comment-bar" style={{ borderLeftColor: depth === 0 ? "var(--accent)" : "var(--border)" }}></div>
                     <div className="hn-comment-body">
@@ -675,10 +717,27 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
     const [proposals, setProposals] = useState([]);
     const [membershipProposals, setMembershipProposals] = useState([]);
     const [communities, setCommunities] = useState([]);
+    const [memories, setMemories] = useState({ goal: [], reflection: [], relationship: [], episodic: [] });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         setLoading(true);
+        const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+        // Walk parent_id chain up to the root community id (cached)
+        const findRoot = async (cid) => {
+            let cur = cid;
+            for (let i = 0; i < 12 && cur && cur !== NIL_UUID; i++) {
+                try {
+                    const c = await API.getCached(`/communities/${cur}`);
+                    if (!c || !c.parent_id || c.parent_id === NIL_UUID) return cur;
+                    cur = c.parent_id;
+                } catch {
+                    return cur;
+                }
+            }
+            return cur;
+        };
+
         const fetches = [
             API.getCached(`/users/${id}`),
             communityId
@@ -688,24 +747,53 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
                 ? API.getCached(`/communities/${communityId}/proposals?val_uuid=${id}&proposal_type=Membership`).catch(() => [])
                 : Promise.resolve([]),
             API.getCached(`/users/${id}/communities`).catch(() => []),
+            // Memory highlights — top by importance, a handful of each type
+            API.getCached(`/memories/${id}?memory_type=goal&limit=5&order_by=importance`).catch(() => []),
+            API.getCached(`/memories/${id}?memory_type=reflection&limit=5&order_by=importance`).catch(() => []),
+            API.getCached(`/memories/${id}?memory_type=relationship&limit=5&order_by=importance`).catch(() => []),
+            API.getCached(`/memories/${id}?memory_type=episodic&limit=5&order_by=recent`).catch(() => []),
         ];
-        Promise.all(fetches).then(([u, p, mp, comms]) => {
+        Promise.all(fetches).then(([u, p, mp, comms, goals, refls, rels, episodes]) => {
             setUser(u);
             setProposals(p);
             setMembershipProposals(mp || []);
-            // Fetch community names for each membership
-            const communityPromises = (comms || []).map(m =>
+            setMemories({
+                goal: goals || [],
+                reflection: refls || [],
+                relationship: rels || [],
+                episodic: episodes || [],
+            });
+            // Fetch community names + parent_id, then keep only memberships whose
+            // tree root === the current root community we are viewing.
+            const enriched = (comms || []).map(m =>
                 API.getCached(`/communities/${m.community_id}`).then(c => ({
                     ...m,
                     community_name: c.name || c.community_name || m.community_id.slice(0, 8),
+                    parent_id: c.parent_id,
                 })).catch(() => ({
                     ...m,
                     community_name: m.community_id.slice(0, 8),
+                    parent_id: null,
                 }))
             );
-            return Promise.all(communityPromises);
-        }).then(commsWithNames => {
-            setCommunities(commsWithNames || []);
+            return Promise.all(enriched);
+        }).then(async (commsWithNames) => {
+            if (!communityId) {
+                setCommunities(commsWithNames || []);
+                return;
+            }
+            // Resolve each membership's root in parallel; keep matches.
+            const withRoots = await Promise.all(
+                (commsWithNames || []).map(async (m) => {
+                    if (m.community_id === communityId) return { m, root: communityId };
+                    const root = await findRoot(m.community_id);
+                    return { m, root };
+                })
+            );
+            const filtered = withRoots
+                .filter(x => x.root === communityId)
+                .map(x => x.m);
+            setCommunities(filtered);
         }).finally(() => setLoading(false));
     }, [id, communityId]);
 
@@ -738,6 +826,40 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
                     </div>
                 </div>
             )}
+            {(() => {
+                const groups = [
+                    { key: "goal", label: "Goals", icon: "🎯", items: memories.goal },
+                    { key: "reflection", label: "Reflections", icon: "💭", items: memories.reflection },
+                    { key: "relationship", label: "Relationships", icon: "🤝", items: memories.relationship },
+                    { key: "episodic", label: "Recent Episodes", icon: "📜", items: memories.episodic },
+                ].filter(g => (g.items || []).length > 0);
+                if (groups.length === 0) return null;
+                return (
+                    <div className="detail-section">
+                        <div className="detail-section-title">Memory Highlights</div>
+                        <div className="memory-highlights">
+                            {groups.map(g => (
+                                <div key={g.key} className="memory-group">
+                                    <div className="memory-group-title">{g.icon} {g.label}</div>
+                                    <div className="memory-list">
+                                        {g.items.slice(0, 5).map((m, i) => (
+                                            <div key={m.id || i} className="memory-item">
+                                                {typeof m.importance === "number" && (
+                                                    <span className="memory-importance" title={`importance ${m.importance.toFixed(2)}`}>
+                                                        {"★".repeat(Math.max(1, Math.round(m.importance * 5)))}
+                                                    </span>
+                                                )}
+                                                <span className="memory-content">{m.content || m.text || "(empty)"}</span>
+                                                {m.category && <span className="memory-cat">{m.category}</span>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
             {communities.length > 0 && (
                 <div className="detail-section">
                     <div className="detail-section-title">Communities ({communities.length})</div>
@@ -1465,7 +1587,7 @@ function LLMSwitcher({ currentPreset }) {
 }
 
 // ── Header ──────────────────────────────────────────────
-function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar }) {
+function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar, paused, onTogglePause, onRestart, restarting }) {
     const community = status?.community;
     return (
         <div className="header">
@@ -1475,6 +1597,7 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                         <line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/>
                     </svg>
                 </button>
+                <img src="logo.svg" alt="KBZ" className="header-logo" />
                 <div className="header-title">
                     KBZ BIG BROTHER
                     <span
@@ -1508,6 +1631,25 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                 {status?.paused && (
                     <div className="header-stat">
                         <span className="value" style={{ color: "var(--warning)" }}>PAUSED</span>
+                    </div>
+                )}
+                {onTogglePause && (
+                    <div className="header-controls">
+                        <button
+                            className={`header-ctrl-btn ${paused ? "paused" : ""}`}
+                            onClick={onTogglePause}
+                            title={paused ? "Resume the simulation" : "Pause the simulation"}
+                        >
+                            {paused ? "▶ Resume" : "⏸ Pause"}
+                        </button>
+                        <button
+                            className="header-ctrl-btn restart"
+                            onClick={onRestart}
+                            disabled={restarting}
+                            title="Restart the simulation loop — all data and history are preserved"
+                        >
+                            {restarting ? <><span className="spinner"></span> ...</> : "↺ Restart"}
+                        </button>
                     </div>
                 )}
             </div>
@@ -2329,13 +2471,16 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
 
     useEffect(() => {
         if (autoScroll && feedRef.current) {
-            feedRef.current.scrollTop = 0;
+            // Newest is now at the BOTTOM — keep scroll pinned there
+            feedRef.current.scrollTop = feedRef.current.scrollHeight;
         }
     }, [events, autoScroll]);
 
     function handleScroll() {
         if (feedRef.current) {
-            setAutoScroll(feedRef.current.scrollTop < 10);
+            const el = feedRef.current;
+            // Within 10px of the bottom counts as "following live"
+            setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 10);
         }
     }
 
@@ -2344,8 +2489,10 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
         : (events || []).filter(ev => !ev.community_id || ev.community_id === rootCommunityId);
     // Filter out noise: failed do_nothing events (guards, already-supported, etc.)
     const filtered = byCommunity.filter(ev => !(ev.success === false && ev.action === "do_nothing"));
-    // Newest first, capped at 100
-    const newest = filtered.slice(-100).reverse();
+    // The /simulation/events endpoint returns events NEWEST-FIRST, so the
+    // most recent 100 are at the START of the array. Take the first 100 and
+    // reverse so the feed reads oldest → newest with the live tail at bottom.
+    const newest = filtered.slice(0, 100).reverse();
 
     return (
         <div className="card">
@@ -2508,7 +2655,7 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
 
 // ── Dashboard Tab ───────────────────────────────────────
 
-function DashboardTab({ status, events, proposals, pulses, onRunRound, runningRound, paused, onTogglePause, onRestart, restarting, openDetail, agentsByUserId, communityId, activeCommunity, activeCommunityId, rootCommunityId }) {
+function DashboardTab({ status, events, proposals, pulses, restarting, openDetail, agentsByUserId, communityId, activeCommunity, activeCommunityId, rootCommunityId }) {
     if (restarting) {
         return (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 80, gap: 16 }}>
@@ -2520,24 +2667,6 @@ function DashboardTab({ status, events, proposals, pulses, onRunRound, runningRo
     }
     return (
         <div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8 }}>
-                <button
-                    className="run-round-btn restart-btn"
-                    onClick={onRestart}
-                    title="Restart the simulation loop — all data and history are preserved"
-                >
-                    ↺ Restart
-                </button>
-                <button
-                    className={`run-round-btn ${paused ? "paused" : ""}`}
-                    onClick={onTogglePause}
-                >
-                    {paused ? "Resume" : "Pause"}
-                </button>
-                <button className="run-round-btn" onClick={onRunRound} disabled={runningRound}>
-                    {runningRound ? <><span className="spinner"></span> Running...</> : "Run Round"}
-                </button>
-            </div>
             <div className="dashboard-grid">
                 <CommunityOverview status={status} pulses={pulses} openDetail={openDetail} communityId={communityId} overrideCommunity={activeCommunity} />
                 <ActivityFeed events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />
@@ -2951,8 +3080,20 @@ function InterviewTab({ agents }) {
 // ── Timeline Tab ────────────────────────────────────────
 function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, activeCommunityId, rootCommunityId }) {
     const [filterKind, setFilterKind] = useState("all");   // all | pulse | proposal | event
+    const [filterProposalType, setFilterProposalType] = useState(""); // proposal type or ""
     const [filterMember, setFilterMember] = useState("");  // agent name or ""
     const [filterKeyword, setFilterKeyword] = useState(""); // free-text search
+
+    // All ProposalType values (mirrors src/kbz/enums.py:ProposalType)
+    const PROPOSAL_TYPES = [
+        "Membership", "ThrowOut",
+        "AddStatement", "RemoveStatement", "ReplaceStatement",
+        "ChangeVariable",
+        "AddAction", "EndAction", "JoinAction",
+        "Funding", "Payment", "payBack", "Dividend",
+        "SetMembershipHandler",
+        "CreateArtifact", "EditArtifact", "RemoveArtifact", "DelegateArtifact", "CommitArtifact",
+    ];
 
     // Merge events into one chronological stream
     // Entries: pulse markers + proposal events + agent action events
@@ -2994,6 +3135,12 @@ function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, ac
     const entries = allEntries.filter(entry => {
         // --- kind filter ---
         if (filterKind !== "all" && entry.kind !== filterKind) return false;
+
+        // --- proposal-type filter ---
+        if (filterProposalType) {
+            if (entry.kind !== "proposal") return false;
+            if (entry.data.proposal_type !== filterProposalType) return false;
+        }
 
         // --- member filter ---
         if (filterMember) {
@@ -3057,16 +3204,25 @@ function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, ac
                 </select>
                 <select
                     className="timeline-filter-select"
+                    value={filterProposalType}
+                    onChange={e => setFilterProposalType(e.target.value)}
+                    title="Filter by proposal type (implies Proposal)"
+                >
+                    <option value="">All proposal types</option>
+                    {PROPOSAL_TYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+                </select>
+                <select
+                    className="timeline-filter-select"
                     value={filterMember}
                     onChange={e => setFilterMember(e.target.value)}
                 >
                     <option value="">All members</option>
                     {memberNames.map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
-                {(filterKind !== "all" || filterMember || filterKeyword) && (
+                {(filterKind !== "all" || filterProposalType || filterMember || filterKeyword) && (
                     <button
                         className="timeline-filter-clear"
-                        onClick={() => { setFilterKind("all"); setFilterMember(""); setFilterKeyword(""); }}
+                        onClick={() => { setFilterKind("all"); setFilterProposalType(""); setFilterMember(""); setFilterKeyword(""); }}
                     >✕ Clear</button>
                 )}
                 <span className="timeline-filter-count">{entries.length} / {allEntries.length}</span>
@@ -3283,6 +3439,7 @@ function addNewsItem(event) {
         linkType: parsed.linkType || null,
         linkId: parsed.linkId || null,
         linkLabel: parsed.linkLabel || null,
+        linkExtra: parsed.linkExtra || null,
         // For chat links — store community + tab info
         linkTab: parsed.linkTab || null,
     });
@@ -3308,9 +3465,8 @@ function formatNewsEvent(event) {
         case 'pulse.executed':
             return { text: `${prefix}Pulse fired!`, linkType: d.pulse_id ? 'pulse' : null, linkId: d.pulse_id };
         case 'round.start':
-            return { text: `Round ${d.round || '?'} started` };
         case 'round.end':
-            return { text: `Round ${d.round || '?'} ended` };
+            return null;  // suppressed from live feed — too noisy
         case 'agent.action': {
             const action = d.action_type || d.action || '';
             const name = agentName || 'Agent';
@@ -3318,7 +3474,7 @@ function formatNewsEvent(event) {
             if (action === 'do_nothing' || action === 'create_proposal') return null;
             if (action === 'support_proposal' || action === 'support_pulse') return null;
             if (action === 'send_chat') return { text: `${prefix}${name} posted in chat`, linkTab: 'chat' };
-            if (action === 'comment') return { text: `${prefix}${name} commented on a proposal`, linkType: 'proposal', linkId: d.ref_id || d.proposal_id, linkLabel: 'comment' };
+            if (action === 'comment') return { text: `${prefix}${name} commented on a proposal`, linkType: 'proposal', linkId: d.ref_id || d.proposal_id, linkLabel: 'comment', linkExtra: { commentByUser: name } };
             if (action) return { text: `${prefix}${name}: ${action}` };
             return null;
         }
@@ -3362,7 +3518,7 @@ function NewsTicker({ openDetail, setActiveTab }) {
         if (item.linkTab && setActiveTab) {
             setActiveTab(item.linkTab);
         } else if (item.linkType && item.linkId && openDetail) {
-            openDetail(item.linkType, item.linkId, item.linkLabel || item.linkType);
+            openDetail(item.linkType, item.linkId, item.linkLabel || item.linkType, item.linkExtra || null);
         }
     }
 
@@ -3400,7 +3556,6 @@ function App() {
     const [events, setEvents] = useState([]);
     const [proposals, setProposals] = useState([]);
     const [pulses, setPulses] = useState([]);
-    const [runningRound, setRunningRound] = useState(false);
     const [paused, setPaused] = useState(false);
     const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
@@ -3414,8 +3569,8 @@ function App() {
 
     // Detail panel navigation stack
     const [detailStack, setDetailStack] = useState([]);
-    function openDetail(type, id, label) {
-        setDetailStack(prev => [...prev, { type, id, label: label || `${type}` }]);
+    function openDetail(type, id, label, extra) {
+        setDetailStack(prev => [...prev, { type, id, label: label || `${type}`, extra: extra || null }]);
     }
     function popToIndex(i) {
         setDetailStack(prev => prev.slice(0, i + 1));
@@ -3587,19 +3742,6 @@ function App() {
         }
     }
 
-    // Run round manually
-    async function handleRunRound() {
-        setRunningRound(true);
-        try {
-            await API.post("/simulation/run-round", {});
-            await fetchData();
-        } catch (err) {
-            console.error("Run round error:", err);
-        } finally {
-            setRunningRound(false);
-        }
-    }
-
     // Navigate to an action's dashboard (or back to root)
     function handleNavigateToAction(actionId, actionName) {
         setActiveCommunityId(actionId);  // null = root
@@ -3623,6 +3765,10 @@ function App() {
                 activeCommunityName={activeCommunityName}
                 onBackToRoot={handleBackToRoot}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+                paused={paused}
+                onTogglePause={handleTogglePause}
+                onRestart={handleRestart}
+                restarting={restarting}
             />
             <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} />
             <ActionBreadcrumb
@@ -3654,11 +3800,6 @@ function App() {
                             events={events}
                             proposals={proposals}
                             pulses={pulses}
-                            onRunRound={handleRunRound}
-                            runningRound={runningRound}
-                            paused={paused}
-                            onTogglePause={handleTogglePause}
-                            onRestart={handleRestart}
                             restarting={restarting}
                             openDetail={openDetail}
                             agentsByUserId={agentsByUserId}

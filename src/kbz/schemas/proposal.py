@@ -25,6 +25,7 @@ class ProposalResponse(BaseModel):
     age: int
     support_count: int
     created_at: datetime
+    prev_content: str | None = None
 
     model_config = {"from_attributes": True}
 

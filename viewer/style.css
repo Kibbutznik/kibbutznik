@@ -2153,3 +2153,116 @@ body {
     background: rgba(78,204,163,0.06);
     border: 1px solid rgba(78,204,163,0.25);
 }
+
+/* ── Memory highlights (member zoom) ─── */
+.memory-highlights { display: flex; flex-direction: column; gap: 14px; }
+.memory-group {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.memory-group-title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+    margin-bottom: 8px;
+}
+.memory-list { display: flex; flex-direction: column; gap: 6px; }
+.memory-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    padding: 6px 8px;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.18);
+    border-left: 2px solid rgba(233,69,96,0.45);
+}
+.memory-importance {
+    color: #f4c95d;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+    letter-spacing: -1px;
+    padding-top: 2px;
+}
+.memory-content { flex: 1; }
+.memory-cat {
+    font-size: 0.7rem;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+/* ── Header logo + control buttons ─── */
+.header-logo {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 6px rgba(233,69,96,0.4));
+}
+.header-controls {
+    display: flex;
+    gap: 6px;
+    margin-left: 8px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border);
+}
+.header-ctrl-btn {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.header-ctrl-btn:hover {
+    background: var(--surface);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.header-ctrl-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.header-ctrl-btn.paused {
+    background: rgba(240,192,64,0.15);
+    border-color: var(--warning, #f0c040);
+    color: var(--warning, #f0c040);
+}
+.header-ctrl-btn.restart {
+    border-color: rgba(233,69,96,0.4);
+    color: #ff8aa0;
+}
+.header-ctrl-btn.restart:hover {
+    background: rgba(233,69,96,0.15);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+@media (max-width: 768px) {
+    .header-ctrl-btn { padding: 4px 8px; font-size: 0.72rem; }
+    .header-controls { padding-left: 8px; margin-left: 4px; gap: 4px; }
+    .header-logo { width: 26px; height: 26px; }
+}
+
+/* Flash highlight when scrolling to a specific comment from the news ticker */
+.hn-comment.hn-comment-flash > .hn-comment-indent > .hn-comment-body {
+    animation: commentFlash 2.4s ease-out;
+    border-radius: 6px;
+}
+@keyframes commentFlash {
+    0%   { background: rgba(233,69,96,0.35); box-shadow: 0 0 0 2px rgba(233,69,96,0.55); }
+    60%  { background: rgba(233,69,96,0.15); box-shadow: 0 0 0 2px rgba(233,69,96,0.25); }
+    100% { background: transparent;          box-shadow: 0 0 0 2px transparent; }
+}

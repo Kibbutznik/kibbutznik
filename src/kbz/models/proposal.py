@@ -19,6 +19,10 @@ class Proposal(Base):
     proposal_text: Mapped[str] = mapped_column(Text, nullable=True, default="")
     val_uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     val_text: Mapped[str] = mapped_column(Text, nullable=True, default="")
+    # For EditArtifact proposals: snapshot of the artifact's content at the
+    # moment the proposal was created. Lets the viewer (and historians) see
+    # exactly what was being replaced even after the artifact has moved on.
+    prev_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     pulse_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     age: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     support_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
