@@ -244,6 +244,24 @@ def build_decision_prompt(
             f"(But check the 📋 Plan first — fill what the Plan says to fill.)\n"
         )
 
+    # B3: Debate banner for EditArtifact proposals on the board
+    if "[EditArtifact]" in community_summary and "REVIEW CHANGES" in community_summary:
+        artifact_urgency += (
+            "\n🗣️ **DEBATE THE EDITS — comment on every EditArtifact proposal you see.**\n"
+            "An EditArtifact proposal is a CREATIVE / SUBSTANTIVE change to the work. You can already\n"
+            "see the CURRENT vs PROPOSED diff above. Don't just silently support or ignore — **leave a\n"
+            "comment** with your honest critique. Talk like an editor in a writers' room:\n"
+            "  • Is the new version actually better than the current one? Why / why not?\n"
+            "  • What do you LOVE about the proposed version? (a phrase, an image, a structural choice)\n"
+            "  • What do you HATE or want changed? (clichéd character beat, weak motivation, off-tone\n"
+            "    voice, plot hole, thin background, missing stakes, purple prose, on-the-nose dialogue)\n"
+            "  • Compare specifics — quote a line from CURRENT and the line that replaces it.\n"
+            "  • Suggest a concrete tweak the proposer (or a follow-up EditArtifact) could make.\n"
+            "Vague comments like 'looks good' or 'I disagree' are FORBIDDEN. Give a real critique with\n"
+            "specifics. Then decide: support it, ignore it, or counter with your own EditArtifact.\n"
+            "(One comment per proposal max — make it count.)\n"
+        )
+
     memory_block = ""
     if memory_context:
         memory_block = f"\n{memory_context}\n"
@@ -375,6 +393,13 @@ Examples:
 [
   {{"action": "send_chat", "message_text": "Hey everyone — should we delegate the onboarding artifact to a new Action? It needs detailed work.", "reason": "Coordinating artifact workflow", "eagerness": 5, "eager_front": "comment"}},
   {{"action": "support_proposal", "proposal_id": "<id>", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
+]
+[
+  {{"action": "comment", "proposal_id": "<EditArtifact id>", "comment_text": "Mixed feelings. I LOVE the new opening line — 'She arrived on the last train of the year' is so much sharper than the current 'Mira came to the village in winter.' But the proposed version flattens her motivation: it cuts the line about her sister's letter, which was the only thing telling us WHY she's here. Without it Mira reads as a tourist, not a fugitive. Counter-suggestion: keep the new opening but restore the letter beat in paragraph two.", "reason": "Substantive critique of the EditArtifact diff — praising the prose lift while flagging a lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
+  {{"action": "support_pulse", "reason": "Keep the cycle moving", "eagerness": 6, "eager_front": "pulse"}}
+]
+[
+  {{"action": "comment", "proposal_id": "<EditArtifact id>", "comment_text": "I HATE this rewrite. The current version had texture — the rusted gate, the dog with one eye, the smell of woodsmoke. The proposed version replaces all of that with abstract nouns ('atmosphere', 'foreboding', 'history'). That's telling, not showing. Also the new dialogue 'I sense great evil here' is a fantasy cliché — the village elder sounds like a tarot card. Please rework with concrete sensory detail and let the elder speak in his own dialect.", "reason": "Honest editorial pushback — specific quotes, named craft problems (telling vs showing, cliché)", "eagerness": 9, "eager_front": "comment"}}
 ]
 [{{"action": "do_nothing", "reason": "Waiting ONE round — my key proposal needs 1 more supporter before I pulse", "eagerness": 3, "eager_front": "observe"}}]
 REMEMBER: include `support_pulse` in MOST of your turns. A turn without `support_pulse` should be the exception, not the rule."""
