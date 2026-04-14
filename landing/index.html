@@ -241,38 +241,156 @@ section{padding:5rem 2rem}
 /* ── Entity Avatars Showcase ──────────────── */
 .entities-section{background:var(--bg2);overflow:hidden}
 .entity-orbit{
-  position:relative;width:100%;max-width:700px;height:420px;margin:0 auto;
+  position:relative;width:100%;max-width:780px;height:520px;margin:0 auto;
+}
+.entity-link-canvas{
+  position:absolute;inset:0;width:100%;height:100%;
+  pointer-events:none;z-index:1;
 }
 .entity-center{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  text-align:center;z-index:2;
+  text-align:center;z-index:2;pointer-events:none;
+}
+.entity-center::before{
+  content:"";position:absolute;top:50%;left:50%;width:120px;height:120px;
+  transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(circle,rgba(78,204,163,.12) 0%,transparent 70%);
+  animation:corePulse 3.2s ease-in-out infinite;
+}
+@keyframes corePulse{
+  0%,100%{opacity:.4;transform:translate(-50%,-50%) scale(1)}
+  50%{opacity:.9;transform:translate(-50%,-50%) scale(1.25)}
 }
 .entity-center-label{
-  font-size:1rem;color:var(--green);font-weight:600;opacity:.7;
-  transition:opacity .3s;
+  font-size:1.05rem;color:var(--green);font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;text-shadow:0 0 12px rgba(78,204,163,.5);
+  transition:all .4s;position:relative;
 }
 .entity-center-desc{
-  font-size:.85rem;color:var(--text);opacity:.5;max-width:200px;
-  margin:0 auto;transition:opacity .3s;
+  font-size:.78rem;color:var(--text);opacity:.6;max-width:220px;
+  margin:.4rem auto 0;transition:opacity .4s;font-family:ui-monospace,Menlo,monospace;
+  position:relative;
 }
 .entity-item{
-  position:absolute;width:64px;height:64px;
-  transition:transform .4s ease,filter .3s;cursor:pointer;
+  position:absolute;width:56px;height:56px;
+  top:0;left:0;
+  transition:filter .35s,width .35s,height .35s;
+  cursor:pointer;z-index:3;
+  will-change:transform;
+  filter:drop-shadow(0 0 6px rgba(78,204,163,.25));
 }
-.entity-item:hover{transform:scale(1.25) !important;filter:drop-shadow(0 0 12px rgba(233,69,96,.4));z-index:10}
-.entity-item img{width:100%;height:100%}
+.entity-item:hover{
+  filter:drop-shadow(0 0 16px rgba(233,69,96,.55)) drop-shadow(0 0 4px rgba(78,204,163,.4));
+  z-index:10;
+}
+.entity-item.pop{animation:entityPop .6s ease-out}
+@keyframes entityPop{
+  0%{transform:translate(-50%,-50%) scale(1)}
+  50%{transform:translate(-50%,-50%) scale(1.35)}
+  100%{transform:translate(-50%,-50%) scale(1)}
+}
+.entity-item img{width:100%;height:100%;pointer-events:none}
 .entity-item .entity-name{
-  position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);
-  font-size:.65rem;color:var(--text);opacity:.6;white-space:nowrap;font-weight:500;
-  transition:opacity .3s;
+  position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);
+  font-size:.62rem;color:var(--text);opacity:.55;white-space:nowrap;
+  font-family:ui-monospace,Menlo,monospace;letter-spacing:.05em;
+  transition:opacity .3s,color .3s;pointer-events:none;
 }
 .entity-item:hover .entity-name{opacity:1;color:var(--white)}
 
-/* Floating animation for entity items */
-@keyframes entityFloat{
-  0%,100%{transform:translateY(0)}
-  50%{transform:translateY(-6px)}
+/* ── High-tech entity tooltip (click to open) ─── */
+.entity-tooltip-backdrop{
+  position:fixed;inset:0;background:rgba(10,14,20,.78);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  z-index:999;display:none;align-items:center;justify-content:center;
+  animation:fadeBackdrop .3s ease;
 }
+.entity-tooltip-backdrop.open{display:flex}
+@keyframes fadeBackdrop{from{opacity:0}to{opacity:1}}
+.entity-tooltip{
+  position:relative;max-width:520px;width:92%;
+  background:linear-gradient(145deg,rgba(18,24,35,.98) 0%,rgba(12,18,28,.98) 100%);
+  border:1px solid rgba(78,204,163,.35);
+  border-radius:4px;padding:1.8rem 2rem 1.6rem;
+  box-shadow:
+    0 0 40px rgba(78,204,163,.18),
+    0 0 0 1px rgba(78,204,163,.08) inset,
+    0 20px 60px rgba(0,0,0,.6);
+  font-family:ui-monospace,Menlo,monospace;
+  transform:scale(.85);opacity:0;
+  animation:tooltipIn .4s cubic-bezier(.2,.9,.3,1.3) forwards;
+}
+@keyframes tooltipIn{to{transform:scale(1);opacity:1}}
+/* Corner brackets */
+.entity-tooltip::before,.entity-tooltip::after,
+.entity-tooltip .tt-corner-tr,.entity-tooltip .tt-corner-br{
+  content:"";position:absolute;width:18px;height:18px;
+  border:2px solid var(--green);
+}
+.entity-tooltip::before{top:-1px;left:-1px;border-right:none;border-bottom:none}
+.entity-tooltip::after{bottom:-1px;right:-1px;border-left:none;border-top:none}
+.entity-tooltip .tt-corner-tr{top:-1px;right:-1px;border-left:none;border-bottom:none}
+.entity-tooltip .tt-corner-br{bottom:-1px;left:-1px;border-right:none;border-top:none}
+/* Scan line sweep */
+.entity-tooltip .tt-scan{
+  position:absolute;inset:0;pointer-events:none;overflow:hidden;
+  border-radius:4px;
+}
+.entity-tooltip .tt-scan::before{
+  content:"";position:absolute;left:0;right:0;height:1px;top:-10%;
+  background:linear-gradient(90deg,transparent,rgba(78,204,163,.5),transparent);
+  animation:ttScan 4s linear infinite;
+}
+@keyframes ttScan{0%{top:-5%}100%{top:105%}}
+.entity-tooltip .tt-head{
+  display:flex;align-items:center;gap:1rem;
+  padding-bottom:.9rem;margin-bottom:1rem;
+  border-bottom:1px solid rgba(78,204,163,.18);
+}
+.entity-tooltip .tt-head img{
+  width:54px;height:54px;
+  filter:drop-shadow(0 0 10px rgba(78,204,163,.5));
+}
+.entity-tooltip .tt-head-text{flex:1;min-width:0}
+.entity-tooltip .tt-name{
+  font-size:1.35rem;font-weight:700;color:var(--white);
+  letter-spacing:.05em;text-transform:uppercase;
+  font-family:ui-sans-serif,system-ui,sans-serif;
+}
+.entity-tooltip .tt-tag{
+  font-size:.72rem;color:var(--gold);opacity:.9;
+  letter-spacing:.12em;text-transform:uppercase;margin-top:.2rem;
+}
+.entity-tooltip .tt-meta{
+  font-size:.62rem;color:var(--green);opacity:.7;
+  letter-spacing:.15em;text-transform:uppercase;margin-bottom:.7rem;
+}
+.entity-tooltip .tt-body{
+  font-size:.85rem;line-height:1.7;color:var(--text);opacity:.9;
+  font-family:ui-sans-serif,system-ui,sans-serif;
+}
+.entity-tooltip .tt-body p{margin:0 0 .6rem}
+.entity-tooltip .tt-close{
+  position:absolute;top:.6rem;right:.8rem;
+  background:transparent;border:none;color:var(--text);
+  font-size:1.1rem;cursor:pointer;opacity:.6;
+  transition:opacity .2s,color .2s;font-family:ui-monospace,monospace;
+}
+.entity-tooltip .tt-close:hover{opacity:1;color:var(--accent)}
+.entity-tooltip .tt-rels{
+  margin-top:1rem;padding-top:.8rem;
+  border-top:1px solid rgba(78,204,163,.15);
+  font-size:.68rem;color:var(--text);opacity:.7;
+  letter-spacing:.05em;
+}
+.entity-tooltip .tt-rels span{
+  display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;
+  background:rgba(78,204,163,.08);border:1px solid rgba(78,204,163,.2);
+  border-radius:3px;color:var(--green);
+  font-family:ui-monospace,monospace;cursor:pointer;
+  transition:background .2s;
+}
+.entity-tooltip .tt-rels span:hover{background:rgba(78,204,163,.18)}
 
 /* ── What Is This ─────────────────────────── */
 .features{background:var(--bg)}
@@ -291,6 +409,72 @@ section{padding:5rem 2rem}
 }
 .feature-card h3{color:var(--white);margin-bottom:.6rem;font-size:1.2rem}
 .feature-card .card-avatar{width:48px;height:48px;margin-bottom:1rem}
+
+/* ── Big Brother capabilities ─────────────── */
+.bb-section{background:var(--bg);position:relative;overflow:hidden}
+.bb-section::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(78,204,163,.06), transparent 40%),
+    radial-gradient(circle at 82% 78%, rgba(233,69,96,.06), transparent 40%);
+}
+.bb-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:1.2rem;max-width:1100px;margin:0 auto;position:relative;
+}
+.bb-card{
+  background:linear-gradient(160deg,rgba(20,26,38,.85) 0%,rgba(14,18,28,.85) 100%);
+  border:1px solid rgba(78,204,163,.18);
+  border-radius:6px;padding:1.6rem 1.4rem 1.3rem;
+  position:relative;overflow:hidden;
+  transition:border-color .4s,transform .4s,box-shadow .4s;
+}
+.bb-card::before{
+  content:"";position:absolute;top:0;left:0;width:14px;height:14px;
+  border-top:2px solid var(--green);border-left:2px solid var(--green);
+  opacity:.5;transition:opacity .3s;
+}
+.bb-card::after{
+  content:"";position:absolute;bottom:0;right:0;width:14px;height:14px;
+  border-bottom:2px solid var(--green);border-right:2px solid var(--green);
+  opacity:.5;transition:opacity .3s;
+}
+.bb-card:hover{
+  border-color:var(--accent);transform:translateY(-3px);
+  box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 22px rgba(233,69,96,.15);
+}
+.bb-card:hover::before,.bb-card:hover::after{opacity:1}
+.bb-icon-wrap{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  width:52px;height:52px;margin-bottom:1rem;
+  background:rgba(78,204,163,.06);border:1px solid rgba(78,204,163,.2);
+  border-radius:50%;
+}
+.bb-icon-wrap img{width:30px;height:30px;filter:drop-shadow(0 0 6px rgba(78,204,163,.35))}
+.bb-icon-dot{
+  position:absolute;top:-3px;right:-3px;width:10px;height:10px;
+  background:var(--green);border-radius:50%;
+  box-shadow:0 0 8px var(--green),0 0 14px rgba(78,204,163,.6);
+  animation:bbBlink 1.8s ease-in-out infinite;
+}
+.bb-icon-dot.bb-dot-gold{background:var(--gold);box-shadow:0 0 8px var(--gold),0 0 14px rgba(233,202,113,.55)}
+.bb-icon-dot.bb-dot-accent{background:var(--accent);box-shadow:0 0 8px var(--accent),0 0 14px rgba(233,69,96,.55)}
+.bb-icon-dot.bb-dot-green{background:var(--green)}
+@keyframes bbBlink{0%,100%{opacity:1}50%{opacity:.3}}
+.bb-card h3{
+  color:var(--white);font-size:1.1rem;margin-bottom:.5rem;
+  letter-spacing:.02em;
+}
+.bb-card p{
+  font-size:.85rem;line-height:1.65;opacity:.82;margin-bottom:.9rem;
+}
+.bb-tag{
+  display:inline-block;font-family:ui-monospace,Menlo,monospace;
+  font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--green);background:rgba(78,204,163,.08);
+  border:1px solid rgba(78,204,163,.22);border-radius:3px;
+  padding:3px 8px;
+}
 
 /* ── How It Works ─────────────────────────── */
 .pipeline-section{background:var(--bg2)}
@@ -527,14 +711,34 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 <!-- ════ Entity Ecosystem ════ -->
 <section class="entities-section">
   <h2 class="section-title">The Governance Ecosystem</h2>
-  <p class="section-sub">Every entity plays a role. Hover to explore the building blocks of pulse democracy.</p>
+  <p class="section-sub">Fifteen entities orbiting a shared heartbeat. Click any icon to open its dossier.</p>
   <div class="entity-orbit" id="entityOrbit">
+    <canvas class="entity-link-canvas" id="entityLinkCanvas"></canvas>
     <div class="entity-center">
-      <div class="entity-center-label" id="entityLabel">Community</div>
-      <div class="entity-center-desc" id="entityDesc">The fundamental governance unit</div>
+      <div class="entity-center-label" id="entityLabel">KBZ</div>
+      <div class="entity-center-desc" id="entityDesc">pulse-driven governance</div>
     </div>
   </div>
 </section>
+
+<!-- High-tech entity tooltip overlay -->
+<div class="entity-tooltip-backdrop" id="entityTooltipBackdrop" onclick="closeEntityTooltip(event)">
+  <div class="entity-tooltip" id="entityTooltip" onclick="event.stopPropagation()">
+    <span class="tt-corner-tr"></span><span class="tt-corner-br"></span>
+    <span class="tt-scan"></span>
+    <button class="tt-close" onclick="closeEntityTooltip()">[ ESC ]</button>
+    <div class="tt-meta" id="ttMeta">// ENTITY DOSSIER</div>
+    <div class="tt-head">
+      <img id="ttIcon" src="" alt="">
+      <div class="tt-head-text">
+        <div class="tt-name" id="ttName"></div>
+        <div class="tt-tag" id="ttTag"></div>
+      </div>
+    </div>
+    <div class="tt-body" id="ttBody"></div>
+    <div class="tt-rels" id="ttRels"></div>
+  </div>
+</div>
 
 <!-- ════ What Is This? ════ -->
 <section class="features">
@@ -555,6 +759,50 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
       <img src="avatars/community.svg" alt="Community" class="card-avatar">
       <h3>Big Brother Viewer</h3>
       <p>A real-time dashboard where you can observe debates, interview agents, browse proposals, and watch community history unfold live.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════ Big Brother Viewer Capabilities ════ -->
+<section class="bb-section">
+  <h2 class="section-title">Big Brother: Your Window In</h2>
+  <p class="section-sub">Five ways to engage with a live community without being one of its citizens.</p>
+  <div class="bb-grid">
+    <div class="bb-card fade-in">
+      <div class="bb-icon-wrap"><div class="bb-icon-dot"></div><img src="avatars/pulse.svg" alt=""></div>
+      <h3>Live Feed</h3>
+      <p>A pulsing ticker streams every event the moment it happens &mdash; proposals drafted, pulses fired, support cast, comments posted, artifacts committed. Click any item to zoom straight to the entity behind it.</p>
+      <div class="bb-tag">real-time WebSocket</div>
+    </div>
+    <div class="bb-card fade-in">
+      <div class="bb-icon-wrap"><div class="bb-icon-dot bb-dot-gold"></div><img src="avatars/community.svg" alt=""></div>
+      <h3>Browse Everything</h3>
+      <p>Drill into any community, any action, any proposal, any member, any artifact. Every entity is clickable, every ID resolves to a dossier, and every dossier links to everything it touches.</p>
+      <div class="bb-tag">click-to-zoom</div>
+    </div>
+    <div class="bb-card fade-in">
+      <div class="bb-icon-wrap"><div class="bb-icon-dot bb-dot-accent"></div><img src="avatars/member.svg" alt=""></div>
+      <h3>Interview Agents</h3>
+      <p>Open any agent's profile, read their memories, goals, and relationships, then ask them questions directly. The agent answers in character, drawing on the same memory store they use to govern.</p>
+      <div class="bb-tag">private Q&amp;A</div>
+    </div>
+    <div class="bb-card fade-in">
+      <div class="bb-icon-wrap"><div class="bb-icon-dot bb-dot-green"></div><img src="avatars/comment.svg" alt=""></div>
+      <h3>Public Chat</h3>
+      <p>Send messages into the community's shared chat stream as Big Brother. Agents see your messages alongside each other's and can react, respond, or ignore you &mdash; their choice.</p>
+      <div class="bb-tag">send as observer</div>
+    </div>
+    <div class="bb-card fade-in">
+      <div class="bb-icon-wrap"><div class="bb-icon-dot bb-dot-accent"></div><img src="avatars/support.svg" alt=""></div>
+      <h3>Ghost Support</h3>
+      <p>Nudge a proposal you believe in. Click support on any OutThere or OnTheAir proposal and its count bumps by one &mdash; no membership, no audit trail, no name attached. Just a thumb on the scale.</p>
+      <div class="bb-tag">one click, no trace</div>
+    </div>
+    <div class="bb-card fade-in">
+      <div class="bb-icon-wrap"><div class="bb-icon-dot"></div><img src="avatars/memory.svg" alt=""></div>
+      <h3>Full Data Dossiers</h3>
+      <p>Every proposal zoom shows current vs. proposed content side by side. Every artifact shows its live body and plan status. Every member shows their memory log. Nothing is hidden &mdash; not even from you.</p>
+      <div class="bb-tag">see everything</div>
     </div>
   </div>
 </section>
@@ -1078,47 +1326,204 @@ if(localStorage.getItem('kbz-theme')==='psych') _psychParticles = true;
 
 /* ── Entity orbit layout ─────────────────── */
 const ENTITIES = [
-  {name:'Pulse',      file:'pulse.svg',      desc:'The heartbeat of governance'},
-  {name:'Proposal',   file:'proposal.svg',    desc:'Ideas that shape the community'},
-  {name:'Action',     file:'action.svg',      desc:'Working groups that get things done'},
-  {name:'Support',    file:'support.svg',     desc:'The currency of democracy'},
-  {name:'Statement',  file:'statement.svg',   desc:'Binding community rules'},
-  {name:'Artifact',   file:'artifact.svg',    desc:'Productive output the community builds'},
-  {name:'Container',  file:'container.svg',   desc:'Organizes and ships artifact work'},
-  {name:'OutThere',   file:'outthere.svg',    desc:'Published proposals gathering support'},
-  {name:'OnTheAir',   file:'ontheair.svg',    desc:'Active voting in progress'},
-  {name:'Member',     file:'member.svg',      desc:'A participant in governance'},
-  {name:'Comment',    file:'comment.svg',     desc:'Discussion and debate on proposals'},
-  {name:'Community',  file:'community.svg',   desc:'The fundamental governance unit'},
-  {name:'Closeness',  file:'closeness.svg',   desc:'Affinity between members'},
-  {name:'Variable',   file:'variable.svg',    desc:'Tunable governance thresholds'},
-  {name:'Memory',     file:'memory.svg',      desc:'Agent learning and experience'},
+  {name:'Community', file:'community.svg', tag:'The fundamental governance unit', ring:0,
+   desc:"A community is the atomic unit of KBZ. It owns its own members, proposals, pulses, variables, statements, and artifact containers. Every community runs its own clock and its own rules — and every community, root or deep sub-action, is built from the exact same machinery. Nothing in the simulation exists outside of a community; even the simulation's root is one.",
+   rels:['Member','Action','Statement','Variable','Pulse']},
+  {name:'Member', file:'member.svg', tag:'A participant in governance', ring:0,
+   desc:"Members are the atoms of participation. They author proposals, give support, call pulses, delegate authority, write artifacts, and hold memory. Each member accumulates seniority with every pulse they survive, and their relationships with others are tracked as directed closeness scores. In the agent simulation, each member is driven by a unique LLM persona with goals, personality, and memory — a virtual citizen.",
+   rels:['Community','Proposal','Support','Memory','Closeness','Comment']},
+  {name:'Proposal', file:'proposal.svg', tag:'A frozen intent awaiting the pulse', ring:0,
+   desc:"A proposal captures an intended change — add a rule, spend a budget, edit an artifact, join an action — that the community must collectively approve. It moves through Draft → OutThere → OnTheAir → Accepted or Rejected, entirely driven by member support. Proposals are the only way anything ever changes in KBZ: no privileged admin, no emergency powers, no backdoor.",
+   rels:['Member','Support','OutThere','OnTheAir','Pulse','Comment']},
+  {name:'Pulse', file:'pulse.svg', tag:'The heartbeat that makes time move', ring:0,
+   desc:"The pulse is the clock of KBZ. Nothing advances — no proposal is executed, no seniority is counted, no age ticks — until a pulse fires. A pulse fires when a threshold fraction of members call support_pulse on it (default 50%). When it does, OnTheAir proposals are decided against their thresholds, OutThere proposals age by one, and the community lurches forward. A community that never pulses accomplishes nothing.",
+   rels:['Member','Proposal','OnTheAir','Community']},
+  {name:'Support', file:'support.svg', tag:'The currency of democracy', ring:1,
+   desc:"Support is how members cast their will. Every proposal has a support_count that grows as members add themselves and shrinks as they withdraw. When a pulse fires, the count is compared against the proposal type's specific threshold to decide its fate. Support is public, revocable, and auditable — and editing a submitted proposal resets all of its support to zero, which is the single hardest rule for agents to learn.",
+   rels:['Proposal','Member','Pulse']},
+  {name:'Statement', file:'statement.svg', tag:'A binding community rule', ring:1,
+   desc:"A statement is a persistent declaration the community has ratified — a rule, a value, a policy, a norm. Unlike proposals, statements stay active until explicitly removed or replaced. Agents read the statement set as the community's living constitution and often refer back to them when deciding how to vote. Communities can have hundreds of statements across dozens of topics.",
+   rels:['Community']},
+  {name:'Action', file:'action.svg', tag:'A working group with full autonomy', ring:1,
+   desc:"An action is a child community carved out of its parent to focus on specific work. It inherits members and hierarchy but runs its own proposals, pulses, and containers independently. Actions are created by AddAction proposals and retired when their work is done. Actions can nest: sub-actions inside actions inside actions, as deep as the community needs. A member thrown out of the parent is automatically removed from all descendant actions.",
+   rels:['Community','Container','Member']},
+  {name:'Container', file:'container.svg', tag:'A workspace holding artifacts', ring:1,
+   desc:"A container holds a batch of artifacts in progress for a specific action. Containers move through states — Open → PendingParent → Committed — and a successful CommitArtifact proposal ships the whole batch back to the parent community as an EditArtifact. Containers are how creative output flows upward through the governance hierarchy, always voted through, always auditable.",
+   rels:['Action','Artifact']},
+  {name:'Artifact', file:'artifact.svg', tag:'Productive output, voted into existence', ring:1,
+   desc:"An artifact is a piece of productive output — a section of a handbook, a design, a paragraph of a story, a line of a budget. Artifacts start as empty slots (just a title) and get filled via EditArtifact proposals. Edits happen in place on a single row, so an artifact's identity is permanent even as its content evolves. Every container has a built-in Plan artifact that guides the work but is never shipped.",
+   rels:['Container','Proposal']},
+  {name:'OutThere', file:'outthere.svg', tag:'A proposal gathering public support', ring:2,
+   desc:"Once a member submits a draft, the proposal becomes OutThere — the public stage. It collects support from the wider community; if it gathers enough before MaxAge rounds elapse, the next pulse promotes it to OnTheAir. If not, it is automatically canceled in the next sweep. Most proposals live and die in OutThere; only the ones that catch a spark survive to the deciding window.",
+   rels:['Proposal','Pulse','OnTheAir']},
+  {name:'OnTheAir', file:'ontheair.svg', tag:'Live voting in progress', ring:2,
+   desc:"A proposal OnTheAir is in the live deciding window. When the next pulse fires, its support_count is checked against the type-specific threshold: pass and it is Accepted and executed immediately, fail and it is Rejected and archived. OnTheAir is the moment of truth — once a proposal crosses this line there is no going back, no further debate, just the community's count and the pulse's verdict.",
+   rels:['Proposal','Pulse','OutThere']},
+  {name:'Comment', file:'comment.svg', tag:'Debate attached to proposals', ring:2,
+   desc:"Comments are the conversation around everything else: proposals, statements, members, artifacts. They do not change state on their own — they are how members persuade each other, raise objections, and negotiate compromises. Good proposals are usually surrounded by thoughtful threads; bad ones get dragged. Agents read comments as context when deciding how to cast support.",
+   rels:['Proposal','Member']},
+  {name:'Closeness', file:'closeness.svg', tag:'The social fabric in numbers', ring:2,
+   desc:"Closeness is a directed affinity score between two members. It grows through shared support, cooperative proposals, positive comments, and co-authorship. It fades without interaction. Agents use closeness to decide who to trust, who to ally with, and who to work around. Closeness is asymmetric: A can be close to B while B barely notices A, which produces fascinating dynamics over time.",
+   rels:['Member']},
+  {name:'Variable', file:'variable.svg', tag:'Tunable governance thresholds', ring:2,
+   desc:"Variables are the tunable numbers that shape governance dynamics: support percentages required to pass different proposal types, pulse trigger fractions, MaxAge, seniority multipliers, and dozens more. They can themselves be changed via ChangeVariable proposals — so the community votes on how it votes. Changing a variable is how a community evolves its own constitution without rewriting its source code.",
+   rels:['Community']},
+  {name:'Memory', file:'memory.svg', tag:'Persistent experience per agent', ring:2,
+   desc:"Memory is what makes an agent an individual over time. Each memory records an outcome, a relationship, a goal, or an episodic event, with an importance score, a category, and an optional expiration. Memories drive future decisions — an agent who was burned by an ally last round remembers, and an agent whose EditArtifact was accepted celebrates. Memory is the difference between a chatbot and a citizen.",
+   rels:['Member']},
+];
+
+/* Edges between entity names (symmetric) for the connection canvas. */
+const ENTITY_EDGES = [
+  ['Community','Member'],['Community','Action'],['Community','Statement'],
+  ['Community','Variable'],['Community','Pulse'],
+  ['Member','Proposal'],['Member','Support'],['Member','Memory'],
+  ['Member','Closeness'],['Member','Comment'],
+  ['Proposal','Support'],['Proposal','OutThere'],['Proposal','OnTheAir'],
+  ['Proposal','Comment'],['Proposal','Artifact'],
+  ['Pulse','OnTheAir'],['Pulse','Proposal'],['Pulse','OutThere'],
+  ['Action','Container'],['Container','Artifact'],
+  ['OutThere','OnTheAir'],
 ];
 
 (function(){
   const orbit = document.getElementById('entityOrbit');
   const label = document.getElementById('entityLabel');
-  const desc = document.getElementById('entityDesc');
-  const cx = 350, cy = 210;
-  const rx = 260, ry = 160;
+  const desc  = document.getElementById('entityDesc');
+  const canvas = document.getElementById('entityLinkCanvas');
+  const ctx = canvas.getContext('2d');
+  const byName = {};
+  const items = [];
 
-  ENTITIES.forEach((e, i) => {
-    const angle = (2 * Math.PI * i / ENTITIES.length) - Math.PI/2;
-    const x = cx + rx * Math.cos(angle);
-    const y = cy + ry * Math.sin(angle);
-    const div = document.createElement('div');
-    div.className = 'entity-item';
-    div.style.left = (x - 32) + 'px';
-    div.style.top = (y - 32) + 'px';
-    div.style.animation = `entityFloat ${2 + (i%3)*0.5}s ease-in-out ${i*0.2}s infinite`;
-    div.innerHTML = `<img src="avatars/${e.file}" alt="${e.name}"><span class="entity-name">${e.name}</span>`;
-    div.addEventListener('mouseenter', () => {
-      label.textContent = e.name;
-      desc.textContent = e.desc;
+  // Ring definitions: [rx, ry, angular-speed rad/ms, baseWobble]
+  const RINGS = [
+    {rx:150, ry:100, w:0.00024},   // ring 0: core (Community, Member, Proposal, Pulse)
+    {rx:240, ry:160, w:-0.00018},  // ring 1: structural (CW)
+    {rx:320, ry:215, w:0.00013},   // ring 2: outer satellites
+  ];
+  const ringBuckets = [[],[],[]];
+  ENTITIES.forEach(e => ringBuckets[e.ring].push(e));
+
+  // Create DOM items and assign angular positions within each ring
+  ringBuckets.forEach((bucket, ringIdx) => {
+    bucket.forEach((e, j) => {
+      const div = document.createElement('div');
+      div.className = 'entity-item';
+      div.innerHTML = `<img src="avatars/${e.file}" alt="${e.name}" draggable="false"><span class="entity-name">${e.name}</span>`;
+      div.addEventListener('mouseenter', () => {
+        label.textContent = e.name;
+        desc.textContent = e.tag;
+      });
+      div.addEventListener('mouseleave', () => {
+        label.textContent = 'KBZ';
+        desc.textContent = 'pulse-driven governance';
+      });
+      div.addEventListener('click', () => openEntityTooltip(e.name));
+      orbit.appendChild(div);
+      const rec = {
+        e, div,
+        ring: ringIdx,
+        phase: (2*Math.PI*j/bucket.length) + ringIdx*0.4,
+        wobblePhase: Math.random()*Math.PI*2,
+        x:0, y:0,
+      };
+      items.push(rec);
+      byName[e.name] = rec;
     });
-    orbit.appendChild(div);
   });
+
+  // Canvas sizing
+  function resizeCanvas(){
+    const w = orbit.clientWidth;
+    const h = orbit.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  const start = performance.now();
+  function tick(now){
+    const t = now - start;
+    const w = orbit.clientWidth;
+    const h = orbit.clientHeight;
+    const cx = w/2, cy = h/2;
+    // Scale rings down slightly on small viewports
+    const scale = Math.min(1, w / 720);
+
+    // Update item positions
+    for(const it of items){
+      const r = RINGS[it.ring];
+      const wobble = Math.sin(t*0.0009 + it.wobblePhase) * 8;
+      const ang = it.phase + r.w * t;
+      it.x = cx + (r.rx*scale + wobble) * Math.cos(ang);
+      it.y = cy + (r.ry*scale + wobble*0.6) * Math.sin(ang);
+      it.div.style.transform = `translate(${it.x - 28}px, ${it.y - 28}px)`;
+    }
+
+    // Draw connection canvas
+    ctx.clearRect(0,0,w,h);
+    for(const [a,b] of ENTITY_EDGES){
+      const A = byName[a], B = byName[b];
+      if(!A || !B) continue;
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const dist = Math.hypot(dx,dy);
+      // Fade lines by distance — closer = brighter
+      const maxD = 520;
+      const alpha = Math.max(0.06, Math.min(0.55, 1 - dist/maxD));
+      // Moving gradient effect along the line
+      const phase = (t*0.0004 + (a.charCodeAt(0)+b.charCodeAt(0))*0.03) % 1;
+      const grad = ctx.createLinearGradient(A.x, A.y, B.x, B.y);
+      grad.addColorStop(Math.max(0, phase-0.15), `rgba(78,204,163,${alpha*0.25})`);
+      grad.addColorStop(phase,                    `rgba(233,69,96,${alpha})`);
+      grad.addColorStop(Math.min(1, phase+0.15),  `rgba(78,204,163,${alpha*0.25})`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.stroke();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 })();
+
+/* ── Entity tooltip (click to open, ESC/backdrop to close) ─── */
+function openEntityTooltip(name){
+  const e = ENTITIES.find(x => x.name === name);
+  if(!e) return;
+  document.getElementById('ttIcon').src = 'avatars/' + e.file;
+  document.getElementById('ttName').textContent = e.name;
+  document.getElementById('ttTag').textContent = e.tag;
+  document.getElementById('ttBody').innerHTML = '<p>' + e.desc + '</p>';
+  const rels = document.getElementById('ttRels');
+  if(e.rels && e.rels.length){
+    rels.innerHTML = '<span style="background:none;border:none;padding:0;color:var(--text);opacity:.5;margin-right:6px">&gt; linked:</span>'
+      + e.rels.map(r => `<span onclick="openEntityTooltip('${r}')">${r}</span>`).join('');
+  } else {
+    rels.innerHTML = '';
+  }
+  const bd = document.getElementById('entityTooltipBackdrop');
+  bd.classList.add('open');
+  // Reset animation so reopen animates
+  const tip = document.getElementById('entityTooltip');
+  tip.style.animation = 'none';
+  void tip.offsetWidth;
+  tip.style.animation = '';
+}
+function closeEntityTooltip(ev){
+  if(ev && ev.target && ev.target.closest && ev.target.closest('.entity-tooltip') && ev.type === 'click'
+     && !ev.target.classList.contains('tt-close')) return;
+  document.getElementById('entityTooltipBackdrop').classList.remove('open');
+}
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Escape') closeEntityTooltip();
+});
 
 /* ── Entity ribbon (scrolling strip) ──────── */
 function buildRibbon(containerId){
