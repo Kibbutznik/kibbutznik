@@ -56,13 +56,18 @@ async def get_container(
     )
 
 
-@router.get("/{artifact_id}/history", response_model=list[ArtifactResponse])
+@router.get("/{artifact_id}/history")
 async def get_artifact_history(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Edit history reconstructed from accepted EditArtifact proposals.
+
+    Returns oldest-first list of edit entries. Each entry is a dict:
+    {proposal_id, title, content, author_user_id, accepted_at}.
+    """
     svc = ArtifactService(db)
-    chain = await svc.get_history(artifact_id)
-    if not chain:
+    artifact = await svc.get_artifact(artifact_id)
+    if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
-    return [ArtifactResponse.model_validate(a) for a in chain]
+    return await svc.get_history(artifact_id)
 
 
 @router.get("/communities/{community_id}/work_tree")

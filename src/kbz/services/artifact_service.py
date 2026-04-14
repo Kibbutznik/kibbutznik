@@ -93,30 +93,55 @@ class ArtifactService:
     async def list_artifacts(
         self, container_id: uuid.UUID, *, include_history: bool = False
     ) -> list[Artifact]:
+        """List artifacts in a container.
+
+        Since edits are now in-place there are no SUPERSEDED rows — the only
+        non-ACTIVE status is RETIRED (from RemoveArtifact). `include_history`
+        is kept for backward-compat but no longer changes much.
+        """
         query = select(Artifact).where(Artifact.container_id == container_id)
         if not include_history:
             query = query.where(Artifact.status == ArtifactStatus.ACTIVE)
         result = await self.db.execute(query.order_by(Artifact.created_at))
         return list(result.scalars().all())
 
-    async def get_history(self, artifact_id: uuid.UUID) -> list[Artifact]:
-        """Return the full revision chain ending at `artifact_id`, oldest first.
+    async def get_history(self, artifact_id: uuid.UUID) -> list[dict]:
+        """Return the edit history of an artifact, reconstructed from accepted
+        EditArtifact proposals (oldest first).
 
-        Walks `prev_artifact_id` backwards from the given row.
+        Each entry is a dict: {proposal_id, title, content, author_user_id,
+        accepted_at}. The first entry is the initial creation (from the
+        CreateArtifact proposal or system), subsequent entries are edits.
         """
+        from kbz.models.proposal import Proposal
+        from kbz.enums import ProposalStatus, ProposalType
+
         artifact = await self.get_artifact(artifact_id)
         if not artifact:
             return []
-        chain: list[Artifact] = [artifact]
-        cur = artifact
-        while cur.prev_artifact_id is not None:
-            prev = await self.get_artifact(cur.prev_artifact_id)
-            if not prev:
-                break
-            chain.append(prev)
-            cur = prev
-        chain.reverse()
-        return chain
+
+        history: list[dict] = []
+        # Seed: the creation. For system-created Plans there is no proposal;
+        # for regular artifacts the creation proposal is stored on `artifact.proposal_id`
+        # BUT note: after the first in-place edit, that field points to the edit.
+        # We include the current row's state only if no prior edit exists.
+        q = await self.db.execute(
+            select(Proposal)
+            .where(Proposal.val_uuid == artifact_id)
+            .where(Proposal.proposal_type == ProposalType.EditArtifact)
+            .where(Proposal.proposal_status == ProposalStatus.Accepted)
+            .order_by(Proposal.created_at)
+        )
+        edits = list(q.scalars().all())
+        for p in edits:
+            history.append({
+                "proposal_id": str(p.id),
+                "title": p.val_text or artifact.title,
+                "content": p.proposal_text or "",
+                "author_user_id": str(p.user_id) if p.user_id else None,
+                "accepted_at": p.created_at.isoformat() if p.created_at else None,
+            })
+        return history
 
     # ---------- Mutation operations (called from ExecutionService handlers) ----------
 
@@ -204,43 +229,23 @@ class ArtifactService:
             raise ArtifactServiceError(
                 f"Container {old.container_id} is PENDING_PARENT — wait for parent community verdict before editing"
             )
-        # Plan artifacts are living documents — edited IN PLACE so the single
-        # Plan row persists through the container's lifetime until CommitArtifact.
-        # No new version row, no SUPERSEDED, no prev_artifact_id chain.
-        if old.is_plan:
-            if new_content is not None:
-                old.content = new_content
-            if new_title is not None:
-                old.title = new_title
-            # Track latest editor + proposal that approved the edit
-            old.author_user_id = author_user_id
-            old.proposal_id = proposal_id
-            await self.db.flush()
-            if container.status == ContainerStatus.COMMITTED:
-                container.status = ContainerStatus.OPEN
-                await self.db.flush()
-            return old
-
-        new = Artifact(
-            id=uuid.uuid4(),
-            container_id=old.container_id,
-            community_id=old.community_id,
-            title=new_title if new_title is not None else old.title,
-            content=new_content if new_content is not None else old.content,
-            author_user_id=author_user_id,
-            proposal_id=proposal_id,
-            prev_artifact_id=old.id,
-            status=ArtifactStatus.ACTIVE,
-        )
-        self.db.add(new)
-        old.status = ArtifactStatus.SUPERSEDED
+        # Artifacts are edited IN PLACE — no new version row, no SUPERSEDED,
+        # no prev_artifact_id chain. Full edit history is reconstructable from
+        # the accepted EditArtifact proposals (val_uuid → artifact, proposal_text
+        # → content, val_text → title, created_at → when).
+        if new_content is not None:
+            old.content = new_content
+        if new_title is not None:
+            old.title = new_title
+        old.author_user_id = author_user_id
+        old.proposal_id = proposal_id
         await self.db.flush()
         # If the container was COMMITTED, reopen it so the community can re-commit
         # with the updated content.
         if container.status == ContainerStatus.COMMITTED:
             container.status = ContainerStatus.OPEN
             await self.db.flush()
-        return new
+        return old
 
     async def remove_artifact(self, artifact_id: uuid.UUID) -> None:
         artifact = await self.get_artifact(artifact_id)

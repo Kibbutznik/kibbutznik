@@ -102,7 +102,7 @@ async def test_create_artifact_happy_path(db):
 
 
 @pytest.mark.asyncio
-async def test_edit_artifact_creates_new_revision_supersedes_old(db):
+async def test_edit_artifact_mutates_in_place(db):
     community = await _mk_community(db)
     svc = ArtifactService(db)
     container = await svc.create_root_container(community.id)
@@ -113,16 +113,15 @@ async def test_edit_artifact_creates_new_revision_supersedes_old(db):
     a1 = await svc.create_artifact(container.id, "v1", "T", user, p1.id)
     a2 = await svc.edit_artifact(a1.id, "v2", "T2", user, p2.id)
 
-    await db.refresh(a1)
-    assert a1.status == ArtifactStatus.SUPERSEDED
+    # In-place: same row id, content updated, status still ACTIVE
+    assert a2.id == a1.id
+    assert a2.content == "v2"
+    assert a2.title == "T2"
     assert a2.status == ArtifactStatus.ACTIVE
-    assert a2.prev_artifact_id == a1.id
-
-    history = await svc.get_history(a2.id)
-    assert [h.id for h in history] == [a1.id, a2.id]
+    assert a2.proposal_id == p2.id
 
     actives = await svc.list_artifacts(container.id)
-    assert [a.id for a in actives] == [a2.id]
+    assert [a.id for a in actives] == [a1.id]
 
 
 @pytest.mark.asyncio
