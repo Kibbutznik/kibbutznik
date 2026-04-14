@@ -201,16 +201,47 @@ def build_decision_prompt(
 
     # B2: Dynamic artifact urgency banner
     artifact_urgency = ""
-    if "📋 PLAN" in community_summary and "NEEDS FILLING" in community_summary:
+    plan_visible = "📋 PLAN" in community_summary or "📋 Plan" in community_summary
+    plan_empty = plan_visible and "NEEDS FILLING" in community_summary
+
+    if plan_empty:
         artifact_urgency = (
-            "\n📋 **PLAN FIRST: The container's Plan artifact needs filling!**\n"
-            "Before creating other artifacts, fill the Plan with goals, needed artifact sections, and approach.\n"
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "📋📋📋  ADVICE!!  USE THE PLAN ARTIFACT TO PLAN YOUR WORK  📋📋📋\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "**The container's 📋 Plan artifact is EMPTY. Fill it FIRST — before anything else.**\n"
+            "\n"
+            "The Plan is your THINKING TOOL. Do not jump straight to writing artifacts or "
+            "delegating actions on impulse. STOP. Open the Plan. Decide:\n"
+            "  • What is this container actually trying to produce? (mission → concrete goals)\n"
+            "  • What artifact sections are needed? (list them by title)\n"
+            "  • How will the work be divided? (which sections go to which sub-actions, in what order?)\n"
+            "  • What's the success criterion for committing this container?\n"
+            "\n"
+            "**Action:** propose `EditArtifact` on the 📋 Plan artifact RIGHT NOW with a real plan.\n"
+            "Other members will read your Plan and align their work to it. A filled Plan is the\n"
+            "single most valuable thing you can contribute on turn one. Do NOT create a second\n"
+            "artifact titled 'Plan' — edit the existing 📋 Plan in place.\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         )
-    elif "⚡ EMPTY" in community_summary:
-        empty_count = community_summary.count("⚡ EMPTY")
+    elif plan_visible:
+        # Plan exists and has content — remind the agent to USE it as a guide,
+        # and to UPDATE it when the situation changes.
         artifact_urgency = (
+            "\n📋 **ADVICE: Read the 📋 Plan before you act, and update it as work evolves.**\n"
+            "The Plan is the container's living strategy doc. Before proposing EditArtifact,\n"
+            "DelegateArtifact, AddAction, or CommitArtifact, check: does my move fit the Plan?\n"
+            "If the Plan is outdated, stale, or missing a step — propose `EditArtifact` on the\n"
+            "📋 Plan to update it (in place, never a duplicate). Aligning to the Plan beats\n"
+            "freelancing every time.\n"
+        )
+
+    if "⚡ EMPTY" in community_summary:
+        empty_count = community_summary.count("⚡ EMPTY")
+        artifact_urgency += (
             f"\n🚨 **PRODUCTIVE WORK ALERT: {empty_count} artifact(s) are EMPTY and waiting to be written!**\n"
             f"Empty artifacts are the community's TOP priority. Propose EditArtifact or DelegateArtifact on them NOW.\n"
+            f"(But check the 📋 Plan first — fill what the Plan says to fill.)\n"
         )
 
     memory_block = ""
