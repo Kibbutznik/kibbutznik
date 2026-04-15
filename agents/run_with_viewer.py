@@ -309,9 +309,17 @@ Examples:
         _sim_state["task"] = new_task
         log.info("Simulation loop restarted (round %d).", orch._round)
 
+    # TKG ingestor — owns a subscription to the event_bus and writes
+    # nodes/edges/embeddings as governance events happen. Started inside the
+    # lifespan so it dies cleanly with the app.
+    from kbz.database import async_session
+    from kbz.services.tkg_ingestor import TKGIngestor
+
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         cascade_task = asyncio.create_task(_artifact_cascade_loop())
+        tkg_ingestor = TKGIngestor(async_session)
+        await tkg_ingestor.start()
         sim_task = asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
         _sim_state["task"] = sim_task
         set_restart_callback(_restart)
@@ -323,6 +331,10 @@ Examples:
                 await cascade_task
             except asyncio.CancelledError:
                 pass
+            try:
+                await tkg_ingestor.stop()
+            except Exception:
+                log.exception("TKGIngestor shutdown failed")
 
     # Build the combined app with lifespan
     from kbz.routers import (
@@ -336,6 +348,7 @@ Examples:
         proposals,
         pulses,
         statements,
+        tkg,
         users,
         ws,
     )
@@ -356,6 +369,7 @@ Examples:
     combined_app.include_router(closeness.router, tags=["closeness"])
     combined_app.include_router(artifacts.router)
     combined_app.include_router(memory.router, tags=["memory"])
+    combined_app.include_router(tkg.router)
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

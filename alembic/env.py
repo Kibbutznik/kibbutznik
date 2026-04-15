@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -9,6 +10,12 @@ from alembic import context
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Let KBZ_DATABASE_URL env var override the URL in alembic.ini so prod
+# deployments can point at their own DB without editing the ini file.
+_env_url = os.environ.get("KBZ_DATABASE_URL")
+if _env_url:
+    config.set_main_option("sqlalchemy.url", _env_url)
 
 # Import all models so they are registered with Base.metadata
 from kbz.models import Base
