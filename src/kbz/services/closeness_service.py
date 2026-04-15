@@ -147,6 +147,18 @@ class ClosenessService:
         n = len(member_ids)
         if n < 2:
             return 0
+        # Clean slate for this cohort: even with fresh UUIDs the EMA can
+        # layer onto a stale extreme value if any row survived the age
+        # purge (or if UUIDs get reused). Wipe every row whose BOTH
+        # endpoints live in the incoming member set so seeds land on an
+        # empty baseline and the heatmap starts genuinely blank.
+        await self.db.execute(
+            text(
+                "DELETE FROM closeness_records "
+                "WHERE user_id1 = ANY(:ids) AND user_id2 = ANY(:ids)"
+            ),
+            {"ids": list(member_ids)},
+        )
         rng = random.Random(seed)
         all_pairs = [
             (member_ids[i], member_ids[j])
