@@ -235,8 +235,11 @@ async def semantic_search(
         # embedding failed — don't return random results
         return []
 
+    # asyncpg can't bind a Python list as a vector parameter. Serialize to
+    # the pgvector text-literal format ("[v1,v2,...]") and cast in SQL.
+    vec_literal = "[" + ",".join(repr(float(v)) for v in vec) + "]"
     params: dict[str, Any] = {
-        "q": vec,
+        "q": vec_literal,
         "limit": body.limit,
     }
     filters = []
