@@ -167,12 +167,15 @@ class ClosenessService:
         Cheap hygiene for long-running servers: closeness for users from
         dead simulation runs hangs around forever otherwise.
         """
+        # Use make_interval so asyncpg can bind :h as a plain int —
+        # the `(:h || ' hours')::interval` form forces $1 to be a string
+        # and blows up with "expected str, got int".
         result = await self.db.execute(
             text(
                 "DELETE FROM closeness_records "
-                "WHERE last_calculation < NOW() - (:h || ' hours')::interval"
+                "WHERE last_calculation < NOW() - make_interval(hours => :h)"
             ),
-            {"h": older_than_hours},
+            {"h": int(older_than_hours)},
         )
         return result.rowcount or 0
 
