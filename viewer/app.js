@@ -2233,15 +2233,36 @@ function WorkTab({ communityId, openDetail, bbUserId }) {
     const [view, setView] = useState("tree");
     const [error, setError] = useState(null);
 
-    useEffect(() => {
+    // Core fetch — pulled out so the WS listener can call it too.
+    const reload = useCallback((showSpinner = true) => {
         if (!communityId) return;
-        setLoading(true);
+        if (showSpinner) setLoading(true);
         setError(null);
-        API.get(`/artifacts/communities/${communityId}/work_tree`)
+        return API.get(`/artifacts/communities/${communityId}/work_tree`)
             .then((d) => setTree(Array.isArray(d) ? d : []))
             .catch((e) => { setError(String(e)); setTree([]); })
-            .finally(() => setLoading(false));
+            .finally(() => { if (showSpinner) setLoading(false); });
     }, [communityId]);
+
+    useEffect(() => { reload(true); }, [reload]);
+
+    // Live refresh: re-pull the work tree whenever the main app dispatches
+    // its "kbz-refresh" event (round.end / pulse.executed / proposal.accepted /
+    // proposal.rejected). Silent reload — no spinner flash — so the tree
+    // updates under the user without any visible jank.
+    useEffect(() => {
+        if (!communityId) return;
+        let pending = null;
+        const handler = () => {
+            if (pending) return;  // debounce bursts
+            pending = setTimeout(() => { pending = null; reload(false); }, 600);
+        };
+        window.addEventListener("kbz-refresh", handler);
+        return () => {
+            window.removeEventListener("kbz-refresh", handler);
+            if (pending) clearTimeout(pending);
+        };
+    }, [communityId, reload]);
 
     // Manuscript view: flatten the FIRST root container's artifacts (in stored order).
     const manuscript = useMemo(() => {
@@ -3763,6 +3784,9 @@ function App() {
                     if (event.event_type === "round.end" || event.event_type === "pulse.executed" ||
                         event.event_type === "proposal.accepted" || event.event_type === "proposal.rejected") {
                         debouncedFetch();
+                        // Broadcast so self-fetching tabs (WorkTab etc.) can
+                        // refresh without waiting on a page reload.
+                        try { window.dispatchEvent(new CustomEvent("kbz-refresh", { detail: event })); } catch {}
                     }
                     // Feed the news ticker
                     if (typeof addNewsItem === 'function') {
