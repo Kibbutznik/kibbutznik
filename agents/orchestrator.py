@@ -181,6 +181,30 @@ class Orchestrator:
 
         logger.info(f"All {len(self.agents)} agents registered and added to community")
 
+        # Seed a handful of random positive-affinity pairs so the closeness
+        # graph isn't flat at round 0. The EMA dynamics in ClosenessService
+        # then evolve these seeds based on how the pairs actually vote.
+        try:
+            import uuid as _uuid
+            from kbz.database import async_session as _session
+            from kbz.services.closeness_service import (
+                ClosenessService as _ClosenessService,
+            )
+
+            member_uuids = [_uuid.UUID(a.user_id) for a in self.agents]
+            async with _session() as db:
+                svc = _ClosenessService(db)
+                # Hygiene: drop leftover rows from dead runs before seeding.
+                purged = await svc.purge_stale_rows(older_than_hours=12)
+                seeded = await svc.seed_initial_pairs(member_uuids)
+                await db.commit()
+                logger.info(
+                    "Closeness: purged %d stale rows, seeded %d initial pairs",
+                    purged, seeded,
+                )
+        except Exception as e:
+            logger.warning("Closeness seed/purge skipped: %s", e)
+
         # Prime the status cache so /simulation/status works immediately.
         await self.refresh_status_cache()
 
@@ -322,6 +346,7 @@ class Orchestrator:
                         round=self._round,
                         eagerness=log.eagerness,
                         eager_front=log.eager_front,
+                        ref_id=log.ref_id,
                     )
             except Exception as e:
                 logger.error(f"[{agent.persona.name}] Error in round {self._round}: {e}")
@@ -396,6 +421,7 @@ class Orchestrator:
                                         round=self._round,
                                         eagerness=log.eagerness,
                                         eager_front=log.eager_front,
+                                        ref_id=log.ref_id,
                                     )
                             except Exception as e:
                                 logger.error(f"[{agent.persona.name}] Error in action {aid[:8]}: {e}")

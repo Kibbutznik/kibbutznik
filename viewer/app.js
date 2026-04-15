@@ -3493,9 +3493,21 @@ function formatNewsEvent(event) {
         case 'agent.action': {
             const action = d.action_type || d.action || '';
             const name = agentName || 'Agent';
+            const refId = d.ref_id || d.proposal_id || null;
             // Skip noisy/uninteresting events
             if (action === 'do_nothing') return null;
-            if (action === 'support_proposal' || action === 'support_pulse') return null;
+            if (action === 'support_pulse') return null;
+            if (action === 'support_proposal') {
+                // Show but link to the proposal, not the agent.
+                if (!refId) return null;  // no linkable target → skip
+                return {
+                    text: `${prefix}${name} supported a proposal`,
+                    linkType: 'proposal',
+                    linkId: refId,
+                    linkLabel: 'proposal',
+                    linkUserName: name,
+                };
+            }
             if (action === 'send_chat') {
                 return {
                     text: `${prefix}${name} posted in chat`,
@@ -3507,17 +3519,19 @@ function formatNewsEvent(event) {
                 return {
                     text: `${prefix}${name} commented on a proposal`,
                     linkType: 'proposal',
-                    linkId: d.ref_id || d.proposal_id,
+                    linkId: refId,
                     linkLabel: 'comment',
                     linkExtra: { commentByUser: name },
                     linkUserName: name,
                 };
             }
             if (action === 'create_proposal') {
-                // No proposal_id in the bus payload — fall back to the agent.
                 return {
                     text: `${prefix}${name} drafted a proposal`,
-                    linkUserName: name,
+                    linkType: refId ? 'proposal' : null,
+                    linkId: refId,
+                    linkLabel: 'proposal',
+                    linkUserName: name,  // fallback if the proposal is gone
                 };
             }
             if (action === 'promoted') {
