@@ -492,13 +492,26 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
                 </div>
             )}
 
-            {/* Pitch / Description — for non-EditArtifact proposals show as-is */}
-            {!isEdit && proposal.proposal_text && (
-                <div className="detail-section proposal-pitch-section">
-                    <div className="detail-section-title">Proposal Description</div>
+            {/* Pitch — the author's proposal_text. Shown for EVERY proposal
+                type, including EditArtifact, because that is the only free-
+                form body an agent writes when creating a proposal, and it's
+                what other agents quote in their comments. For EditArtifact
+                the pitch IS the new content body (also visible inside the
+                collapsed diff above); showing it here as well means a reader
+                can read the proposed text without expanding the diff.
+                We also show an explicit "(no pitch)" placeholder so it's
+                obvious the author didn't write one, rather than the block
+                being silently omitted. */}
+            <div className="detail-section proposal-pitch-section">
+                <div className="detail-section-title">Pitch</div>
+                {proposal.proposal_text ? (
                     <div className="proposal-pitch-text">{proposal.proposal_text}</div>
-                </div>
-            )}
+                ) : (
+                    <div className="proposal-pitch-text" style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                        (no pitch — author left proposal_text empty)
+                    </div>
+                )}
+            </div>
             {proposal.proposal_type === "ChangeVariable" && proposal.proposal_text && (
                 <div className="detail-section">
                     <div className="detail-section-title">Variable Change</div>
