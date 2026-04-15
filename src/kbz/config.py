@@ -8,6 +8,14 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # --- Temporal Knowledge Graph ---
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_embed_model: str = "nomic-embed-text"
+    tkg_embed_dim: int = 768
+    tkg_dual_write: bool = True
+    tkg_semantic_timeout_ms: int = 300
+    tkg_base_url: str = "http://localhost:8000"
+
     model_config = {"env_prefix": "KBZ_"}
 
 

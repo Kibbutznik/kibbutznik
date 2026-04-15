@@ -16,6 +16,7 @@ from agents.api_client import KBZClient
 from agents.decision_engine import DecisionEngine
 from agents.memory import MemoryStore
 from agents.persona import Persona, load_all_personas, generate_persona
+from agents.tkg_client import TKGClient
 from kbz.services.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,7 @@ class Orchestrator:
         self._bb_user_id: str | None = None
         # Agent memory system
         self.memory_store = MemoryStore(api_url)
+        self.tkg_client = TKGClient(api_url)
         self._reflection_interval: int = 5  # generate reflections every N rounds
 
     async def post_chat(self, message: str, community_id: str | None = None) -> dict:
@@ -143,6 +145,7 @@ class Orchestrator:
                 client=self.client,
                 engine=self.engine,
                 memory_store=self.memory_store,
+                tkg_client=self.tkg_client,
             )
             await agent.register()
             self.agents.append(agent)
@@ -444,6 +447,17 @@ class Orchestrator:
                 except Exception:
                     pass
 
+        # Prune old closed TKG edges every 10 rounds to keep the graph lean
+        if self._round > 0 and self._round % 10 == 0 and self.tkg_client:
+            try:
+                deleted = await self.tkg_client.prune_closed_edges(
+                    older_than_round=max(0, self._round - 100),
+                )
+                if deleted:
+                    logger.info(f"[TKG] Pruned {deleted} closed edges")
+            except Exception as e:
+                logger.debug(f"[TKG] prune_closed_edges failed: {e}")
+
         return round_events
 
     async def _break_pulse_deadlock(self) -> None:
@@ -684,6 +698,7 @@ class Orchestrator:
                     engine=self.engine,
                     user_id=newcomer["id"],
                     memory_store=self.memory_store,
+                    tkg_client=self.tkg_client,
                 )
                 agent.community_id = self.community_id
                 # Ensure the agent recognizes itself in community snapshots
@@ -891,3 +906,5 @@ class Orchestrator:
         await self.client.close()
         if self.memory_store:
             await self.memory_store.close()
+        if self.tkg_client:
+            await self.tkg_client.close()

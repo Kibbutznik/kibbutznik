@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Agents Remember — KBZ Memory System</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f0a1e;--bg2:#160d2e;--card:#1e1440;
+  --accent:#e94560;--green:#4ecca3;--gold:#f0c040;
+  --violet:#a37bff;--blue:#79c6ff;--pink:#ff72b6;
+  --text:#e8e2ff;--white:#fff;--dim:#9a92b8;
+}
+
+html,body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.6;overflow-x:hidden}
+a{color:var(--blue);text-decoration:none}
+a:hover{color:var(--pink)}
+
+/* ── Ambient background ──────────────── */
+.bg-glow{
+  position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(163,123,255,.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 30%, rgba(78,204,163,.14) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 85%, rgba(255,114,182,.15) 0%, transparent 55%);
+  animation:bgShift 20s ease-in-out infinite;
+}
+@keyframes bgShift{
+  0%,100%{filter:hue-rotate(0deg)}
+  50%{filter:hue-rotate(25deg)}
+}
+
+/* ── Top nav ─────────────────── */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1rem 2rem;
+  background:rgba(15,10,30,.85);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid rgba(163,123,255,.15);
+}
+.topbar .logo{display:flex;align-items:center;gap:.6rem;font-weight:700;letter-spacing:.15em;color:var(--white)}
+.topbar .logo img{width:32px;height:32px}
+.topbar a.back{
+  padding:.5rem 1rem;border-radius:4px;
+  background:transparent;border:1px solid var(--violet);color:var(--violet);
+  font-size:.85rem;transition:all .2s;
+}
+.topbar a.back:hover{background:rgba(163,123,255,.15);color:var(--pink);border-color:var(--pink)}
+
+/* ── Hero ─────────────────── */
+.hero{
+  padding:5rem 2rem 4rem;text-align:center;position:relative;
+}
+.hero h1{
+  font-size:clamp(2.2rem,6vw,4rem);font-weight:800;color:var(--white);
+  background:linear-gradient(90deg,#a37bff,#ff72b6,#4ecca3,#79c6ff,#a37bff);
+  background-size:300% 100%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:shimmer 8s linear infinite;
+  margin-bottom:.8rem;
+}
+@keyframes shimmer{
+  0%{background-position:0% 50%}
+  100%{background-position:300% 50%}
+}
+.hero .lead{
+  font-size:clamp(1rem,2.1vw,1.2rem);color:var(--text);
+  max-width:680px;margin:0 auto;opacity:.85;
+}
+.hero .badge{
+  display:inline-block;margin-bottom:1.2rem;
+  padding:.4rem 1rem;border-radius:100px;
+  background:rgba(78,204,163,.12);
+  border:1px solid rgba(78,204,163,.4);
+  color:var(--green);font-size:.8rem;
+  letter-spacing:.1em;text-transform:uppercase;
+}
+
+/* ── Sections ────────────────── */
+section{padding:4rem 2rem;max-width:1100px;margin:0 auto}
+h2{
+  font-size:clamp(1.5rem,3vw,2rem);color:var(--white);
+  margin-bottom:1.5rem;font-weight:700;
+  display:flex;align-items:center;gap:.8rem;
+}
+h2 .num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:38px;height:38px;border-radius:50%;
+  background:linear-gradient(135deg,var(--violet),var(--pink));
+  color:var(--white);font-size:1rem;font-weight:700;
+  box-shadow:0 0 20px rgba(163,123,255,.4);
+}
+h3{color:var(--white);margin-bottom:.8rem;font-size:1.1rem}
+p{margin-bottom:1rem}
+p.dim{color:var(--dim);font-size:.92rem}
+
+.card{
+  background:linear-gradient(135deg,rgba(30,20,64,.6),rgba(22,13,46,.8));
+  border:1px solid rgba(163,123,255,.2);
+  border-radius:14px;padding:1.8rem;
+  transition:border-color .3s,box-shadow .3s;
+}
+.card:hover{border-color:rgba(163,123,255,.5);box-shadow:0 0 30px rgba(163,123,255,.12)}
+
+.grid{display:grid;gap:1.2rem}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.grid-3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.grid-4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+
+code,pre{
+  font-family:"SF Mono",Consolas,"Liberation Mono",monospace;
+  background:rgba(0,0,0,.35);
+  color:var(--blue);
+  border-radius:4px;
+}
+code{padding:.12rem .35rem;font-size:.88em}
+pre{
+  padding:1rem 1.2rem;overflow-x:auto;
+  border:1px solid rgba(121,198,255,.2);
+  font-size:.82rem;line-height:1.55;
+  margin:.8rem 0;
+}
+pre code{background:transparent;padding:0;color:var(--text)}
+pre .k{color:var(--pink)}    /* keyword */
+pre .s{color:var(--green)}   /* string */
+pre .c{color:var(--dim);font-style:italic} /* comment */
+pre .n{color:var(--gold)}    /* number */
+pre .t{color:var(--violet)}  /* type */
+
+/* ── The Problem / Solution cards ─────── */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin:1.5rem 0}
+@media (max-width:720px){.compare{grid-template-columns:1fr}}
+.compare .card{position:relative;overflow:hidden}
+.compare .tag{
+  display:inline-block;padding:.2rem .7rem;border-radius:100px;
+  font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;
+  margin-bottom:.8rem;
+}
+.compare .before .tag{background:rgba(233,69,96,.15);color:var(--accent)}
+.compare .after .tag{background:rgba(78,204,163,.15);color:var(--green)}
+.compare ul{list-style:none;padding:0}
+.compare li{padding:.4rem 0 .4rem 1.4rem;position:relative;font-size:.92rem}
+.compare li::before{position:absolute;left:0;top:.4rem}
+.compare .before li::before{content:"✕";color:var(--accent)}
+.compare .after li::before{content:"✓";color:var(--green)}
+
+/* ── Pipeline diagram ────────────────── */
+.pipeline{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:0;align-items:stretch;
+  margin:2rem 0;position:relative;
+}
+@media (max-width:900px){.pipeline{grid-template-columns:1fr;gap:1rem}}
+.pipeline .stage{
+  background:linear-gradient(135deg,rgba(30,20,64,.8),rgba(22,13,46,.9));
+  border:1px solid rgba(163,123,255,.3);
+  border-radius:12px;padding:1rem .7rem;
+  text-align:center;position:relative;
+  transition:transform .3s,border-color .3s,box-shadow .3s;
+}
+.pipeline .stage:hover{
+  transform:translateY(-3px);
+  border-color:var(--pink);
+  box-shadow:0 6px 25px rgba(255,114,182,.18);
+}
+.pipeline .stage-icon{
+  width:52px;height:52px;margin:0 auto .5rem;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:50%;
+  background:linear-gradient(135deg,var(--violet),var(--pink));
+  font-size:1.6rem;
+  box-shadow:0 0 18px rgba(163,123,255,.4);
+}
+.pipeline .stage-title{font-weight:700;color:var(--white);font-size:.85rem;margin-bottom:.3rem}
+.pipeline .stage-desc{color:var(--dim);font-size:.72rem;line-height:1.3}
+.pipeline .stage::after{
+  content:"→";
+  position:absolute;right:-12px;top:40%;
+  font-size:1.6rem;color:var(--violet);
+  z-index:2;
+  text-shadow:0 0 10px var(--violet);
+  animation:pulse 2s ease-in-out infinite;
+}
+.pipeline .stage:last-child::after{display:none}
+@media (max-width:900px){
+  .pipeline .stage::after{right:50%;top:auto;bottom:-18px;transform:translateX(50%) rotate(90deg)}
+}
+@keyframes pulse{
+  0%,100%{opacity:.4}
+  50%{opacity:1}
+}
+
+/* ── Graph animation ──────────────── */
+.graph-demo{
+  background:rgba(0,0,0,.3);
+  border:1px solid rgba(163,123,255,.2);
+  border-radius:14px;
+  padding:1rem;
+  margin:1.2rem 0;
+}
+.graph-demo svg{width:100%;height:340px;display:block}
+.node-user  circle{fill:url(#g-user);filter:drop-shadow(0 0 6px #a37bff)}
+.node-prop  circle{fill:url(#g-prop);filter:drop-shadow(0 0 6px #4ecca3)}
+.node-pulse circle{fill:url(#g-pulse);filter:drop-shadow(0 0 6px #f0c040)}
+.node-user text,.node-prop text,.node-pulse text{
+  text-anchor:middle;fill:var(--white);font-size:11px;font-weight:600;
+  pointer-events:none;
+}
+.edge-line{
+  stroke:rgba(163,123,255,.4);
+  stroke-width:2;
+  fill:none;
+  stroke-dasharray:4 4;
+  animation:flow 3s linear infinite;
+}
+.edge-line.supported{stroke:#4ecca3}
+.edge-line.allied   {stroke:#ff72b6}
+.edge-line.authored {stroke:#f0c040}
+.edge-line.closed   {stroke:rgba(150,150,170,.25);animation:none}
+@keyframes flow{
+  0%{stroke-dashoffset:0}
+  100%{stroke-dashoffset:-16}
+}
+.edge-label{
+  font-size:9px;fill:var(--dim);
+  text-anchor:middle;font-family:monospace;
+}
+
+/* ── Layers ──────────── */
+.layers .card{display:flex;gap:1rem;align-items:flex-start}
+.layers .layer-icon{
+  flex-shrink:0;width:48px;height:48px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:12px;font-size:1.4rem;
+  background:linear-gradient(135deg,var(--violet),var(--pink));
+  box-shadow:0 0 15px rgba(163,123,255,.3);
+}
+.layers .layer-body h3{margin-bottom:.4rem}
+.layers .layer-body .meta{
+  display:inline-block;margin-top:.5rem;
+  font-size:.72rem;color:var(--green);
+  padding:.15rem .55rem;border-radius:100px;
+  background:rgba(78,204,163,.1);
+  border:1px solid rgba(78,204,163,.3);
+  font-family:monospace;
+}
+
+/* ── Bitemporal timeline ─────────── */
+.timeline{
+  position:relative;
+  background:rgba(0,0,0,.25);
+  border-radius:12px;padding:2rem 1.5rem 2.5rem;
+  border:1px solid rgba(163,123,255,.2);
+  margin:1.5rem 0;
+}
+.timeline-track{
+  position:relative;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,rgba(163,123,255,.3),rgba(78,204,163,.3));
+  margin:2rem 0;
+}
+.timeline-tick{
+  position:absolute;top:-10px;width:2px;height:26px;
+  background:rgba(255,255,255,.2);
+}
+.timeline-label{
+  position:absolute;top:22px;font-size:.7rem;color:var(--dim);
+  transform:translateX(-50%);font-family:monospace;
+}
+.timeline-edge{
+  position:absolute;top:-3px;height:12px;border-radius:6px;
+  background:linear-gradient(90deg,var(--green),rgba(78,204,163,.4));
+  box-shadow:0 0 15px rgba(78,204,163,.5);
+}
+.timeline-edge.closed{
+  background:linear-gradient(90deg,rgba(233,69,96,.8),rgba(233,69,96,.3));
+  box-shadow:0 0 15px rgba(233,69,96,.3);
+}
+.timeline-edge-label{
+  position:absolute;top:-28px;font-size:.72rem;
+  font-family:monospace;color:var(--white);
+  white-space:nowrap;
+}
+
+/* ── Stack ───────────── */
+.stack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1rem}
+.stack-card{
+  background:linear-gradient(135deg,rgba(30,20,64,.7),rgba(22,13,46,.9));
+  border:1px solid rgba(163,123,255,.2);
+  border-radius:10px;padding:1.2rem;
+  text-align:center;transition:all .25s;
+}
+.stack-card:hover{border-color:var(--green);box-shadow:0 0 20px rgba(78,204,163,.15)}
+.stack-card .ico{font-size:2rem;margin-bottom:.4rem;display:block}
+.stack-card .name{color:var(--white);font-weight:700;font-size:.95rem;margin-bottom:.2rem}
+.stack-card .role{color:var(--dim);font-size:.78rem;line-height:1.4}
+
+/* ── Budget highlight ────────── */
+.budget{
+  background:linear-gradient(135deg,rgba(240,192,64,.08),rgba(255,114,182,.08));
+  border:1px solid rgba(240,192,64,.35);
+  border-left:4px solid var(--gold);
+  border-radius:10px;padding:1.4rem 1.8rem;
+  margin:1.5rem 0;
+  display:flex;gap:1.2rem;align-items:flex-start;
+}
+.budget .icon{font-size:2rem;flex-shrink:0}
+.budget h3{color:var(--gold);margin-bottom:.3rem}
+.budget code{color:var(--gold)}
+
+/* ── Footer ───────── */
+footer{
+  text-align:center;padding:3rem 2rem 2rem;
+  border-top:1px solid rgba(163,123,255,.15);
+  color:var(--dim);font-size:.85rem;
+  margin-top:2rem;
+}
+
+/* ── Fade-in animation ──────── */
+.fade-in{opacity:0;transform:translateY(25px);transition:opacity .7s ease,transform .7s ease}
+.fade-in.visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+
+<nav class="topbar">
+  <div class="logo">
+    <img src="logo.svg" alt="">
+    <span>KBZ · Memory</span>
+  </div>
+  <a href="index.html" class="back">&larr; Back to Landing</a>
+</nav>
+
+<!-- ═══ Hero ═══ -->
+<section class="hero">
+  <span class="badge">◈ Temporal Knowledge Graph</span>
+  <h1>How Agents Remember</h1>
+  <p class="lead">
+    Every KBZ agent carries a living memory of who it trusts, what it wants, and what just happened.
+    Under the hood it's a bitemporal knowledge graph, a vector store, and a 300 ms budget —
+    all stitched into a 600-token prompt block. Here's the map.
+  </p>
+</section>
+
+<!-- ═══ 1. The Problem ═══ -->
+<section>
+  <h2><span class="num">1</span> The problem with flat text memory</h2>
+  <p class="dim">Early KBZ agents dumped everything into a single <code>agent_memories</code> table &mdash; free text, an importance score, and a "related_id" soft pointer. That works until you ask a structured question.</p>
+
+  <div class="compare">
+    <div class="card before">
+      <span class="tag">Before</span>
+      <h3>Flat text blob</h3>
+      <ul>
+        <li>Everything is a string — no types, no time</li>
+        <li>No way to ask "who supported me last 3 rounds?"</li>
+        <li>String-match only; no semantic similarity</li>
+        <li>Bounded by string matching and heuristic importance</li>
+      </ul>
+    </div>
+    <div class="card after">
+      <span class="tag">After</span>
+      <h3>Temporal knowledge graph</h3>
+      <ul>
+        <li>Typed nodes: user, proposal, pulse, artifact, &hellip;</li>
+        <li>Bitemporal edges with <code>valid_from</code>/<code>valid_to</code> rounds</li>
+        <li>768-dim embeddings from Ollama <code>nomic-embed-text</code></li>
+        <li>pgvector KNN + graph joins in one Postgres</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2. Pipeline ═══ -->
+<section>
+  <h2><span class="num">2</span> Write path &mdash; from event to edge</h2>
+  <p>When anything happens in the community, a domain service emits an event on the in-process <code>event_bus</code>. A single long-lived task &mdash; the <code>TKGIngestor</code> &mdash; consumes those events and writes graph structure. Embedding work is pushed onto a second queue so the hot path never waits on the LLM.</p>
+
+  <div class="pipeline">
+    <div class="stage">
+      <div class="stage-icon">⚡</div>
+      <div class="stage-title">Event</div>
+      <div class="stage-desc"><code>support.cast</code>, <code>proposal.created</code>, <code>comment.posted</code>&hellip;</div>
+    </div>
+    <div class="stage">
+      <div class="stage-icon">📡</div>
+      <div class="stage-title">Event&nbsp;Bus</div>
+      <div class="stage-desc">In-memory fan-out, queue per subscriber</div>
+    </div>
+    <div class="stage">
+      <div class="stage-icon">🧩</div>
+      <div class="stage-title">Ingestor</div>
+      <div class="stage-desc">Dispatch table: event &rarr; node + edge</div>
+    </div>
+    <div class="stage">
+      <div class="stage-icon">🔷</div>
+      <div class="stage-title">TKG Tables</div>
+      <div class="stage-desc"><code>tkg_nodes</code>, <code>tkg_edges</code>, <code>tkg_embeddings</code></div>
+    </div>
+    <div class="stage">
+      <div class="stage-icon">🧠</div>
+      <div class="stage-title">Ollama</div>
+      <div class="stage-desc">Offloaded embeddings, never blocks ingest</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3. Live graph ═══ -->
+<section>
+  <h2><span class="num">3</span> The graph, visible</h2>
+  <p>Here's a tiny slice: Alice authored a proposal, Bob and Carol supported it, and they formed transient alliances with Alice. Solid lines are open edges, dashed gray lines are closed (historical) edges.</p>
+
+  <div class="graph-demo">
+    <svg viewBox="0 0 700 340" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="g-user" cx="50%" cy="50%">
+          <stop offset="0%" stop-color="#c9a8ff"/>
+          <stop offset="100%" stop-color="#7b4dff"/>
+        </radialGradient>
+        <radialGradient id="g-prop" cx="50%" cy="50%">
+          <stop offset="0%" stop-color="#8ff0c9"/>
+          <stop offset="100%" stop-color="#27a676"/>
+        </radialGradient>
+        <radialGradient id="g-pulse" cx="50%" cy="50%">
+          <stop offset="0%" stop-color="#ffe08a"/>
+          <stop offset="100%" stop-color="#c18f0a"/>
+        </radialGradient>
+      </defs>
+
+      <!-- Edges (drawn first so nodes sit on top) -->
+      <!-- Alice -> Proposal : AUTHORED -->
+      <line class="edge-line authored" x1="150" y1="170" x2="350" y2="170"/>
+      <text class="edge-label" x="250" y="160">AUTHORED</text>
+
+      <!-- Bob -> Proposal : SUPPORTED -->
+      <line class="edge-line supported" x1="550" y1="80" x2="380" y2="155"/>
+      <text class="edge-label" x="480" y="110">SUPPORTED</text>
+
+      <!-- Carol -> Proposal : SUPPORTED -->
+      <line class="edge-line supported" x1="550" y1="260" x2="380" y2="190"/>
+      <text class="edge-label" x="480" y="240">SUPPORTED</text>
+
+      <!-- Bob -> Alice : ALLIED_WITH (open) -->
+      <line class="edge-line allied" x1="550" y1="80" x2="165" y2="150"/>
+      <text class="edge-label" x="360" y="105">ALLIED_WITH</text>
+
+      <!-- Carol -> Alice : ALLIED_WITH (closed) -->
+      <line class="edge-line closed" x1="550" y1="260" x2="165" y2="190"/>
+      <text class="edge-label" x="360" y="255" fill="#888">ALLIED_WITH (closed)</text>
+
+      <!-- Alice -->
+      <g class="node-user">
+        <circle cx="150" cy="170" r="34"/>
+        <text x="150" y="168">Alice</text>
+        <text x="150" y="184" font-size="9" opacity=".7">user</text>
+      </g>
+
+      <!-- Proposal -->
+      <g class="node-prop">
+        <circle cx="365" cy="170" r="34"/>
+        <text x="365" y="165">Ban</text>
+        <text x="365" y="178">spam</text>
+        <text x="365" y="192" font-size="9" opacity=".7">proposal</text>
+      </g>
+
+      <!-- Bob -->
+      <g class="node-user">
+        <circle cx="550" cy="80" r="28"/>
+        <text x="550" y="78">Bob</text>
+        <text x="550" y="92" font-size="9" opacity=".7">user</text>
+      </g>
+
+      <!-- Carol -->
+      <g class="node-user">
+        <circle cx="550" cy="260" r="28"/>
+        <text x="550" y="258">Carol</text>
+        <text x="550" y="272" font-size="9" opacity=".7">user</text>
+      </g>
+    </svg>
+  </div>
+  <p class="dim">Each node has a matching row in <code>tkg_nodes</code>, each line is a row in <code>tkg_edges</code>. Proposals additionally carry a <code>tkg_embeddings</code> row so semantic search can find them by meaning, not keyword.</p>
+</section>
+
+<!-- ═══ 4. Bitemporal ═══ -->
+<section>
+  <h2><span class="num">4</span> Edges know when they were true</h2>
+  <p>Every edge carries <code>valid_from_round</code> and <code>valid_to_round</code>. An edge with <code>valid_to_round = NULL</code> is open &mdash; still in effect. When an alliance dissolves or a proposal fails, we don't delete the row, we close it. That's how agents can ask "what did things look like at round <strong>N</strong>?" without rewriting history.</p>
+
+  <div class="timeline">
+    <div style="font-family:monospace;font-size:.85rem;color:var(--dim);margin-bottom:.4rem">tkg_edges.ALLIED_WITH(Bob&nbsp;&rarr;&nbsp;Alice)</div>
+    <div class="timeline-track">
+      <div class="timeline-edge" style="left:15%;width:55%">
+        <span class="timeline-edge-label" style="left:0">open at r3</span>
+      </div>
+      <div class="timeline-tick" style="left:0%"><span class="timeline-label">r0</span></div>
+      <div class="timeline-tick" style="left:15%"><span class="timeline-label">r3</span></div>
+      <div class="timeline-tick" style="left:70%"><span class="timeline-label">r10</span></div>
+      <div class="timeline-tick" style="left:100%"><span class="timeline-label">now</span></div>
+    </div>
+    <div style="font-family:monospace;font-size:.85rem;color:var(--dim);margin:1.5rem 0 .4rem">tkg_edges.ALLIED_WITH(Carol&nbsp;&rarr;&nbsp;Alice)</div>
+    <div class="timeline-track">
+      <div class="timeline-edge closed" style="left:15%;width:40%">
+        <span class="timeline-edge-label" style="left:0">open r3</span>
+        <span class="timeline-edge-label" style="right:0;left:auto">closed r10</span>
+      </div>
+      <div class="timeline-tick" style="left:0%"></div>
+      <div class="timeline-tick" style="left:15%"></div>
+      <div class="timeline-tick" style="left:55%"></div>
+      <div class="timeline-tick" style="left:100%"></div>
+    </div>
+  </div>
+
+<pre><code><span class="c">-- &quot;Who was allied with Alice at round 7?&quot; — one indexed scan.</span>
+<span class="k">SELECT</span> src_id <span class="k">FROM</span> tkg_edges
+<span class="k">WHERE</span>  dst_id = <span class="s">:alice</span> <span class="k">AND</span> relation = <span class="s">'ALLIED_WITH'</span>
+  <span class="k">AND</span>  valid_from_round &lt;= <span class="n">7</span>
+  <span class="k">AND</span>  (valid_to_round <span class="k">IS NULL</span> <span class="k">OR</span> valid_to_round &gt; <span class="n">7</span>);</code></pre>
+</section>
+
+<!-- ═══ 5. Four layers of memory ═══ -->
+<section>
+  <h2><span class="num">5</span> Four layers in every prompt</h2>
+  <p>When an agent wakes up for a turn, <code>MemoryFormatter.build_memory_context()</code> assembles a <code>=== YOUR MEMORY ===</code> block capped at ~600 tokens. It pulls from four different sources:</p>
+
+  <div class="grid grid-2 layers">
+    <div class="card">
+      <div class="layer-icon">💭</div>
+      <div class="layer-body">
+        <h3>Reflection</h3>
+        <p class="dim">The agent's own summary of the last few rounds &mdash; "what did I learn, what will I try next." Stored as free text because it's narrative, not relational.</p>
+        <span class="meta">agent_memories · legacy</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="layer-icon">🎯</div>
+      <div class="layer-body">
+        <h3>Active goals</h3>
+        <p class="dim">Up to three things the agent is currently pursuing, each stamped with the round it was set. Short, textual, also in the legacy store.</p>
+        <span class="meta">agent_memories · legacy</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="layer-icon">🤝</div>
+      <div class="layer-body">
+        <h3>Key relationships</h3>
+        <p class="dim">Top 5 current allies, pulled from the TKG via <code>/tkg/neighbors</code> with <code>relation=ALLIED_WITH&amp;at_round=N</code>. Graph query, not string match.</p>
+        <span class="meta">TKG · neighbors</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="layer-icon">✨</div>
+      <div class="layer-body">
+        <h3>Recent notable events</h3>
+        <p class="dim">Semantic search over <code>tkg_embeddings</code> with the current turn's context as the query. Finds events the agent <em>would</em> have remembered even if worded differently.</p>
+        <span class="meta">TKG · semantic_search</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6. 300ms budget ═══ -->
+<section>
+  <h2><span class="num">6</span> The 300&nbsp;ms budget</h2>
+  <p>Reading from a knowledge graph is only useful if it's <em>fast</em>. Every TKG call inside the formatter is wrapped in <code>asyncio.wait_for(&hellip;, timeout=0.3)</code>. On timeout or error, the formatter silently falls back to the legacy path &mdash; the agent still gets a memory block, just the old-school one.</p>
+
+  <div class="budget">
+    <span class="icon">⏱️</span>
+    <div>
+      <h3>No agent turn ever stalls on memory</h3>
+      <p class="dim" style="margin-bottom:0">If pgvector's KNN or the Ollama embedder takes longer than 300 ms, we log a debug line and use <code>MemoryStore.get_relationships()</code> / <code>get_recent()</code> instead. The agent keeps thinking.</p>
+    </div>
+  </div>
+
+<pre><code><span class="k">try</span>:
+    hits = <span class="k">await</span> asyncio.wait_for(
+        self.tkg.semantic_search(query=query_hint, limit=<span class="n">4</span>),
+        timeout=_TKG_TIMEOUT_S,  <span class="c"># 0.3</span>
+    )
+<span class="k">except</span> (asyncio.TimeoutError, <span class="t">Exception</span>):
+    <span class="k">return await</span> self.store.get_recent(user_id, memory_type=<span class="s">&quot;episodic&quot;</span>)</code></pre>
+</section>
+
+<!-- ═══ 7. Stack ═══ -->
+<section>
+  <h2><span class="num">7</span> The stack &mdash; all free, all local</h2>
+  <p>Zero new containers, zero new auth. Everything rides the existing Postgres and the same Ollama install the decision engine already uses.</p>
+
+  <div class="stack-grid">
+    <div class="stack-card">
+      <span class="ico">🐘</span>
+      <div class="name">Postgres 14</div>
+      <div class="role">Already running — we just added the <code>vector</code> extension</div>
+    </div>
+    <div class="stack-card">
+      <span class="ico">📐</span>
+      <div class="name">pgvector</div>
+      <div class="role">ivfflat cosine index · 768-dim · native KNN</div>
+    </div>
+    <div class="stack-card">
+      <span class="ico">🦙</span>
+      <div class="name">Ollama</div>
+      <div class="role"><code>nomic-embed-text</code> · ~80&nbsp;MB · &lt;100&nbsp;ms local</div>
+    </div>
+    <div class="stack-card">
+      <span class="ico">⚡</span>
+      <div class="name">FastAPI</div>
+      <div class="role"><code>/tkg/neighbors</code>, <code>/tkg/timeline</code>, <code>/tkg/semantic_search</code></div>
+    </div>
+    <div class="stack-card">
+      <span class="ico">🧵</span>
+      <div class="name">asyncio</div>
+      <div class="role">One ingest task, one embed task, one queue each</div>
+    </div>
+    <div class="stack-card">
+      <span class="ico">🔮</span>
+      <div class="name">Mistral Small</div>
+      <div class="role">The LLM that actually reads the memory block</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 8. Why this matters ═══ -->
+<section>
+  <h2><span class="num">8</span> Why this matters</h2>
+  <p>With a TKG in place, agents can answer questions that used to be impossible:</p>
+  <div class="grid grid-3">
+    <div class="card">
+      <h3>🔗 Relational</h3>
+      <p class="dim">"Who supported my proposal and which of them are still my allies right now?" &mdash; one graph join.</p>
+    </div>
+    <div class="card">
+      <h3>⏳ Temporal</h3>
+      <p class="dim">"What was the coalition at round 12, before the pulse fired?" &mdash; bitemporal point-in-time query.</p>
+    </div>
+    <div class="card">
+      <h3>🎨 Semantic</h3>
+      <p class="dim">"Find events about grazing rights" &mdash; KNN over embeddings, returns proposals mentioning <em>pasture access</em> too.</p>
+    </div>
+  </div>
+  <p class="dim" style="margin-top:1.5rem;text-align:center">
+    All of it streams into the prompt inside a 600-token budget, with a 300&nbsp;ms safety net and a legacy fallback. Boring from the agent's point of view &mdash; which is exactly how memory should feel.
+  </p>
+</section>
+
+<footer>
+  <p>KBZ · Temporal Knowledge Graph · <a href="index.html">back to landing</a> · <a href="/kbz/viewer/">watch live</a></p>
+  <p style="margin-top:.5rem;opacity:.6">Built on Postgres + pgvector + Ollama. Source in <code>src/kbz/services/tkg_*</code>, <code>agents/memory_formatter.py</code>.</p>
+</footer>
+
+<script>
+// Fade-in on scroll
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      io.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.15 });
+document.querySelectorAll('section').forEach(s => {
+  s.classList.add('fade-in');
+  io.observe(s);
+});
+</script>
+</body>
+</html>

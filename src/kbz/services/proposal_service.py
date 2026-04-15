@@ -8,6 +8,7 @@ from kbz.enums import ProposalStatus, ProposalType
 from kbz.models.proposal import Proposal
 from kbz.models.support import Support
 from kbz.schemas.proposal import ProposalCreate
+from kbz.services.event_bus import event_bus
 from kbz.services.member_service import MemberService
 
 
@@ -153,6 +154,15 @@ class ProposalService:
         self.db.add(proposal)
         await self.db.commit()
         await self.db.refresh(proposal)
+        # Emit so the TKG ingestor can record AUTHORED and embed the text.
+        await event_bus.emit(
+            "proposal.created",
+            community_id=community_id,
+            user_id=proposal.user_id,
+            proposal_id=proposal.id,
+            proposal_type=str(proposal.proposal_type),
+            proposal_text=proposal.proposal_text or proposal.val_text or "",
+        )
         return proposal
 
     async def get(self, proposal_id: uuid.UUID) -> Proposal | None:

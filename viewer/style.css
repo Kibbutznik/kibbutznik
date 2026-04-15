@@ -1724,17 +1724,27 @@ body {
 }
 
 @media (max-width: 768px) {
-    /* Header — compact */
+    /* Header — compact, no overflow */
     .header {
-        padding: 8px 12px;
-        gap: 8px;
+        padding: 8px 10px;
+        gap: 6px;
+        flex-wrap: nowrap;
     }
-    .header-left { gap: 8px; }
+    .header-left { gap: 6px; flex: 1 1 auto; min-width: 0; }
     .hamburger-btn { display: flex; }
-    .header-title { font-size: 1.1rem; }
+    .header-title {
+        font-size: 1rem;
+        letter-spacing: 0.5px;
+        min-width: 0;
+        flex: 1 1 auto;
+    }
     .header-community-name { display: none; }
-    .header-stats { gap: 10px; font-size: 0.78rem; }
+    .header-stats { gap: 6px; font-size: 0.72rem; flex-shrink: 0; align-items: center; }
+    /* On phones the only stats we keep are Round + Members, plus controls.
+       Hide LLM switcher and the long stat tail to keep one row. */
     .header-stat-events, .header-stat-latency { display: none; }
+    .header-stats > .header-stat:nth-of-type(n+3) { display: none; } /* keep first 2 stats */
+    .header-stats select { display: none; } /* LLM switcher off on phone */
 
     /* Sidebar — off-screen drawer */
     .action-sidebar {
@@ -2251,9 +2261,65 @@ body {
     color: var(--accent);
 }
 @media (max-width: 768px) {
-    .header-ctrl-btn { padding: 4px 8px; font-size: 0.72rem; }
-    .header-controls { padding-left: 8px; margin-left: 4px; gap: 4px; }
-    .header-logo { width: 26px; height: 26px; }
+    .header-ctrl-btn { padding: 4px 7px; font-size: 0.7rem; line-height: 1; }
+    .header-controls { padding-left: 6px; margin-left: 2px; gap: 4px; border-left-color: rgba(255,255,255,0.08); }
+    .header-logo { width: 24px; height: 24px; filter: drop-shadow(0 0 4px rgba(233,69,96,0.4)); }
+}
+
+/* ── Phone (very narrow) ── */
+@media (max-width: 480px) {
+    .header { padding: 6px 8px; }
+    .header-title { font-size: 0.9rem; letter-spacing: 0; }
+    /* Hide ALL header stats on tiny screens — only logo+title+controls remain */
+    .header-stats > .header-stat { display: none; }
+    .header-controls { padding-left: 4px; }
+    /* Icon-only control buttons on narrow phones */
+    .header-ctrl-btn .ctrl-label { display: none; }
+    .header-ctrl-btn { padding: 6px 8px; font-size: 0.95rem; }
+    .header-ctrl-btn .ctrl-icon { display: inline-block; line-height: 1; }
+    .main-content { padding: 8px; }
+    .card { padding: 10px; border-radius: 6px; }
+    .card-title { font-size: 0.92rem; }
+
+    /* Activity feed: tighter rows */
+    .activity-feed { max-height: none; }
+    .event-item {
+        flex-wrap: wrap;
+        font-size: 0.78rem;
+        padding: 6px 8px;
+        gap: 6px;
+    }
+    .event-time { min-width: 42px; font-size: 0.68rem; }
+    .event-agent { min-width: 0; }
+    .event-details { flex-basis: 100%; font-size: 0.78rem; }
+
+    /* Detail panel — full screen, larger touch targets */
+    .detail-panel { width: 100vw; }
+    .detail-back-btn, .detail-close-btn { padding: 8px 12px; font-size: 0.95rem; }
+
+    /* Tabs slightly tighter */
+    .tab-btn { padding: 7px 11px; font-size: 0.75rem; }
+
+    /* News ticker — keep compact */
+    .news-ticker { font-size: 0.66rem; height: 26px; }
+
+    /* Timeline filter bar wraps */
+    .timeline-filter-bar { flex-wrap: wrap; gap: 6px; }
+    .timeline-filter-input,
+    .timeline-filter-select { flex: 1 1 100%; min-width: 0; }
+    .timeline-filter-clear, .timeline-filter-count { flex: 0 0 auto; }
+
+    /* Proposal cards / overview grids stay one-column */
+    .overview-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat-value { font-size: 1.2rem; }
+    .stat-label { font-size: 0.7rem; }
+
+    /* HN comment indent: cap depth padding so deep threads don't push off-screen */
+    .hn-comment-indent { padding-left: 0 !important; }
+    .hn-comment-nested .hn-comment-indent { padding-left: 12px !important; }
+
+    /* EditArtifact diff: smaller font + scroll naturally */
+    .edit-diff-pre { font-size: 0.72rem; max-height: 320px; }
 }
 
 /* Flash highlight when scrolling to a specific comment from the news ticker */

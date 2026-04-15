@@ -16,11 +16,13 @@ from kbz.routers import (
     proposals,
     pulses,
     statements,
+    tkg,
     users,
     ws,
 )
 from kbz.services.artifact_service import ArtifactService
 from kbz.services.event_bus import event_bus
+from kbz.services.tkg_ingestor import TKGIngestor
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,7 @@ app.include_router(comments.router, tags=["comments"])
 app.include_router(closeness.router, tags=["closeness"])
 app.include_router(artifacts.router)
 app.include_router(memory.router, tags=["memory"])
+app.include_router(tkg.router)
 app.include_router(ws.router, tags=["websocket"])
 
 
@@ -105,3 +108,22 @@ async def _stop_artifact_cascade() -> None:
             await task
         except asyncio.CancelledError:
             pass
+
+
+# ---- TKG ingestor -----------------------------------------------------
+# Subscribes to event_bus and writes nodes/edges into the temporal knowledge
+# graph in real time. Embeddings are offloaded to an internal queue so the
+# hot ingest path never blocks on Ollama.
+
+@app.on_event("startup")
+async def _start_tkg_ingestor() -> None:
+    ingestor = TKGIngestor(async_session)
+    await ingestor.start()
+    app.state._tkg_ingestor = ingestor
+
+
+@app.on_event("shutdown")
+async def _stop_tkg_ingestor() -> None:
+    ingestor: TKGIngestor | None = getattr(app.state, "_tkg_ingestor", None)
+    if ingestor is not None:
+        await ingestor.stop()

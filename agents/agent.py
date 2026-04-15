@@ -22,6 +22,7 @@ from agents.memory import MemoryStore
 from agents.memory_extractor import MemoryExtractor
 from agents.memory_formatter import MemoryFormatter
 from agents.persona import Persona
+from agents.tkg_client import TKGClient
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class Agent:
         user_id: str | None = None,
         user_name: str | None = None,
         memory_store: MemoryStore | None = None,
+        tkg_client: TKGClient | None = None,
     ):
         self.persona = persona
         self.client = client
@@ -71,7 +73,11 @@ class Agent:
         self.rounds_since_pulse: int = 0  # set by orchestrator before each round
         # Memory system
         self.memory_store = memory_store
-        self.memory_formatter = MemoryFormatter(memory_store, self.users_cache) if memory_store else None
+        self.tkg_client = tkg_client
+        self.memory_formatter = (
+            MemoryFormatter(memory_store, self.users_cache, tkg_client=tkg_client)
+            if memory_store else None
+        )
         self.memory_extractor = MemoryExtractor(memory_store, self.users_cache) if memory_store else None
         self.current_round: int = 0  # set by orchestrator each round
 

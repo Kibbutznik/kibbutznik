@@ -1640,7 +1640,8 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                             onClick={onTogglePause}
                             title={paused ? "Resume the simulation" : "Pause the simulation"}
                         >
-                            {paused ? "▶ Resume" : "⏸ Pause"}
+                            <span className="ctrl-icon">{paused ? "▶" : "⏸"}</span>
+                            <span className="ctrl-label">{paused ? "Resume" : "Pause"}</span>
                         </button>
                         <button
                             className="header-ctrl-btn restart"
@@ -1648,7 +1649,7 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                             disabled={restarting}
                             title="Restart the simulation loop — all data and history are preserved"
                         >
-                            {restarting ? <><span className="spinner"></span> ...</> : "↺ Restart"}
+                            {restarting ? <><span className="spinner"></span> <span className="ctrl-label">…</span></> : <><span className="ctrl-icon">↺</span><span className="ctrl-label">Restart</span></>}
                         </button>
                     </div>
                 )}
@@ -2471,16 +2472,16 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
 
     useEffect(() => {
         if (autoScroll && feedRef.current) {
-            // Newest is now at the BOTTOM — keep scroll pinned there
-            feedRef.current.scrollTop = feedRef.current.scrollHeight;
+            // Newest is at the TOP — keep scroll pinned there
+            feedRef.current.scrollTop = 0;
         }
     }, [events, autoScroll]);
 
     function handleScroll() {
         if (feedRef.current) {
             const el = feedRef.current;
-            // Within 10px of the bottom counts as "following live"
-            setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 10);
+            // Within 10px of the top counts as "following live"
+            setAutoScroll(el.scrollTop < 10);
         }
     }
 
@@ -2489,10 +2490,9 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
         : (events || []).filter(ev => !ev.community_id || ev.community_id === rootCommunityId);
     // Filter out noise: failed do_nothing events (guards, already-supported, etc.)
     const filtered = byCommunity.filter(ev => !(ev.success === false && ev.action === "do_nothing"));
-    // The /simulation/events endpoint returns events NEWEST-FIRST, so the
-    // most recent 100 are at the START of the array. Take the first 100 and
-    // reverse so the feed reads oldest → newest with the live tail at bottom.
-    const newest = filtered.slice(0, 100).reverse();
+    // /simulation/events returns NEWEST-FIRST. Take the first 100 (the most
+    // recent) and render them as-is so the newest event is at the TOP.
+    const newest = filtered.slice(0, 100);
 
     return (
         <div className="card">
@@ -3440,6 +3440,8 @@ function addNewsItem(event) {
         linkId: parsed.linkId || null,
         linkLabel: parsed.linkLabel || null,
         linkExtra: parsed.linkExtra || null,
+        // Fallback: resolve agent name → user_id at click time
+        linkUserName: parsed.linkUserName || null,
         // For chat links — store community + tab info
         linkTab: parsed.linkTab || null,
     });
@@ -3452,30 +3454,85 @@ function formatNewsEvent(event) {
     const agentName = d.agent_name || d.user_name || null;
     const communityName = d.community_name || null;
     const prefix = communityName ? `[${communityName}] ` : '';
+    // Top-level fields populated by event_bus.emit
+    const evCommunityId = event.community_id || d.community_id || null;
+    const evUserId = event.user_id || d.user_id || null;
 
     switch (event.event_type) {
         case 'proposal.accepted': {
             const pType = d.proposal_type || 'proposal';
-            return { text: `${prefix}${pType} proposal accepted`, linkType: 'proposal', linkId: d.proposal_id, linkLabel: pType };
+            return {
+                text: `${prefix}${pType} proposal accepted`,
+                linkType: 'proposal', linkId: d.proposal_id, linkLabel: pType,
+            };
         }
         case 'proposal.rejected': {
             const pType = d.proposal_type || 'proposal';
-            return { text: `${prefix}${pType} proposal rejected`, linkType: 'proposal', linkId: d.proposal_id, linkLabel: pType };
+            return {
+                text: `${prefix}${pType} proposal rejected`,
+                linkType: 'proposal', linkId: d.proposal_id, linkLabel: pType,
+            };
         }
         case 'pulse.executed':
-            return { text: `${prefix}Pulse fired!`, linkType: d.pulse_id ? 'pulse' : null, linkId: d.pulse_id };
+            return {
+                text: `${prefix}Pulse fired!`,
+                linkType: d.pulse_id ? 'pulse' : (evCommunityId ? 'community' : null),
+                linkId: d.pulse_id || evCommunityId,
+                linkLabel: d.pulse_id ? 'Pulse' : 'Community',
+            };
         case 'round.start':
         case 'round.end':
             return null;  // suppressed from live feed — too noisy
+        case 'community.completed':
+            return {
+                text: `${prefix}Container committed`,
+                linkType: evCommunityId ? 'community' : null,
+                linkId: evCommunityId,
+                linkLabel: 'Community',
+            };
         case 'agent.action': {
             const action = d.action_type || d.action || '';
             const name = agentName || 'Agent';
             // Skip noisy/uninteresting events
-            if (action === 'do_nothing' || action === 'create_proposal') return null;
+            if (action === 'do_nothing') return null;
             if (action === 'support_proposal' || action === 'support_pulse') return null;
-            if (action === 'send_chat') return { text: `${prefix}${name} posted in chat`, linkTab: 'chat' };
-            if (action === 'comment') return { text: `${prefix}${name} commented on a proposal`, linkType: 'proposal', linkId: d.ref_id || d.proposal_id, linkLabel: 'comment', linkExtra: { commentByUser: name } };
-            if (action) return { text: `${prefix}${name}: ${action}` };
+            if (action === 'send_chat') {
+                return {
+                    text: `${prefix}${name} posted in chat`,
+                    linkTab: 'chat',
+                    linkUserName: name,
+                };
+            }
+            if (action === 'comment') {
+                return {
+                    text: `${prefix}${name} commented on a proposal`,
+                    linkType: 'proposal',
+                    linkId: d.ref_id || d.proposal_id,
+                    linkLabel: 'comment',
+                    linkExtra: { commentByUser: name },
+                    linkUserName: name,
+                };
+            }
+            if (action === 'create_proposal') {
+                // No proposal_id in the bus payload — fall back to the agent.
+                return {
+                    text: `${prefix}${name} drafted a proposal`,
+                    linkUserName: name,
+                };
+            }
+            if (action === 'promoted') {
+                return {
+                    text: `${prefix}${name} was promoted to member`,
+                    linkUserName: name,
+                };
+            }
+            if (action === 'error') return null;
+            if (action) {
+                return {
+                    text: `${prefix}${name}: ${action}`,
+                    linkUserName: name,
+                };
+            }
             return null;
         }
         default:
@@ -3483,7 +3540,7 @@ function formatNewsEvent(event) {
     }
 }
 
-function NewsTicker({ openDetail, setActiveTab }) {
+function NewsTicker({ openDetail, setActiveTab, agentsByName }) {
     const [items, setItems] = useState([..._newsQueue]);
     const prevLenRef = useRef(items.length);
     const scrollRef = useRef(null);
@@ -3515,11 +3572,30 @@ function NewsTicker({ openDetail, setActiveTab }) {
     }, [items]);
 
     function handleClick(item) {
+        // Primary: explicit entity link
+        if (item.linkType && item.linkId && openDetail) {
+            openDetail(item.linkType, item.linkId, item.linkLabel || item.linkType, item.linkExtra || null);
+            return;
+        }
+        // Tab link (chat)
         if (item.linkTab && setActiveTab) {
             setActiveTab(item.linkTab);
-        } else if (item.linkType && item.linkId && openDetail) {
-            openDetail(item.linkType, item.linkId, item.linkLabel || item.linkType, item.linkExtra || null);
+            return;
         }
+        // Fallback: resolve agent name → user
+        if (item.linkUserName && agentsByName && openDetail) {
+            const agent = agentsByName[item.linkUserName];
+            if (agent?.user_id) {
+                openDetail('user', agent.user_id, item.linkUserName);
+            }
+        }
+    }
+
+    function itemHasLink(item) {
+        if (item.linkType && item.linkId) return true;
+        if (item.linkTab) return true;
+        if (item.linkUserName && agentsByName?.[item.linkUserName]?.user_id) return true;
+        return false;
     }
 
     if (items.length === 0) {
@@ -3536,7 +3612,7 @@ function NewsTicker({ openDetail, setActiveTab }) {
         React.createElement('div', { className: 'news-ticker-track' },
             React.createElement('div', { className: 'news-ticker-scroll', ref: scrollRef },
                 items.map((item, i) => {
-                    const hasLink = !!(item.linkType && item.linkId) || !!item.linkTab;
+                    const hasLink = itemHasLink(item);
                     return React.createElement('span', {
                         key: item.id,
                         className: `news-ticker-item ${hasLink ? 'news-clickable' : ''} ${item.type === 'proposal.accepted' ? 'news-accept' : ''} ${item.type === 'proposal.rejected' ? 'news-reject' : ''} ${item.type === 'pulse.executed' ? 'news-pulse' : ''}`,
@@ -3578,6 +3654,18 @@ function App() {
     function closeDetail() {
         setDetailStack([]);
     }
+
+    // Agent lookup by NAME — used by the news ticker to resolve agent
+    // mentions in event_bus payloads (which don't include user_id) back
+    // to a clickable user entity.
+    const agentsByName = useMemo(() => {
+        const map = {};
+        (agents || []).forEach(a => { if (a.name) map[a.name] = a; });
+        (status?.newcomers || []).forEach(n => {
+            if (n.name && !map[n.name]) map[n.name] = { name: n.name, user_id: n.id };
+        });
+        return map;
+    }, [agents, status]);
 
     // Agent lookup by user_id — includes AI agents AND newcomer applicants
     const agentsByUserId = useMemo(() => {
@@ -3770,7 +3858,7 @@ function App() {
                 onRestart={handleRestart}
                 restarting={restarting}
             />
-            <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} />
+            <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} agentsByName={agentsByName} />
             <ActionBreadcrumb
                 activeCommunityId={activeCommunityId}
                 rootCommunityId={rootCommunityId}

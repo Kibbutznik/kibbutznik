@@ -218,6 +218,26 @@ a:hover{color:var(--green)}
   box-shadow:0 4px 20px rgba(233,69,96,.35);
 }
 .cta-btn:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(233,69,96,.5);color:var(--white)}
+.cta-row{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;align-items:center}
+.cta-btn-alt{
+  background:transparent;
+  border:1.5px solid var(--green);
+  color:var(--green);
+  box-shadow:0 0 0 rgba(78,204,163,0);
+}
+.cta-btn-alt:hover{
+  background:rgba(78,204,163,.1);
+  color:var(--green);
+  box-shadow:0 4px 22px rgba(78,204,163,.28);
+}
+[data-theme="psych"] .cta-btn-alt{
+  border-color:#00ffaa;color:#00ffaa;background:transparent;
+  box-shadow:0 0 20px rgba(0,255,170,.2);
+}
+[data-theme="psych"] .cta-btn-alt:hover{
+  background:rgba(0,255,170,.08);
+  box-shadow:0 0 35px rgba(0,255,170,.4);
+}
 .dev-note{margin-top:1.4rem;font-size:.9rem;opacity:.6}
 
 .scroll-chevron{
@@ -541,24 +561,33 @@ section{padding:5rem 2rem}
   background:rgba(255,255,255,.07);padding:.1rem .35rem;border-radius:3px;font-size:.82rem;
 }
 
-/* Guide card ZOOMED state */
-.guide-grid.has-zoomed{
-  display:block;
+/* Guide card ZOOMED state — centered modal popup */
+body.guide-modal-open{overflow:hidden}
+.guide-grid.has-zoomed::before{
+  content:"";position:fixed;inset:0;background:rgba(0,0,0,.78);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  z-index:9998;animation:guideFade .25s ease;
 }
-.guide-grid.has-zoomed .guide-card{
-  display:none;
-}
+.guide-grid.has-zoomed .guide-card{display:none}
 .guide-grid.has-zoomed .guide-card.zoomed{
   display:block;
-  min-height:70vh;
+  position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:min(760px,92vw);
+  max-height:85vh;overflow-y:auto;
+  z-index:9999;
+  background:var(--card-bg,rgba(20,22,30,.98));
   border:2px solid var(--accent);
-  box-shadow:0 0 40px rgba(233,69,96,.2);
-  animation:zoomIn .4s ease;
+  box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 40px rgba(233,69,96,.25);
+  border-radius:12px;padding:2rem 2rem 1.5rem;
+  animation:zoomIn .35s cubic-bezier(.2,.9,.3,1.2);
 }
 .guide-grid.has-zoomed .guide-card.zoomed .guide-card-body{
-  max-height:none;padding-bottom:2rem;
+  max-height:none;padding-bottom:1rem;
   font-size:1rem;line-height:1.8;
 }
+.guide-grid.has-zoomed .guide-card.zoomed .guide-card-head{cursor:default}
+.guide-grid.has-zoomed .guide-card.zoomed .guide-card-head .gc-toggle{display:none}
 .guide-grid.has-zoomed .guide-card.zoomed .guide-card-head h3{
   font-size:1.4rem;
 }
@@ -566,14 +595,16 @@ section{padding:5rem 2rem}
   width:56px;height:56px;
 }
 @keyframes zoomIn{
-  from{transform:scale(.85);opacity:0}
-  to{transform:scale(1);opacity:1}
+  from{transform:translate(-50%,-50%) scale(.85);opacity:0}
+  to{transform:translate(-50%,-50%) scale(1);opacity:1}
 }
-/* Zoom close button */
-.zoom-close{
-  display:none;text-align:center;margin-bottom:1rem;
+@keyframes guideFade{from{opacity:0}to{opacity:1}}
+/* Floating close button (top-right of modal) */
+.zoom-close{display:none}
+.zoom-close.show{
+  display:block;position:fixed;top:max(1rem,3vh);right:max(1rem,3vw);
+  z-index:10000;
 }
-.zoom-close.show{display:block}
 .zoom-close-btn{
   background:var(--accent);color:var(--white);border:none;
   padding:.5rem 1.5rem;border-radius:6px;cursor:pointer;
@@ -669,8 +700,8 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 .entity-ribbon-inner{
   display:flex;gap:2rem;animation:ribbonScroll 20s linear infinite;
 }
-.entity-ribbon-item{flex-shrink:0;width:44px;height:44px;opacity:.5;transition:opacity .3s}
-.entity-ribbon-item:hover{opacity:1}
+.entity-ribbon-item{flex-shrink:0;width:44px;height:44px;opacity:.5;transition:opacity .3s,transform .3s;cursor:pointer}
+.entity-ribbon-item:hover{opacity:1;transform:scale(1.15)}
 @keyframes ribbonScroll{
   from{transform:translateX(0)}
   to{transform:translateX(-50%)}
@@ -700,7 +731,10 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     <h1>KIBBUTZNIK</h1>
     <p class="subtitle">Pulse-Based Direct Democracy &middot; Simulated by AI</p>
     <p class="oneliner">Watch AI agents govern a community in real time. No elections. No terms. Just pulses.</p>
-    <a href="/kbz/viewer/" class="cta-btn">Watch Live &rarr;</a>
+    <div class="cta-row">
+      <a href="/kbz/viewer/" class="cta-btn">Watch Live &rarr;</a>
+      <a href="memory.html" class="cta-btn cta-btn-alt">How agents remember &rarr;</a>
+    </div>
     <p class="dev-note">Project in active development &mdash; more features coming soon</p>
   </div>
   <div class="scroll-chevron">
@@ -1527,58 +1561,116 @@ document.addEventListener('keydown', (e)=>{
 
 /* ── Entity ribbon (scrolling strip) ──────── */
 function buildRibbon(containerId){
-  const container = document.getElementById(containerId);
-  if(!container)return;
-  // Double the items for seamless loop
-  const items = [...ENTITIES, ...ENTITIES];
-  items.forEach(e => {
-    const img = document.createElement('img');
-    img.src = 'avatars/' + e.file;
-    img.alt = e.name;
-    img.className = 'entity-ribbon-item';
-    img.title = e.name;
-    container.appendChild(img);
-  });
+  const inner = document.getElementById(containerId);
+  if(!inner)return;
+  const outer = inner.parentElement;
+  // One "set" of all entities; we'll duplicate enough sets to cover at
+  // least 2× the visible container so the -50% scroll never reveals a gap.
+  const ITEM_W = 44, GAP = 32; // matches CSS width + gap
+  const setW = ENTITIES.length * (ITEM_W + GAP);
+  const needW = Math.max(outer.offsetWidth || 0, window.innerWidth) * 2 + setW;
+  const sets = Math.max(2, Math.ceil(needW / setW));
+  inner.innerHTML = '';
+  for(let s=0;s<sets;s++){
+    ENTITIES.forEach(e => {
+      const img = document.createElement('img');
+      img.src = 'avatars/' + e.file;
+      img.alt = e.name;
+      img.className = 'entity-ribbon-item';
+      img.title = e.name;
+      img.draggable = false;
+      img.addEventListener('click', () => openEntityTooltip(e.name));
+      inner.appendChild(img);
+    });
+  }
+  // Scroll exactly one set width so the loop is seamless regardless of set count.
+  inner.style.animation = 'none';
+  // Force reflow then set custom keyframe via inline style
+  inner.style.setProperty('--ribbon-shift', '-' + setW + 'px');
+  inner.style.animation = 'ribbonScrollDyn 30s linear infinite';
 }
-buildRibbon('entityRibbon');
-buildRibbon('footerRibbon');
+// Inject dynamic keyframe once
+(function(){
+  const st = document.createElement('style');
+  st.textContent = '@keyframes ribbonScrollDyn{from{transform:translateX(0)}to{transform:translateX(var(--ribbon-shift))}}';
+  document.head.appendChild(st);
+})();
+function buildAllRibbons(){
+  buildRibbon('entityRibbon');
+  buildRibbon('footerRibbon');
+}
+buildAllRibbons();
+let _ribbonResizeT;
+window.addEventListener('resize', () => {
+  clearTimeout(_ribbonResizeT);
+  _ribbonResizeT = setTimeout(buildAllRibbons, 200);
+});
 
 /* ── Guide card zoom ─────────────────────── */
 function guideToggle(headEl){
   const card = headEl.parentElement;
   const grid = document.getElementById('guideGrid');
 
-  // If already in zoomed mode
-  if(grid.classList.contains('has-zoomed')){
-    if(card.classList.contains('zoomed')){
-      // Toggle body within zoomed card
-      card.classList.toggle('open');
-    }
-    return;
-  }
+  // Already zoomed → ignore (body always open in modal)
+  if(grid.classList.contains('has-zoomed')) return;
 
-  // Click = zoom into this card
-  // Close all others
-  grid.querySelectorAll('.guide-card').forEach(c => {
-    c.classList.remove('open');
-  });
-
+  grid.querySelectorAll('.guide-card').forEach(c => c.classList.remove('open'));
   card.classList.add('open','zoomed');
   grid.classList.add('has-zoomed');
   document.querySelector('.zoom-close').classList.add('show');
-
-  // Scroll to guide section
-  document.getElementById('guide').scrollIntoView({behavior:'smooth',block:'start'});
+  document.body.classList.add('guide-modal-open');
 }
+// Click on backdrop closes the modal
+document.addEventListener('click', (ev) => {
+  const grid = document.getElementById('guideGrid');
+  if(!grid || !grid.classList.contains('has-zoomed')) return;
+  // If click landed outside any zoomed card and outside the close button
+  if(ev.target.closest('.guide-card.zoomed')) return;
+  if(ev.target.closest('.zoom-close')) return;
+  guideUnzoom();
+});
+document.addEventListener('keydown', (ev) => {
+  if(ev.key === 'Escape'){
+    const grid = document.getElementById('guideGrid');
+    if(grid && grid.classList.contains('has-zoomed')) guideUnzoom();
+  }
+});
 
 function guideUnzoom(){
   const grid = document.getElementById('guideGrid');
   grid.classList.remove('has-zoomed');
   document.querySelector('.zoom-close').classList.remove('show');
+  document.body.classList.remove('guide-modal-open');
   grid.querySelectorAll('.guide-card').forEach(c => {
     c.classList.remove('zoomed','open');
   });
 }
+
+/* ── Global: any avatar svg click opens entity tooltip ─── */
+(function(){
+  // Map filename → entity name
+  const fileToName = {};
+  ENTITIES.forEach(e => { fileToName[e.file] = e.name; });
+  document.addEventListener('click', (ev) => {
+    const img = ev.target.closest && ev.target.closest('img[src*="avatars/"]');
+    if(!img) return;
+    // Don't hijack clicks inside the tooltip itself or the orbit (orbit handles its own)
+    if(img.closest('.entity-tooltip')) return;
+    if(img.closest('.entity-item')) return;
+    const m = img.getAttribute('src').match(/avatars\/([^\/?#]+)/);
+    if(!m) return;
+    const name = fileToName[m[1]];
+    if(!name) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    openEntityTooltip(name);
+  }, true);
+  // Also make all such avatars look clickable
+  document.querySelectorAll('img[src*="avatars/"]').forEach(img => {
+    if(img.closest('.entity-item') || img.closest('.entity-tooltip')) return;
+    img.style.cursor = 'pointer';
+  });
+})();
 
 /* ── IntersectionObserver fade-in ─────────── */
 const obs=new IntersectionObserver(entries=>{

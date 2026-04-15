@@ -10,6 +10,7 @@ from kbz.models.member import Member
 from kbz.models.proposal import Proposal
 from kbz.models.pulse import Pulse
 from kbz.models.support import Support, PulseSupport
+from kbz.services.event_bus import event_bus
 from kbz.services.member_service import MemberService
 from kbz.services.pulse_service import PulseService
 
@@ -50,6 +51,14 @@ class SupportService:
             .values(support_count=Proposal.support_count + 1)
         )
         await self.db.commit()
+        # Emit so the TKG ingestor can open SUPPORTED + ALLIED_WITH edges.
+        await event_bus.emit(
+            "support.cast",
+            community_id=proposal.community_id,
+            user_id=user_id,
+            proposal_id=proposal_id,
+            author_id=proposal.user_id,
+        )
 
     async def remove_proposal_support(self, proposal_id: uuid.UUID, user_id: uuid.UUID) -> None:
         result = await self.db.execute(
@@ -67,7 +76,20 @@ class SupportService:
             .where(Proposal.id == proposal_id)
             .values(support_count=Proposal.support_count - 1)
         )
+        # Fetch community_id for the event (we already deleted support, but
+        # the proposal row still exists).
+        prop = (
+            await self.db.execute(
+                select(Proposal.community_id).where(Proposal.id == proposal_id)
+            )
+        ).scalar_one_or_none()
         await self.db.commit()
+        await event_bus.emit(
+            "support.withdrawn",
+            community_id=prop,
+            user_id=user_id,
+            proposal_id=proposal_id,
+        )
 
     async def add_pulse_support(self, community_id: uuid.UUID, user_id: uuid.UUID) -> dict:
         # Check user is active member

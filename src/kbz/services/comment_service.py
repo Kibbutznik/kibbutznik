@@ -10,6 +10,7 @@ from kbz.enums import ProposalType
 from kbz.models.comment import Comment
 from kbz.models.proposal import Proposal
 from kbz.schemas.comment import CommentCreate
+from kbz.services.event_bus import event_bus
 
 
 _WS = re.compile(r"\s+")
@@ -76,6 +77,28 @@ class CommentService:
         self.db.add(comment)
         await self.db.commit()
         await self.db.refresh(comment)
+        # Emit for the TKG ingestor — open COMMENTED_ON edge + embed text.
+        # community_id isn't carried on the Comment row, so we resolve it
+        # best-effort from the target proposal when applicable.
+        community_id = None
+        if entity_type == "proposal":
+            prop = (
+                await self.db.execute(
+                    select(Proposal.community_id).where(Proposal.id == entity_id)
+                )
+            ).scalar_one_or_none()
+            community_id = prop
+        elif entity_type == "community":
+            community_id = entity_id
+        await event_bus.emit(
+            "comment.posted",
+            community_id=community_id,
+            user_id=data.user_id,
+            comment_id=comment.id,
+            entity_id=entity_id,
+            entity_type=entity_type,
+            comment_text=data.comment_text,
+        )
         return comment
 
     async def get_comments(

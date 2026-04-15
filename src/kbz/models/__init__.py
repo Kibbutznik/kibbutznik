@@ -13,6 +13,7 @@ from kbz.models.variable import Variable
 from kbz.models.artifact_container import ArtifactContainer
 from kbz.models.artifact import Artifact
 from kbz.models.agent_memory import AgentMemory
+from kbz.models.tkg import TKGEdge, TKGEmbedding, TKGNode, TKGNodeKind, TKGRelation
 
 __all__ = [
     "Base",
@@ -31,4 +32,9 @@ __all__ = [
     "ArtifactContainer",
     "Artifact",
     "AgentMemory",
+    "TKGNode",
+    "TKGEdge",
+    "TKGEmbedding",
+    "TKGNodeKind",
+    "TKGRelation",
 ]
