@@ -688,9 +688,132 @@ footer{
   text-align:center;padding:3rem 2rem;
   border-top:1px solid rgba(255,255,255,.06);
   background:var(--bg2);
+  position:relative;overflow:visible;
 }
 footer a{font-weight:600}
 footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
+
+/* ── Proposal Bubbles ───────────────────────── */
+#bubbleLayer{
+  position:fixed;inset:0;pointer-events:none;z-index:800;overflow:hidden;
+}
+.prop-bubble{
+  position:absolute;border-radius:50%;cursor:pointer;pointer-events:auto;
+  background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.5) 0%,rgba(255,255,255,.15) 25%,rgba(78,204,163,.06) 60%,transparent 75%);
+  border:2px solid rgba(255,255,255,.25);
+  box-shadow:0 0 18px rgba(78,204,163,.25),0 0 6px rgba(255,255,255,.15),inset 0 -8px 16px rgba(255,255,255,.08);
+  backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;
+  will-change:transform,bottom;
+}
+/* Rise animation — bottom animated via CSS, wobble via transform */
+@keyframes bubbleRise{
+  from{bottom:-80px}
+  to{bottom:calc(100vh + 80px)}
+}
+@keyframes bubbleWobble{
+  0%,100%{transform:translateX(0) scale(1)}
+  25%{transform:translateX(var(--wobble)) scale(1)}
+  75%{transform:translateX(calc(var(--wobble) * -1)) scale(1)}
+}
+.prop-bubble:hover{
+  transform:translateX(0) scale(1.15) !important;
+  box-shadow:0 0 24px rgba(233,69,96,.35),inset 0 0 20px rgba(255,255,255,.1);
+  border-color:rgba(233,69,96,.5);
+}
+.prop-bubble .bubble-icon{
+  font-size:clamp(.8rem,1.5vw,1.2rem);filter:grayscale(.2);
+  user-select:none;pointer-events:none;
+}
+/* Pop animation: scale up + fade out */
+@keyframes bubblePop{
+  0%{transform:scale(1);opacity:1}
+  30%{transform:scale(1.5);opacity:.8}
+  100%{transform:scale(2.2);opacity:0}
+}
+.prop-bubble.popping{
+  animation:bubblePop .35s ease-out forwards !important;
+  pointer-events:none;
+}
+/* Pop particles */
+.pop-particle{
+  position:absolute;border-radius:50%;pointer-events:none;
+  animation:particleFly .55s ease-out forwards;
+}
+@keyframes particleFly{
+  0%{opacity:1;transform:translate(0,0) scale(1)}
+  100%{opacity:0;transform:translate(var(--px),var(--py)) scale(.3)}
+}
+/* Proposal tooltip */
+.prop-tooltip{
+  position:fixed;z-index:900;max-width:380px;min-width:280px;
+  padding:0;border-radius:10px;
+  background:linear-gradient(135deg,rgba(15,52,96,.96),rgba(22,33,62,.98));
+  border:1px solid rgba(78,204,163,.3);
+  box-shadow:0 8px 40px rgba(0,0,0,.5),0 0 30px rgba(78,204,163,.12),0 0 1px rgba(78,204,163,.4);
+  color:var(--text);
+  font-size:.82rem;line-height:1.5;
+  opacity:0;transform:scale(.85) translateY(12px);
+  transition:opacity .25s ease,transform .25s ease;
+  pointer-events:auto;
+}
+.prop-tooltip.show{opacity:1;transform:scale(1) translateY(0)}
+.prop-tooltip-header{
+  padding:.6rem .9rem;border-bottom:1px solid rgba(78,204,163,.15);
+  display:flex;align-items:center;gap:.5rem;
+}
+.prop-tooltip-type{
+  padding:2px 8px;border-radius:4px;font-size:.65rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;
+  background:rgba(233,69,96,.18);color:#e94560;border:1px solid rgba(233,69,96,.3);
+}
+.prop-tooltip-status{
+  padding:2px 6px;border-radius:3px;font-size:.6rem;font-weight:600;
+  background:rgba(78,204,163,.12);color:#4ecca3;border:1px solid rgba(78,204,163,.2);
+}
+.prop-tooltip-body{padding:.7rem .9rem}
+.prop-tooltip-title{
+  font-size:.95rem;font-weight:700;color:var(--white);margin-bottom:.35rem;
+  display:flex;align-items:flex-start;gap:.4rem;
+}
+.prop-tooltip-pitch{
+  font-size:.78rem;color:var(--text);opacity:.85;
+  border-left:2px solid rgba(78,204,163,.3);padding-left:.6rem;margin:.35rem 0;
+  white-space:pre-wrap;
+}
+.prop-tooltip-meta{
+  padding:.45rem .9rem;border-top:1px solid rgba(255,255,255,.05);
+  display:flex;gap:.8rem;flex-wrap:wrap;
+  font-size:.65rem;color:var(--text);opacity:.55;
+}
+.prop-tooltip-meta span{display:flex;align-items:center;gap:.25rem}
+.prop-tooltip-close{
+  position:absolute;top:.35rem;right:.45rem;
+  background:none;border:none;color:var(--text);opacity:.4;
+  cursor:pointer;font-size:.85rem;line-height:1;padding:2px 4px;
+}
+.prop-tooltip-close:hover{opacity:1;color:#e94560}
+[data-theme="psych"] .prop-bubble{
+  background:radial-gradient(circle at 35% 30%,rgba(255,45,149,.2) 0%,rgba(123,45,255,.1) 30%,transparent 70%);
+  border-color:rgba(123,45,255,.25);
+  box-shadow:0 0 18px rgba(255,45,149,.15),inset 0 0 20px rgba(123,45,255,.08);
+}
+[data-theme="psych"] .prop-bubble:hover{
+  box-shadow:0 0 28px rgba(255,45,149,.4),inset 0 0 20px rgba(123,45,255,.15);
+  border-color:rgba(255,45,149,.5);
+}
+[data-theme="psych"] .prop-tooltip{
+  background:linear-gradient(135deg,rgba(26,0,64,.96),rgba(10,0,18,.98));
+  border-color:rgba(255,45,149,.3);
+  box-shadow:0 8px 40px rgba(0,0,0,.5),0 0 30px rgba(255,45,149,.12),0 0 1px rgba(123,45,255,.4);
+}
+[data-theme="psych"] .prop-tooltip-type{
+  background:rgba(255,45,149,.18);color:#ff2d95;border-color:rgba(255,45,149,.3);
+}
+[data-theme="psych"] .prop-tooltip-status{
+  background:rgba(0,255,170,.12);color:#00ffaa;border-color:rgba(0,255,170,.2);
+}
+[data-theme="psych"] .prop-tooltip-pitch{border-left-color:rgba(123,45,255,.4)}
 
 /* Entity ribbon animation */
 .entity-ribbon{
@@ -1262,6 +1385,9 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   </div>
 </section>
 
+<!-- Bubble layer — fixed overlay for rising proposal bubbles -->
+<div id="bubbleLayer"></div>
+
 <!-- ════ Footer ════ -->
 <footer>
   <a href="/kbz/viewer/" class="cta-btn" style="font-size:.95rem;padding:.7rem 2rem">Watch Live &rarr;</a>
@@ -1677,6 +1803,277 @@ const obs=new IntersectionObserver(entries=>{
   entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}});
 },{threshold:.15});
 document.querySelectorAll('.fade-in').forEach(el=>obs.observe(el));
+
+/* ══════════════════════════════════════════════════════════
+   ██ Proposal Bubbles — rise from footer, pop to reveal
+   ══════════════════════════════════════════════════════════ */
+(function(){
+  const PROPOSALS = [
+    // ── Membership ──
+    {type:"Membership",icon:"👋",status:"OutThere",title:"Noa wants to join the community",pitch:"Noa is a cooperative economics researcher who specializes in shared governance models. She communicates with academic precision and collaborative warmth.",meta:{author:"Noa",support:"2/3",age:1}},
+    {type:"Membership",icon:"👋",status:"Accepted",title:"Yoav applied for membership",pitch:"Yoav is a permaculture designer who builds regenerative food systems. He believes decisions should grow organically from community needs, not top-down mandates.",meta:{author:"Yoav",support:"4/4",age:3}},
+    {type:"Membership",icon:"👋",status:"OnTheAir",title:"Lior wants to join us",pitch:"Lior is a conflict mediator who has worked with intentional communities across three continents. She brings structured dialogue techniques and believes every voice deserves airtime.",meta:{author:"Lior",support:"3/4",age:2}},
+
+    // ── ThrowOut ──
+    {type:"ThrowOut",icon:"🚪",status:"OutThere",title:"Remove inactive member Dani",pitch:"Dani hasn't participated in 14 rounds — no votes, no proposals, no comments. Our governance only works when people show up.",meta:{author:"Rivka",support:"2/4",age:2}},
+    {type:"ThrowOut",icon:"🚪",status:"Rejected",title:"Eject troublemaker Ben",pitch:"Ben keeps proposing inflammatory statements that waste everyone's time. Three rejected proposals in a row is enough.",meta:{author:"Alex",support:"1/4",age:4}},
+
+    // ── AddStatement ──
+    {type:"AddStatement",icon:"📜",status:"OutThere",title:"We commit to transparent resource allocation",pitch:"Every financial decision above 100 credits must be proposed as a Funding proposal and voted on by all members. No backroom deals.",meta:{author:"Morgan",support:"3/5",age:1}},
+    {type:"AddStatement",icon:"📜",status:"Accepted",title:"Decisions require genuine deliberation",pitch:"Proposals must remain in OutThere status for at least 2 rounds before being promoted, giving everyone time to read, comment, and think.",meta:{author:"Finley",support:"5/5",age:3}},
+    {type:"AddStatement",icon:"📜",status:"OnTheAir",title:"We build in the open",pitch:"All artifact containers and their contents are visible to every community member. Transparency is not optional — it is how trust is maintained.",meta:{author:"Yoav",support:"4/6",age:2}},
+
+    // ── RemoveStatement ──
+    {type:"RemoveStatement",icon:"🗑️",status:"OutThere",title:"Remove 'Weekly sync is mandatory'",pitch:"This statement was added when we had 4 members. With 12 members across time zones, mandatory sync creates more friction than alignment. Replace with async check-ins.",meta:{author:"Noa",support:"3/6",age:2}},
+    {type:"RemoveStatement",icon:"🗑️",status:"Rejected",title:"Strike 'One member one vote' principle",pitch:"Weighted voting by expertise would make us more efficient. The current egalitarian model is slowing us down on technical decisions.",meta:{author:"Ben",support:"1/6",age:4}},
+
+    // ── ReplaceStatement ──
+    {type:"ReplaceStatement",icon:"✏️",status:"OutThere",title:"Update conflict resolution protocol",pitch:"Replace 'conflicts are resolved by majority vote' with 'conflicts are first mediated by a rotating facilitator, escalating to vote only if mediation fails within 3 rounds.'",meta:{author:"Lior",support:"4/6",age:1}},
+    {type:"ReplaceStatement",icon:"✏️",status:"Accepted",title:"Modernize our mission statement",pitch:"The old mission ('build stuff together') was a placeholder. New: 'We govern shared resources through pulse-based direct democracy, where every member has equal voice and proposals live or die by collective support.'",meta:{author:"Morgan",support:"5/6",age:3}},
+
+    // ── ChangeVariable ──
+    {type:"ChangeVariable",icon:"⚙️",status:"OutThere",title:"Lower Membership threshold to 40%",pitch:"At 50%, a single abstention blocks new members in a 6-person community. 40% still requires real support while being less fragile.",meta:{author:"Alex",support:"3/6",age:1}},
+    {type:"ChangeVariable",icon:"⚙️",status:"Accepted",title:"Raise ThrowOut threshold to 75%",pitch:"Removing someone should be hard. The current 60% means 4 of 6 members can eject anyone. 75% means near-consensus is required.",meta:{author:"Rivka",support:"5/6",age:2}},
+    {type:"ChangeVariable",icon:"⚙️",status:"OnTheAir",title:"Set PulseSupport to 60%",pitch:"Pulses fire too easily at 50%. Raising to 60% adds a buffer so proposals have more time to gather support and comments before execution.",meta:{author:"Finley",support:"4/6",age:2}},
+
+    // ── AddAction ──
+    {type:"AddAction",icon:"🏗️",status:"OutThere",title:"Create 'Onboarding Writers' working group",pitch:"We need a focused team to write the onboarding section of the handbook. Three artifacts need content and nobody is coordinating.",meta:{author:"Morgan",support:"3/5",age:1}},
+    {type:"AddAction",icon:"🏗️",status:"Accepted",title:"Launch 'Governance Review' task force",pitch:"Our variables haven't been tuned since founding. This action group will audit every threshold, propose adjustments, and write a rationale document.",meta:{author:"Noa",support:"4/5",age:3}},
+
+    // ── EndAction ──
+    {type:"EndAction",icon:"🏁",status:"OutThere",title:"Close 'Welcome Committee' — work complete",pitch:"All three onboarding artifacts are written and committed. The committee has no remaining tasks. Keeping it open creates noise in the action tree.",meta:{author:"Yoav",support:"2/4",age:2}},
+    {type:"EndAction",icon:"🏁",status:"Rejected",title:"Shut down 'Event Planning' group",pitch:"We haven't planned an event in 8 rounds. But the community voted to keep it open for the upcoming anniversary.",meta:{author:"Alex",support:"1/4",age:5}},
+
+    // ── JoinAction ──
+    {type:"JoinAction",icon:"🤝",status:"OutThere",title:"Rivka wants to join 'Onboarding Writers'",pitch:"I have experience writing procedural documentation and I want to help draft the new-member onboarding guide.",meta:{author:"Rivka",support:"2/3",age:1}},
+    {type:"JoinAction",icon:"🤝",status:"Accepted",title:"Finley joined 'Governance Review'",pitch:"As someone who's been here since round 1, I have context on why each variable was set the way it was. I can write the historical rationale section.",meta:{author:"Finley",support:"3/3",age:2}},
+
+    // ── CreateArtifact ──
+    {type:"CreateArtifact",icon:"📝",status:"OutThere",title:"New Member Orientation Steps",pitch:"A section describing the first 5 things a new member should do when they join — from reading statements to submitting their first proposal.",meta:{author:"Morgan",support:"3/5",age:1}},
+    {type:"CreateArtifact",icon:"📝",status:"Accepted",title:"Conflict Resolution Flowchart",pitch:"A step-by-step decision tree for handling disagreements: when to use chat, when to propose a statement, when to call for mediation.",meta:{author:"Lior",support:"5/6",age:3}},
+    {type:"CreateArtifact",icon:"📝",status:"OnTheAir",title:"Resource Sharing Guidelines",pitch:"How physical and digital resources are allocated, borrowed, and returned. Covers tools, spaces, and shared accounts.",meta:{author:"Yoav",support:"4/6",age:2}},
+
+    // ── EditArtifact ──
+    {type:"EditArtifact",icon:"🔧",status:"OutThere",title:"Edit: New Member Orientation Steps",pitch:"Added concrete timelines: 'Within your first round, read all active statements. By round 3, submit at least one comment on an open proposal. By round 5, draft your first proposal.'",meta:{author:"Rivka",support:"3/5",age:1}},
+    {type:"EditArtifact",icon:"🔧",status:"Accepted",title:"Edit: Conflict Resolution Flowchart",pitch:"Expanded the mediation section with three specific techniques: active listening protocol, perspective rotation, and the 'steel-man before you disagree' rule.",meta:{author:"Lior",support:"4/5",age:2}},
+    {type:"EditArtifact",icon:"🔧",status:"OnTheAir",title:"Edit: Governance Variable Reference",pitch:"Added worked examples for every threshold: 'If PulseSupport=50% and you have 6 members, the pulse fires when 3 members support it. At 60%, you need 4.'",meta:{author:"Noa",support:"5/6",age:1}},
+
+    // ── RemoveArtifact ──
+    {type:"RemoveArtifact",icon:"❌",status:"OutThere",title:"Remove: Placeholder Introduction",pitch:"This artifact was created as a stub in round 1 and never filled. It just says 'TODO: write intro.' Let's clean it up — the real intro is in the next artifact.",meta:{author:"Alex",support:"3/5",age:2}},
+    {type:"RemoveArtifact",icon:"❌",status:"Accepted",title:"Remove: Duplicate Budget Section",pitch:"We accidentally created two budget sections. This one has 12 characters of content. The other one is complete. Removing the duplicate.",meta:{author:"Morgan",support:"5/5",age:1}},
+
+    // ── DelegateArtifact ──
+    {type:"DelegateArtifact",icon:"📤",status:"OutThere",title:"Delegate 'Technical Setup Guide' → DevOps Team",pitch:"The DevOps action community has the expertise to write this. Delegating the artifact gives them their own container to work in while the root community retains review authority.",meta:{author:"Yoav",support:"3/5",age:1}},
+    {type:"DelegateArtifact",icon:"📤",status:"Accepted",title:"Delegate 'Event Logistics' → Event Planning",pitch:"The Event Planning action group should own this artifact. They'll fill it with venue details, RSVPs, and timeline. We just need the final commit.",meta:{author:"Noa",support:"4/5",age:2}},
+
+    // ── CommitArtifact ──
+    {type:"CommitArtifact",icon:"📦",status:"OutThere",title:"Commit container 'Community Handbook v1'",pitch:"All 5 artifacts are written and reviewed. Committing locks them in as our official v1. The ordering: Introduction → Governance → Onboarding → Conflict Resolution → Resources.",meta:{author:"Morgan",support:"4/6",age:1}},
+    {type:"CommitArtifact",icon:"📦",status:"Accepted",title:"Commit 'Onboarding Package'",pitch:"Three artifacts ready: Welcome Letter, First Steps Guide, FAQ. This commit packages them as the official onboarding materials for new members.",meta:{author:"Rivka",support:"5/6",age:3}},
+  ];
+
+  // Type → color map
+  const TYPE_COLORS = {
+    Membership:"#4ecca3",ThrowOut:"#e94560",AddStatement:"#90caf9",
+    RemoveStatement:"#f48fb1",ReplaceStatement:"#ce93d8",ChangeVariable:"#f0c040",
+    AddAction:"#4ecca3",EndAction:"#ef9a9a",JoinAction:"#80cbc4",
+    CreateArtifact:"#a5d6a7",EditArtifact:"#90caf9",RemoveArtifact:"#ef9a9a",
+    DelegateArtifact:"#ffcc80",CommitArtifact:"#b39ddb"
+  };
+
+  const layer = document.getElementById('bubbleLayer');
+  let activeBubbles = [];
+  let activeTooltip = null;
+  let audioCtx = null;
+
+  function getAudioCtx(){
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function playPop(){
+    try{
+      const ctx = getAudioCtx();
+      const t = ctx.currentTime;
+      // Noise burst
+      const bufLen = ctx.sampleRate * 0.06;
+      const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for(let i=0;i<bufLen;i++) data[i] = (Math.random()*2-1) * Math.pow(1 - i/bufLen, 3);
+      const noise = ctx.createBufferSource();
+      noise.buffer = buf;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.3, t);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, t+0.06);
+      const hpf = ctx.createBiquadFilter();
+      hpf.type='highpass';hpf.frequency.value=2000;
+      noise.connect(hpf).connect(noiseGain).connect(ctx.destination);
+      noise.start(t);noise.stop(t+0.06);
+      // Tonal pop — pitch sweep down
+      const osc = ctx.createOscillator();
+      osc.type='sine';
+      osc.frequency.setValueAtTime(900, t);
+      osc.frequency.exponentialRampToValueAtTime(200, t+0.08);
+      const oscGain = ctx.createGain();
+      oscGain.gain.setValueAtTime(0.25, t);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, t+0.1);
+      osc.connect(oscGain).connect(ctx.destination);
+      osc.start(t);osc.stop(t+0.1);
+    }catch(e){}
+  }
+
+  function spawnBubble(){
+    const p = PROPOSALS[Math.floor(Math.random() * PROPOSALS.length)];
+    const size = 42 + Math.random() * 28; // 42–70px
+    const wobbleAmp = 15 + Math.random() * 25;   // px
+    // Keep x far enough from edges so wobble doesn't push offscreen
+    const margin = wobbleAmp + 10;
+    const x = margin + Math.random() * (window.innerWidth - size - margin * 2);
+    const riseDuration = 10 + Math.random() * 8; // 10–18s
+    const wobbleDuration = 2 + Math.random() * 2; // 2–4s per wobble cycle
+
+    const el = document.createElement('div');
+    el.className = 'prop-bubble';
+    el.style.width = el.style.height = size + 'px';
+    el.style.left = x + 'px';
+    el.style.setProperty('--wobble', wobbleAmp + 'px');
+    el.innerHTML = `<span class="bubble-icon">${p.icon}</span>`;
+
+    // Color tint per type
+    const col = TYPE_COLORS[p.type] || '#4ecca3';
+    el.style.borderColor = col + '40';
+    el.style.boxShadow = `0 0 14px ${col}22, inset 0 0 20px ${col}0a`;
+
+    // CSS-driven rise + wobble (GPU-accelerated, never throttled)
+    el.style.animation = `bubbleRise ${riseDuration}s linear forwards, bubbleWobble ${wobbleDuration}s ease-in-out infinite`;
+
+    layer.appendChild(el);
+
+    const bubbleObj = {el, proposal: p};
+    activeBubbles.push(bubbleObj);
+
+    // Auto-remove when rise animation ends
+    el.addEventListener('animationend', (ev) => {
+      if(ev.animationName === 'bubbleRise') removeBubble(bubbleObj);
+    });
+
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      popBubble(el, p);
+      activeBubbles = activeBubbles.filter(b => b !== bubbleObj);
+    });
+  }
+
+  function removeBubble(obj){
+    if(obj.el.parentNode) obj.el.remove();
+    activeBubbles = activeBubbles.filter(b => b !== obj);
+  }
+
+  function popBubble(el, proposal){
+    playPop();
+    // Spawn particles at bubble center
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    const col = TYPE_COLORS[proposal.type] || '#4ecca3';
+    for(let i = 0; i < 10; i++){
+      const part = document.createElement('div');
+      part.className = 'pop-particle';
+      const angle = (Math.PI*2/10)*i + Math.random()*.4;
+      const dist = 30 + Math.random()*40;
+      part.style.cssText = `
+        left:${cx}px;top:${cy}px;width:${4+Math.random()*5}px;height:${4+Math.random()*5}px;
+        background:${col};
+        --px:${Math.cos(angle)*dist}px;--py:${Math.sin(angle)*dist}px;
+      `;
+      layer.appendChild(part);
+      setTimeout(()=>part.remove(), 600);
+    }
+
+    // Pop animation on bubble
+    el.classList.add('popping');
+    setTimeout(()=>el.remove(), 400);
+
+    // Show tooltip
+    showProposalTooltip(proposal, cx, cy);
+  }
+
+  function showProposalTooltip(p, cx, cy){
+    // Close existing
+    if(activeTooltip){ activeTooltip.remove(); activeTooltip = null; }
+
+    const col = TYPE_COLORS[p.type] || '#4ecca3';
+    const tip = document.createElement('div');
+    tip.className = 'prop-tooltip';
+    tip.innerHTML = `
+      <button class="prop-tooltip-close" onclick="this.parentElement.remove()">&times;</button>
+      <div class="prop-tooltip-header">
+        <span class="prop-tooltip-type" style="background:${col}22;color:${col};border-color:${col}44">${p.type}</span>
+        <span class="prop-tooltip-status">${p.status}</span>
+      </div>
+      <div class="prop-tooltip-body">
+        <div class="prop-tooltip-title">${p.icon} ${p.title}</div>
+        <div class="prop-tooltip-pitch">${p.pitch}</div>
+      </div>
+      <div class="prop-tooltip-meta">
+        <span>👤 ${p.meta.author}</span>
+        <span>👍 ${p.meta.support}</span>
+        <span>⏱ Age ${p.meta.age}</span>
+      </div>
+    `;
+    tip.style.pointerEvents = 'auto';
+    document.body.appendChild(tip);
+    activeTooltip = tip;
+
+    // Position: near the pop point, but clamped to viewport
+    requestAnimationFrame(()=>{
+      const tr = tip.getBoundingClientRect();
+      let left = cx - tr.width/2;
+      let top = cy - tr.height - 12;
+      if(top < 10) top = cy + 12;
+      if(left < 10) left = 10;
+      if(left + tr.width > window.innerWidth - 10) left = window.innerWidth - tr.width - 10;
+      if(top + tr.height > window.innerHeight - 10) top = window.innerHeight - tr.height - 10;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+      requestAnimationFrame(()=> tip.classList.add('show'));
+    });
+
+    // Auto-dismiss after 6s
+    const timer = setTimeout(()=>{
+      tip.classList.remove('show');
+      setTimeout(()=>{ if(tip.parentNode) tip.remove(); if(activeTooltip===tip) activeTooltip=null; }, 300);
+    }, 6000);
+    tip._timer = timer;
+
+    // Click outside closes
+    function outsideClick(ev){
+      if(tip.contains(ev.target)) return;
+      clearTimeout(timer);
+      tip.classList.remove('show');
+      setTimeout(()=>{ if(tip.parentNode) tip.remove(); if(activeTooltip===tip) activeTooltip=null; }, 300);
+      document.removeEventListener('click', outsideClick);
+    }
+    setTimeout(()=> document.addEventListener('click', outsideClick), 50);
+  }
+
+  // Spawn interval: one bubble every 2.5–4.5s
+  function scheduleNext(){
+    const delay = 2500 + Math.random() * 2000;
+    setTimeout(()=>{ spawnBubble(); scheduleNext(); }, delay);
+  }
+  // Start after a short delay so page loads cleanly
+  setTimeout(()=>{
+    spawnBubble();
+    scheduleNext();
+  }, 1500);
+
+  // Cap max concurrent bubbles
+  setInterval(()=>{
+    while(activeBubbles.length > 8){
+      removeBubble(activeBubbles[0]);
+    }
+  }, 2000);
+})();
 
 </script>
 </body>
