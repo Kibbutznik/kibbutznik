@@ -116,6 +116,84 @@ class CommunitySnapshot:
             pct = 15.0
         return math.ceil(mc * pct / 100)
 
+    def _append_new_since_last_turn(
+        self,
+        lines: list[str],
+        my_user_id: str,
+        users_cache: dict[str, str],
+        supported_proposals: set[str],
+    ) -> None:
+        """Surface what moved in the last round or two.
+
+        Pulls from fields the snapshot already carries (recent_accepted,
+        recent_rejected, proposal_comments, chat_messages) and flags items
+        that (a) landed this round or (b) are proposals the agent HASN'T
+        engaged with yet but that have comments from other members. Silent
+        when nothing changed, so it never adds noise.
+        """
+        highlights: list[str] = []
+
+        # Accepted / rejected proposals — these just landed
+        if self.recent_accepted:
+            for p in self.recent_accepted[:3]:
+                author = users_cache.get(p.get("user_id", ""), "?")
+                ptype = p.get("proposal_type", "?")
+                ptext = (p.get("proposal_text") or p.get("val_text") or "")[:60]
+                mine_tag = " ← YOURS" if p.get("user_id") == my_user_id else ""
+                highlights.append(f"  ✅ ACCEPTED [{ptype}] by {author}: \"{ptext}\"{mine_tag}")
+        if self.recent_rejected:
+            for p in self.recent_rejected[:2]:
+                author = users_cache.get(p.get("user_id", ""), "?")
+                ptype = p.get("proposal_type", "?")
+                ptext = (p.get("proposal_text") or p.get("val_text") or "")[:60]
+                mine_tag = " ← YOURS" if p.get("user_id") == my_user_id else ""
+                highlights.append(f"  ❌ REJECTED [{ptype}] by {author}: \"{ptext}\"{mine_tag}")
+
+        # Proposals with comments by others that I haven't engaged with
+        active = list(self.proposals_out_there) + list(self.proposals_on_the_air)
+        for p in active[:6]:
+            pid = p.get("id", "")
+            comments = self.proposal_comments.get(pid, []) or []
+            if not comments:
+                continue
+            # Only count comments from other members (agents love to reply to
+            # their own comments; don't flag those as "new")
+            others = [c for c in comments if c.get("user_id") != my_user_id]
+            if not others:
+                continue
+            # Skip if I already supported or commented — I've engaged
+            if pid in supported_proposals:
+                continue
+            latest = others[-1]
+            commenter = users_cache.get(latest.get("user_id", ""), "?")
+            ctext = (latest.get("comment_text") or "")[:80]
+            ptype = p.get("proposal_type", "?")
+            highlights.append(
+                f"  💬 NEW COMMENT on [{ptype}] id={pid[:8]} — {commenter}: \"{ctext}\" "
+                f"(you haven't engaged with this proposal)"
+            )
+
+        # New chat messages (already filtered by chat_after in observe_community)
+        if self.chat_messages:
+            n = len(self.chat_messages)
+            if n > 0:
+                # Show the latest 2 inline to encourage response
+                latest = self.chat_messages[:2]
+                highlights.append(f"  📢 {n} new chat message{'s' if n != 1 else ''} since your last turn:")
+                for msg in latest:
+                    speaker = users_cache.get(msg.get("user_id", ""), "?")
+                    mtext = (msg.get("message_text") or msg.get("comment_text") or "")[:100]
+                    highlights.append(f"     - {speaker}: \"{mtext}\"")
+
+        if highlights:
+            lines.append("\n### 🆕 NEW SINCE YOUR LAST TURN — react to these first:")
+            lines.extend(highlights)
+            lines.append(
+                "  (Governance is a conversation. If someone commented on a proposal "
+                "you haven't touched, READ the comment and either support, counter-propose, "
+                "or comment back. Don't just follow your personality — respond to your community.)"
+            )
+
     def _append_artifact_section(self, lines: list[str], users_cache: dict[str, str], my_user_id: str = "") -> None:
         """Append artifact container info to the summary lines (called early for visibility)."""
         if not self.containers:
@@ -261,6 +339,13 @@ class CommunitySnapshot:
                 f"proposals are aging out! Support the pulse NOW to advance governance."
             )
         lines.append(f"Pulse progress: {pulse_progress}")
+
+        # ── NEW SINCE LAST TURN ──────────────────────────────────────────
+        # Highlights what just changed, so agents react to the community
+        # around them instead of only acting on persona. Items shown here
+        # also appear in their full sections below — this block is the
+        # "tl;dr of what moved". Mentioned first so the LLM notices.
+        self._append_new_since_last_turn(lines, my_user_id, users_cache, supported_proposals)
 
         max_age = self.variables.get("MaxAge", "2")
 

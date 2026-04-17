@@ -9,15 +9,21 @@ Two queues:
                                     hot ingest path never blocks on Ollama
 
 Event dispatch:
-  proposal.created   → upsert(proposal)   + open_edge(AUTHORED)        + queue embed
-  proposal.accepted  → upsert(proposal)   + attrs.accepted_at          + queue embed
-  proposal.rejected  → upsert(proposal)   + attrs.rejected_at
-  support.cast       → open_edge(SUPPORTED, user→proposal)
-                       + open_edge(ALLIED_WITH, user→proposal.author)
-  support.withdrawn  → close_edge(SUPPORTED)
-  pulse.executed     → upsert(pulse)
-  comment.posted     → open_edge(COMMENTED_ON) + queue embed
-  community.completed → upsert(container) + attrs.committed
+  proposal.created        → upsert(proposal)   + open_edge(AUTHORED)        + queue embed
+  proposal.accepted       → upsert(proposal)   + attrs.accepted_at          + queue embed
+  proposal.rejected       → upsert(proposal)   + attrs.rejected_at
+  support.cast            → open_edge(SUPPORTED, user→proposal)
+                            + open_edge(ALLIED_WITH, user→proposal.author)
+  support.withdrawn       → close_edge(SUPPORTED)
+  pulse.executed          → upsert(pulse)
+  comment.posted          → open_edge(COMMENTED_ON) + queue embed
+  community.completed     → upsert(container) + attrs.committed
+  agent.memory_extracted  → queue embed of the agent's reasoning anchored
+                            on the related proposal/artifact (or on the
+                            agent's own user node if no related_id).
+                            Lets semantic_search find "I supported this
+                            because..." style agent-written prose, not
+                            just the event-bus stubs.
 
 Unknown events are ignored silently.
 """
@@ -273,6 +279,44 @@ class TKGIngestor:
                 container_id, TKGNodeKind.CONTAINER, community_id=community_id,
                 round_num=round_num, attrs={"committed": True},
             )
+
+        elif et == "agent.memory_extracted":
+            # The memory_extractor fires this each time it writes a memory
+            # entry to the legacy store. We land an embedding on the most
+            # relevant TKG node so `/tkg/semantic_search` can surface the
+            # agent's own reasoning — not just the event-bus stubs.
+            content = (data.get("content") or "").strip()
+            if not content or not user_id:
+                return
+            related_id = _to_uuid(data.get("related_id"))
+            memory_type = data.get("memory_type") or "episodic"
+            # Anchor choice: prefer the related entity (proposal / artifact /
+            # other agent) so embeddings cluster around what the agent was
+            # reasoning *about*. Fall back to the agent's user node when
+            # there's no natural target (e.g. a goal memory with no target).
+            anchor_id = related_id or user_id
+            # Ensure the anchor exists. We don't know the anchor's kind when
+            # the related_id points at something we haven't seen yet —
+            # upsert as EVENT as a conservative default; if a later
+            # proposal.created re-upserts the same id as PROPOSAL the kind
+            # will be corrected.
+            if anchor_id == user_id:
+                anchor_kind = TKGNodeKind.USER
+            else:
+                # Try to infer kind from memory_type; fall back to EVENT.
+                kind_map = {
+                    "relationship": TKGNodeKind.USER,
+                    "goal": TKGNodeKind.PROPOSAL,  # goals usually anchor on a proposal id
+                }
+                anchor_kind = kind_map.get(memory_type, TKGNodeKind.EVENT)
+            await svc.upsert_node(
+                anchor_id, anchor_kind, community_id=community_id,
+                round_num=round_num,
+            )
+            # Prefix with memory_type so the embedding carries the category
+            # (helps cluster "relationship: ..." vs "goal: ..." separately).
+            labeled = f"[{memory_type}] {content}"
+            self._enqueue_embed(anchor_id, labeled, round_num)
 
         # Unknown event types are ignored — the ingestor is forward-compatible.
 

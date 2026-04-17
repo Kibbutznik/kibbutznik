@@ -27,6 +27,34 @@ from agents.tkg_client import TKGClient
 logger = logging.getLogger(__name__)
 
 
+# Hard cap on outbound comment length. Agents over-produce prose (see the
+# decision-engine prompt rule "HARD LENGTH CAP — 50 words MAX"). The prompt
+# sets the expectation; this enforces it even when the LLM ignores the rule,
+# which it does often. Truncation is silent and ends on a sentence boundary
+# when one is available, with a trailing "…" so readers can tell.
+_COMMENT_CHAR_CAP = 300
+
+
+def _truncate_comment(text: str, cap: int = _COMMENT_CHAR_CAP) -> str:
+    """Clamp comment text to `cap` chars, preferring to break on punctuation."""
+    if not text:
+        return text
+    t = text.strip()
+    if len(t) <= cap:
+        return t
+    # Look for a sensible break (sentence or clause) inside the last 60 chars
+    # of the cap window; fall back to a hard cut.
+    window_start = max(0, cap - 60)
+    cut = -1
+    for sep in (". ", "? ", "! ", "; ", ", "):
+        idx = t.rfind(sep, window_start, cap)
+        if idx > cut:
+            cut = idx + len(sep) - 1
+    if cut > 0:
+        return t[: cut + 1].rstrip() + "…"
+    return t[:cap].rstrip() + "…"
+
+
 @dataclass
 class ActionLog:
     """Record of an action taken by the agent."""
@@ -80,6 +108,13 @@ class Agent:
         )
         self.memory_extractor = MemoryExtractor(memory_store, self.users_cache) if memory_store else None
         self.current_round: int = 0  # set by orchestrator each round
+        # Persistent working memory — the agent's one-line answer to
+        # "what am I trying to accomplish this arc?" Persists across turns
+        # until the agent explicitly updates it via `update_intention` in
+        # a decision. Surfaced at the top of every prompt so the LLM is
+        # reminded of its own running goal, not just reactive to the
+        # current snapshot.
+        self.current_intention: str = ""
 
     async def register(self) -> None:
         """Create the user account in the KBZ system."""
@@ -146,7 +181,11 @@ class Agent:
             try:
                 # Update the formatter's users_cache reference
                 self.memory_formatter.users_cache = self.users_cache
-                memory_context = await self.memory_formatter.build_memory_context(self.user_id)
+                memory_context = await self.memory_formatter.build_memory_context(
+                    self.user_id,
+                    current_round=self.current_round,
+                    current_intention=self.current_intention,
+                )
             except Exception as e:
                 logger.debug(f"[{self.persona.name}] Memory read failed: {e}")
 
@@ -241,6 +280,15 @@ class Agent:
         self.eagerness = best_eagerness
         self.eager_front = best_eager_front
         self.rounds_since_acted = 0
+
+        # Harvest `update_intention` if the LLM supplied one on any decision
+        # this turn. Last one wins. Keeps the running goal across turns so
+        # multi-step plans (propose → wait → support → pulse) don't reset.
+        for decision in decisions:
+            new_intention = (decision.params.get("update_intention") or "").strip()
+            if new_intention:
+                # Trim to a single punchy line — this goes into every future prompt.
+                self.current_intention = new_intention[:160]
 
         # 5. WRITE MEMORY — extract memories from this turn's actions
         if self.memory_extractor and self.user_id:
@@ -528,7 +576,7 @@ class Agent:
 
             elif decision.action_type == "comment":
                 pid = self._resolve_proposal_id(decision.params.get("proposal_id", ""), snapshot)
-                text = decision.params.get("comment_text", "")
+                text = _truncate_comment(decision.params.get("comment_text", ""))
                 if pid and text:
                     await self.client.add_comment("proposal", pid, self.user_id, text)
                     self.commented_proposals.add(pid)
@@ -538,7 +586,7 @@ class Agent:
             elif decision.action_type == "reply_comment":
                 pid = self._resolve_proposal_id(decision.params.get("proposal_id", ""), snapshot)
                 parent_id = self._resolve_comment_id(decision.params.get("parent_comment_id", ""), snapshot)
-                text = decision.params.get("comment_text", "")
+                text = _truncate_comment(decision.params.get("comment_text", ""))
                 if pid and text:
                     try:
                         if parent_id:

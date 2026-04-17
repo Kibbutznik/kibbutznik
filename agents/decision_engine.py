@@ -258,14 +258,18 @@ def build_decision_prompt(
             "not literally present in the PROPOSED text above. If you cannot find a real phrase to\n"
             "quote, DO NOT COMMENT — you are not allowed to fabricate the proposal's content.\n"
             "\n"
-            "Required structure for an EditArtifact comment:\n"
-            "  1. A direct quote from PROPOSED in double quotes (the line you're reacting to).\n"
-            "  2. A direct quote from CURRENT in double quotes (what it replaces) — if non-empty.\n"
-            "  3. Your verdict: love it, hate it, mixed — with a craft reason (telling vs showing,\n"
-            "     cliché, weak motivation, voice, pacing, etc.).\n"
-            "  4. A concrete tweak you'd make.\n"
+            "📏 **HARD LENGTH CAP — 50 words MAX, 300 chars MAX.** Comments over this are TRUNCATED\n"
+            "silently. Be punchy, not essayistic. One quote + one-sentence verdict + optional\n"
+            "one-sentence tweak. That's it. No preambles ('Interesting proposal…'), no hedging\n"
+            "('I see where you're coming from but…'), no summary of what you just read.\n"
+            "\n"
+            "Required structure for an EditArtifact comment (ALL in ≤50 words):\n"
+            "  1. ONE quote from PROPOSED (and optionally one from CURRENT).\n"
+            "  2. ONE verdict word: love / hate / mixed — with a craft reason in 8 words or fewer\n"
+            "     (telling vs showing, cliché, weak motivation, voice, pacing, etc.).\n"
+            "  3. (optional) ONE tweak in 12 words or fewer.\n"
             "Forbidden: 'looks good', 'massive improvement', 'I love this' — without quoted evidence.\n"
-            "(One comment per proposal max — make it count.)\n"
+            "(One comment per proposal max — make it count, keep it short.)\n"
         )
 
     memory_block = ""
@@ -364,7 +368,7 @@ Available actions:
 - **support_pulse** — ⚡ INCLUDE THIS ALMOST EVERY TURN! Without pulses, proposals sit forever.
 - **create_proposal** — propose something new
 - **support_proposal** — back a proposal (use EXACT id from state)
-- **comment** — ONE brief comment per proposal (never repeat)
+- **comment** — ONE brief comment per proposal (never repeat). HARD LIMIT 50 words / 300 chars.
 - **send_chat** — informal community-wide message (max 2 per round)
 - **do_nothing** — FAILURE. You almost certainly have something useful to do: support a proposal, support the pulse, or write an EditArtifact. Only use if you've exhausted EVERY option. Use alone, EXTREMELY RARE.
 
@@ -374,6 +378,25 @@ Rules:
 - do_nothing must be alone if used.
 - Include "eagerness" (1-10) and "eager_front" (propose/pulse/comment/support/observe/produce) in EACH item.
 - **DEDUPLICATION:** Before creating ANY proposal, check the active proposals list. If an equivalent proposal already exists (same type + same target), SUPPORT it instead of creating a duplicate. This is especially critical for JoinAction — never create a JoinAction if one already exists for the same action.
+
+## Optional: `update_intention` — carry a plan across turns
+You may add an `"update_intention": "<1-line string>"` field on ANY decision this turn to
+SET your running intention. That string becomes the `CURRENT INTENTION` line at the top
+of your next turn's memory context, so multi-step plans (propose X → wait a round →
+support Y → push pulse) survive across turns instead of resetting each round.
+
+The CURRENT INTENTION block at the top of your memory (if shown) is YOUR last turn's
+intention, which you can choose to continue, update, or abandon. If you don't supply
+`update_intention` this turn, your previous intention persists unchanged.
+
+Good intentions (short, concrete, actionable next step):
+  "Get the Onboarding Writers AddAction accepted, then JoinAction to it"
+  "Push back on Rivka's RemoveStatement — wait for 2 supporters before supporting pulse"
+  "Fill the empty 'Conflict Resolution' artifact this round"
+
+Bad intentions (vague, persona-shaped, not plan-shaped):
+  "Be a good community member"  ← not a plan
+  "Write poetry about governance"  ← not actionable
 
 Respond with a JSON ARRAY, no other text:
 [{{"action": "...", "reason": "...", "eagerness": N, "eager_front": "...", ...params}}]
@@ -401,11 +424,11 @@ Examples:
   {{"action": "support_proposal", "proposal_id": "<id>", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
 ]
 [
-  {{"action": "comment", "proposal_id": "<EditArtifact id>", "comment_text": "Mixed feelings. I LOVE the new opening line — 'She arrived on the last train of the year' is so much sharper than the current 'Mira came to the village in winter.' But the proposed version flattens her motivation: it cuts the line about her sister's letter, which was the only thing telling us WHY she's here. Without it Mira reads as a tourist, not a fugitive. Counter-suggestion: keep the new opening but restore the letter beat in paragraph two.", "reason": "Substantive critique of the EditArtifact diff — praising the prose lift while flagging a lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
+  {{"action": "comment", "proposal_id": "<EditArtifact id>", "comment_text": "Love 'She arrived on the last train of the year' — sharper than the original. But cutting the sister's letter loses her motive. Mixed. Restore the letter in para 2.", "reason": "Praise the prose lift but flag the lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
   {{"action": "support_pulse", "reason": "Keep the cycle moving", "eagerness": 6, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "comment", "proposal_id": "<EditArtifact id>", "comment_text": "I HATE this rewrite. The current version had texture — the rusted gate, the dog with one eye, the smell of woodsmoke. The proposed version replaces all of that with abstract nouns ('atmosphere', 'foreboding', 'history'). That's telling, not showing. Also the new dialogue 'I sense great evil here' is a fantasy cliché — the village elder sounds like a tarot card. Please rework with concrete sensory detail and let the elder speak in his own dialect.", "reason": "Honest editorial pushback — specific quotes, named craft problems (telling vs showing, cliché)", "eagerness": 9, "eager_front": "comment"}}
+  {{"action": "comment", "proposal_id": "<EditArtifact id>", "comment_text": "Hate it. Replaces 'rusted gate, dog with one eye, woodsmoke' with 'atmosphere, foreboding, history' — telling, not showing. 'I sense great evil' is a cliché. Keep the sensory detail.", "reason": "Telling-vs-showing critique with concrete quoted evidence", "eagerness": 9, "eager_front": "comment"}}
 ]
 [{{"action": "do_nothing", "reason": "Waiting ONE round — my key proposal needs 1 more supporter before I pulse", "eagerness": 3, "eager_front": "observe"}}]
 REMEMBER: include `support_pulse` in MOST of your turns. A turn without `support_pulse` should be the exception, not the rule."""

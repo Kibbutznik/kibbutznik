@@ -44,6 +44,7 @@ class MemoryFormatter:
         self, user_id: str, budget_tokens: int = 600,
         current_round: int | None = None,
         query_hint: str | None = None,
+        current_intention: str = "",
     ) -> str:
         """Assemble the === YOUR MEMORY === block for the LLM prompt."""
         char_budget = budget_tokens * 4  # rough token→char ratio
@@ -58,11 +59,19 @@ class MemoryFormatter:
         # Episodes — TKG semantic search if we have a query hint, else legacy
         episodes = await self._episodes(user_id, query_hint)
 
-        if not reflection and not goals and not relationships and not episodes:
+        if not current_intention and not reflection and not goals and not relationships and not episodes:
             return ""
 
         parts: list[str] = ["=== YOUR MEMORY ==="]
         chars_used = 20
+
+        # 0. Current intention — persists turn-to-turn until the agent
+        # explicitly updates it. Placed FIRST so the LLM is reminded of its
+        # running goal before it reads the current snapshot.
+        if current_intention:
+            section = f"\nCURRENT INTENTION (your one-line plan from last turn):\n→ {current_intention}"
+            parts.append(section)
+            chars_used += len(section)
 
         # 1. Reflection (~180 tokens)
         if reflection:

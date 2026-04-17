@@ -2,18 +2,42 @@
 
 After each agent turn, this module examines the executed actions and the
 community snapshot to produce structured memory entries — no LLM calls.
+
+## Dual-write to the TKG
+
+Every `store.add(...)` call below also fires an `agent.memory_extracted`
+event on the in-process `event_bus`. The `TKGIngestor` subscribes to that
+event and lands an embedding on the referenced TKG node, so agents can
+later semantic-search their own prior reasoning — not just the event-bus
+stubs (proposal_text, comment_text) that the ingestor already embeds.
+
+Gated on `kbz.config.settings.tkg_dual_write` — flip to False to roll
+back cleanly.
 """
 
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from agents.memory import MemoryStore
+from kbz.config import settings
+from kbz.services.event_bus import event_bus
 
 if TYPE_CHECKING:
     from agents.agent import ActionLog
     from agents.community_state import CommunitySnapshot
 
 logger = logging.getLogger(__name__)
+
+
+def _maybe_uuid(value: str | None) -> uuid.UUID | None:
+    """Best-effort coerce a string to UUID. Returns None on failure."""
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError):
+        return None
 
 
 class MemoryExtractor:
@@ -25,6 +49,39 @@ class MemoryExtractor:
         # Track proposal IDs we've already recorded outcomes for (prevents duplicates
         # when recent_accepted/recent_rejected persist across multiple rounds)
         self._recorded_outcomes: set[str] = set()
+
+    async def _dual_write(
+        self,
+        *,
+        user_id: str,
+        content: str,
+        memory_type: str,
+        related_id: str | None,
+        round_num: int,
+        community_id: str | None = None,
+    ) -> None:
+        """Fire an `agent.memory_extracted` event so the TKGIngestor can embed it.
+
+        Single-writer pattern preserved: the extractor never touches the DB
+        directly; it just publishes. Cheap (in-process async queue put),
+        idempotent (ingestor dedupes by node_id + content hash), and
+        flag-gated so a rollback is one config flip.
+        """
+        if not settings.tkg_dual_write:
+            return
+        try:
+            await event_bus.emit(
+                "agent.memory_extracted",
+                community_id=_maybe_uuid(community_id),
+                user_id=_maybe_uuid(user_id),
+                content=content,
+                memory_type=memory_type,
+                related_id=related_id,
+                round_num=round_num,
+            )
+        except Exception as e:
+            # Never let memory extraction fail an agent turn.
+            logger.debug(f"[MemoryExtractor] dual-write emit failed: {e}")
 
     def _name(self, user_id: str | None) -> str:
         if not user_id:
@@ -42,6 +99,13 @@ class MemoryExtractor:
 
         Called once per agent turn, after all actions have been executed.
         """
+        # Cache community_id on self so _add() can attach it to dual-write
+        # events without threading it through every call site. `getattr` is
+        # defensive — tests mock `CommunitySnapshot` with stubs that don't
+        # always carry `community`.
+        community = getattr(snapshot, "community", None) or {}
+        self._turn_community_id = community.get("id") if isinstance(community, dict) else None
+
         for log in action_logs:
             if not log.success:
                 continue
@@ -53,6 +117,43 @@ class MemoryExtractor:
 
         # Observe community-level events from the snapshot
         await self._observe_snapshot(user_id, snapshot, round_num)
+
+    async def _add(
+        self,
+        *,
+        user_id: str,
+        memory_type: str,
+        content: str,
+        importance: float,
+        category: str,
+        round_num: int,
+        related_id: str | None = None,
+        expires_at: int | None = None,
+    ) -> None:
+        """Write a memory entry to the legacy store AND emit dual-write event.
+
+        One-stop wrapper so every extractor call site stays a single call
+        and can't accidentally skip the TKG side. `related_id` is what gets
+        used as the anchor node for the embedding in the TKG.
+        """
+        await self.store.add(
+            user_id=user_id,
+            memory_type=memory_type,
+            content=content,
+            importance=importance,
+            category=category,
+            round_num=round_num,
+            related_id=related_id,
+            **({"expires_at": expires_at} if expires_at is not None else {}),
+        )
+        await self._dual_write(
+            user_id=user_id,
+            content=content,
+            memory_type=memory_type,
+            related_id=related_id,
+            round_num=round_num,
+            community_id=getattr(self, "_turn_community_id", None),
+        )
 
     async def _process_action(
         self,
@@ -72,7 +173,7 @@ class MemoryExtractor:
                 # Check if this targets a Plan artifact
                 is_plan_edit = self._is_plan_edit(log.details, snapshot)
                 if is_plan_edit:
-                    await self.store.add(
+                    await self._add(
                         user_id=user_id,
                         memory_type="goal",
                         content=f"Updated Plan: {short_text}",
@@ -83,7 +184,7 @@ class MemoryExtractor:
                     )
                 else:
                     # Goal: working on a regular artifact
-                    await self.store.add(
+                    await self._add(
                         user_id=user_id,
                         memory_type="goal",
                         content=f"Working on artifact content: {short_text}",
@@ -93,7 +194,7 @@ class MemoryExtractor:
                         related_id=log.ref_id,
                     )
             elif ptype == "AddAction":
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"I proposed creating a new action: {short_text}",
@@ -103,7 +204,7 @@ class MemoryExtractor:
                     related_id=log.ref_id,
                 )
             elif ptype == "AddStatement":
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"I proposed a new community rule: {short_text}",
@@ -113,7 +214,7 @@ class MemoryExtractor:
                     related_id=log.ref_id,
                 )
             elif ptype in ("DelegateArtifact", "CommitArtifact"):
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"I proposed {ptype}: {short_text}",
@@ -123,7 +224,7 @@ class MemoryExtractor:
                     related_id=log.ref_id,
                 )
             elif ptype == "JoinAction":
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="goal",
                     content=f"Joining action to contribute: {short_text}",
@@ -134,7 +235,7 @@ class MemoryExtractor:
                 )
             else:
                 # Generic proposal
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"I proposed [{ptype}]: {short_text}",
@@ -162,7 +263,7 @@ class MemoryExtractor:
                         importance=new_importance,
                     )
                 else:
-                    await self.store.add(
+                    await self._add(
                         user_id=user_id,
                         memory_type="relationship",
                         content=f"I supported their {ptype} proposal",
@@ -176,7 +277,7 @@ class MemoryExtractor:
             # Low-importance episodic — only record if it seems meaningful
             msg = self._extract_quote(log.details, 60)
             if len(msg) > 20:  # skip trivially short chat
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"I said in chat: \"{msg}\"",
@@ -187,7 +288,7 @@ class MemoryExtractor:
                 )
 
         elif log.action_type == "comment":
-            await self.store.add(
+            await self._add(
                 user_id=user_id,
                 memory_type="episodic",
                 content=f"I commented on proposal {(log.ref_id or '')[:8]}: {self._extract_quote(log.details, 60)}",
@@ -218,7 +319,7 @@ class MemoryExtractor:
                 self._recorded_outcomes.add(pid)
                 ptype = p.get("proposal_type", "?")
                 ptext = (p.get("proposal_text") or "")[:60]
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"My {ptype} proposal was ACCEPTED: \"{ptext}\"",
@@ -230,7 +331,7 @@ class MemoryExtractor:
                 # If it was an EditArtifact, mark the goal as progressing
                 if ptype == "EditArtifact":
                     is_plan = self._is_plan_edit_from_proposal(p)
-                    await self.store.add(
+                    await self._add(
                         user_id=user_id,
                         memory_type="goal",
                         content=f"Plan accepted: \"{ptext}\"" if is_plan else f"Artifact content accepted: \"{ptext}\"",
@@ -247,7 +348,7 @@ class MemoryExtractor:
                 self._recorded_outcomes.add(pid)
                 ptype = p.get("proposal_type", "?")
                 ptext = (p.get("proposal_text") or "")[:60]
-                await self.store.add(
+                await self._add(
                     user_id=user_id,
                     memory_type="episodic",
                     content=f"My {ptype} proposal was REJECTED: \"{ptext}\"",
