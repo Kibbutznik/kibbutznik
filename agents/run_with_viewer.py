@@ -345,6 +345,7 @@ Examples:
         communities,
         members,
         memory,
+        metrics,
         proposals,
         pulses,
         statements,
@@ -370,6 +371,7 @@ Examples:
     combined_app.include_router(artifacts.router)
     combined_app.include_router(memory.router, tags=["memory"])
     combined_app.include_router(tkg.router)
+    combined_app.include_router(metrics.router)
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

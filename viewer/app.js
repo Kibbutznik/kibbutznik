@@ -2353,6 +2353,159 @@ function WorkTab({ communityId, openDetail, bbUserId }) {
     );
 }
 
+// ── Metrics Tab ─────────────────────────────────────────
+// Reads /metrics/community/{id} and renders a grid of governance-health
+// numbers: proposal throughput, rejection rate, sybil-suspicion, deadlock
+// counter, time-to-quorum percentiles, and closeness distribution stats.
+// Auto-refreshes on the same kbz-refresh event as WorkTab.
+function MetricsTab({ communityId }) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const reload = useCallback((showSpinner = true) => {
+        if (!communityId) return;
+        if (showSpinner) setLoading(true);
+        setError(null);
+        return API.get(`/metrics/community/${communityId}`)
+            .then(setData)
+            .catch(e => { setError(String(e)); setData(null); })
+            .finally(() => { if (showSpinner) setLoading(false); });
+    }, [communityId]);
+
+    useEffect(() => { reload(true); }, [reload]);
+    useEffect(() => {
+        if (!communityId) return;
+        let pending = null;
+        const handler = () => {
+            if (pending) return;
+            pending = setTimeout(() => { pending = null; reload(false); }, 600);
+        };
+        window.addEventListener("kbz-refresh", handler);
+        return () => {
+            window.removeEventListener("kbz-refresh", handler);
+            if (pending) clearTimeout(pending);
+        };
+    }, [communityId, reload]);
+
+    // Helpers to color a metric by whether the value is healthy
+    const healthColor = (val, { good, ok }) => {
+        // val is compared: if lower=better, good = low threshold, ok = higher one
+        if (val === null || val === undefined) return "var(--text-muted)";
+        if (val <= good) return "#4ecca3";
+        if (val <= ok) return "#f0c040";
+        return "#e94560";
+    };
+    const inverseColor = (val, { good, ok }) => {
+        // For metrics where HIGHER is better (throughput)
+        if (val === null || val === undefined) return "var(--text-muted)";
+        if (val >= good) return "#4ecca3";
+        if (val >= ok) return "#f0c040";
+        return "#e94560";
+    };
+
+    if (loading && !data) return <div className="card">Loading metrics…</div>;
+    if (error) return <div className="card" style={{ color: "#f88" }}>Error: {error}</div>;
+    if (!data) return <div className="card" style={{ color: "#888" }}>No metrics yet.</div>;
+
+    const cards = [
+        {
+            label: "Proposal Throughput",
+            value: data.proposal_throughput.toFixed(2),
+            unit: "accepted / pulse",
+            color: inverseColor(data.proposal_throughput, { good: 0.5, ok: 0.2 }),
+            tooltip: "Accepted proposals per completed pulse. Healthy communities land in [0.5, 3.0]; < 0.2 is a deadlock indicator.",
+        },
+        {
+            label: "Rejection Rate",
+            value: (data.rejection_rate * 100).toFixed(0) + "%",
+            unit: "rejected / decided",
+            color: healthColor(data.rejection_rate, { good: 0.4, ok: 0.6 }),
+            tooltip: "Rejected / (accepted + rejected). 0-40% healthy. >60% means the community is blocking itself.",
+        },
+        {
+            label: "Deadlock",
+            value: data.deadlock_pulses,
+            unit: "pulses since last accept",
+            color: healthColor(data.deadlock_pulses, { good: 2, ok: 5 }),
+            tooltip: "Pulses elapsed since the last proposal was accepted. 0 = just accepted something. 5+ = stuck.",
+        },
+        {
+            label: "Sybil Suspicion",
+            value: data.sybil_suspicion_score.toFixed(2),
+            unit: `max co-support ${(data.max_cosupport_ratio * 100).toFixed(0)}%`,
+            color: healthColor(data.sybil_suspicion_score, { good: 0.4, ok: 0.7 }),
+            tooltip: "Max pairwise co-support ratio × sqrt(shared-count/20). Flags coordinated voting. Combined with low closeness stddev = real signal.",
+        },
+        {
+            label: "Time-to-Quorum p50",
+            value: data.ttq_p50 === null ? "—" : data.ttq_p50.toFixed(1),
+            unit: "pulses (median)",
+            color: healthColor(data.ttq_p50, { good: 2, ok: 4 }),
+            tooltip: "Median pulses an accepted proposal spent in OutThere before reaching quorum. Lower = healthier.",
+        },
+        {
+            label: "Time-to-Quorum p95",
+            value: data.ttq_p95 === null ? "—" : data.ttq_p95.toFixed(1),
+            unit: "pulses (95th %ile)",
+            color: healthColor(data.ttq_p95, { good: 4, ok: 8 }),
+            tooltip: "95th-percentile time-to-quorum. High values mean hard-to-pass proposals that eventually pass.",
+        },
+        {
+            label: "Closeness Mean",
+            value: data.closeness_mean.toFixed(2),
+            unit: `${data.closeness_pairs} pairs`,
+            color: "var(--green)",
+            tooltip: "Average agreement score across all pairs. -1 to +1. Drifts toward the community's average pairwise agreement.",
+        },
+        {
+            label: "Closeness σ (stddev)",
+            value: data.closeness_stddev.toFixed(2),
+            unit: "real coalitions?",
+            color: "var(--green)",
+            tooltip: "Higher stddev = real coalitions exist. Near 0 = everyone agrees (or nobody does). Combined with sybil suspicion = strong signal.",
+        },
+    ];
+
+    return (
+        <div className="card">
+            <div style={{ marginBottom: "1rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                <strong style={{ color: "var(--text)" }}>Governance Health</strong> &middot; {data.pulses_fired} pulses fired &middot; {data.member_count} members &middot; {data.proposals_total} total proposals ({data.proposals_accepted} ✓ / {data.proposals_rejected} ✗ / {data.proposals_canceled} canceled / {data.proposals_in_flight} in flight)
+            </div>
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: "0.75rem",
+            }}>
+                {cards.map((c, i) => (
+                    <div key={i} title={c.tooltip}
+                        style={{
+                            padding: "0.9rem",
+                            background: "#181818",
+                            border: `1px solid ${c.color}33`,
+                            borderRadius: 6,
+                            borderLeft: `3px solid ${c.color}`,
+                        }}>
+                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                            {c.label}
+                        </div>
+                        <div style={{ fontSize: "1.6rem", fontWeight: 700, color: c.color, lineHeight: 1.1 }}>
+                            {c.value}
+                        </div>
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 4 }}>
+                            {c.unit}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                Hover a card for its definition. Green = healthy, yellow = concerning, red = unhealthy. Live-refreshes on every pulse.
+            </div>
+        </div>
+    );
+}
+
+
 // ── Tab Navigation ──────────────────────────────────────
 function TabNav({ activeTab, setActiveTab }) {
     const tabs = [
@@ -2367,6 +2520,7 @@ function TabNav({ activeTab, setActiveTab }) {
         { id: "interview", label: "Interview" },
         { id: "timeline", label: "Timeline" },
         { id: "relationships", label: "Relationships" },
+        { id: "metrics", label: "Metrics" },
     ];
     return (
         <div className="tab-nav">
@@ -3982,6 +4136,9 @@ function App() {
                     </div>
                     <div style={{ display: activeTab === "relationships" ? undefined : "none" }}>
                         <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />
+                    </div>
+                    <div style={{ display: activeTab === "metrics" ? undefined : "none" }}>
+                        <MetricsTab communityId={communityId} />
                     </div>
                 </div>
             </div>

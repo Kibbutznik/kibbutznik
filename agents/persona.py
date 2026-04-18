@@ -78,6 +78,12 @@ def load_persona(filepath: str) -> Persona:
 
 
 def load_all_personas(directory: str | None = None) -> list[Persona]:
+    """Load the default cooperative-persona roster.
+
+    Intentionally skips the `adversarial/` subdirectory so regular
+    simulations aren't poisoned with trolls / sybils / free-riders by
+    default. Use `load_adversarial_personas()` to opt in.
+    """
     if directory is None:
         directory = str(Path(__file__).parent / "personas")
     personas = []
@@ -85,6 +91,23 @@ def load_all_personas(directory: str | None = None) -> list[Persona]:
         if filename.endswith((".yaml", ".yml")):
             personas.append(load_persona(os.path.join(directory, filename)))
     return personas
+
+
+def load_adversarial_personas() -> list[Persona]:
+    """Load the opt-in adversarial persona roster.
+
+    Used by the eval suite and the replay harness to stress-test
+    governance under hostile actors: Troll (Yoni), FreeRider (Shira),
+    and a sybil pair (Tal + Noa) that co-support each other silently.
+    """
+    directory = Path(__file__).parent / "personas" / "adversarial"
+    if not directory.exists():
+        return []
+    out = []
+    for filename in sorted(os.listdir(directory)):
+        if filename.endswith((".yaml", ".yml")):
+            out.append(load_persona(str(directory / filename)))
+    return out
 
 
 # Extra names used when the requested member count exceeds the number of YAML personas.
