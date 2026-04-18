@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, DateTime, text
+from sqlalchemy import Boolean, String, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,4 +16,10 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     about: Mapped[str] = mapped_column(String(1000), nullable=True, default="")
     wallet_address: Mapped[str] = mapped_column(String(255), nullable=True, default="")
+    # Human-auth fields (Track C). NULL/False for agent users. Populated
+    # when a human claims a magic link or an invite.
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    is_human: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))

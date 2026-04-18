@@ -3826,6 +3826,301 @@ function NewsTicker({ openDetail, setActiveTab, agentsByName }) {
     );
 }
 
+// ── Auth header + login modal + invite claim (Track C MVP) ─────────
+//
+// These pieces let a real human log in via magic link, generate invite
+// links for a community, and claim an invite link to auto-file a
+// Membership proposal. All write buttons in the viewer already accept
+// a user_id body parameter; we simply make `bbUserId` resolve to the
+// logged-in human's id when present, so Support / Comment / Commit
+// "just work" for humans without touching those write paths.
+
+function AuthHeader({ authUser, onLogin, onLogout, onInvite, communityId }) {
+    return (
+        <div style={{
+            position: "fixed", top: 0, right: 0, zIndex: 700,
+            padding: "8px 14px", background: "rgba(15,52,96,.85)",
+            borderBottomLeftRadius: 8,
+            border: "1px solid rgba(78,204,163,.25)",
+            fontSize: "0.82rem", display: "flex", gap: "0.6rem", alignItems: "center",
+        }}>
+            {authUser ? (
+                <>
+                    <span style={{ color: "var(--green)" }}>👤 {authUser.user_name}</span>
+                    {communityId && (
+                        <button className="link-btn" onClick={onInvite}
+                            style={{ fontSize: "0.78rem", padding: "2px 8px", background: "rgba(78,204,163,.12)", border: "1px solid rgba(78,204,163,.3)", borderRadius: 4 }}>
+                            + Invite
+                        </button>
+                    )}
+                    <button className="link-btn" onClick={onLogout} style={{ fontSize: "0.78rem" }}>
+                        Log out
+                    </button>
+                </>
+            ) : (
+                <button className="link-btn" onClick={onLogin}
+                    style={{ fontSize: "0.82rem", padding: "4px 12px", background: "rgba(233,69,96,.15)", border: "1px solid rgba(233,69,96,.4)", borderRadius: 4, color: "var(--white)" }}>
+                    Log in
+                </button>
+            )}
+        </div>
+    );
+}
+
+function LoginModal({ open, onClose, onLoggedIn }) {
+    const [email, setEmail] = useState("");
+    const [sending, setSending] = useState(false);
+    const [link, setLink] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (!open) { setEmail(""); setLink(null); setError(null); setSending(false); }
+    }, [open]);
+
+    if (!open) return null;
+
+    const submit = async (e) => {
+        e?.preventDefault?.();
+        setSending(true);
+        setError(null);
+        try {
+            const resp = await API.post("/auth/request-magic-link", { email });
+            if (resp.link) {
+                setLink(resp.link);
+            } else {
+                setError("Link sent (check email). Dev mode should expose it; none returned.");
+            }
+        } catch (err) {
+            setError(String(err));
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const goVerify = async () => {
+        try {
+            await API.get(link);
+            // Verifying sets the httpOnly cookie; fetch /auth/me to confirm
+            const me = await API.get("/auth/me");
+            if (me.user) {
+                onLoggedIn(me.user);
+                onClose();
+            }
+        } catch (err) {
+            setError(String(err));
+        }
+    };
+
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 900,
+            background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={onClose}>
+            <div style={{
+                background: "var(--bg2, #16213e)", border: "1px solid rgba(78,204,163,.3)",
+                borderRadius: 10, padding: "1.4rem", maxWidth: 420, width: "90%",
+            }} onClick={(e) => e.stopPropagation()}>
+                <h3 style={{ marginTop: 0, color: "var(--white)" }}>Log in with a magic link</h3>
+                {!link && (
+                    <form onSubmit={submit}>
+                        <input type="email" required placeholder="you@example.com"
+                            value={email} onChange={(e) => setEmail(e.target.value)}
+                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #444", background: "#111", color: "#eee", fontSize: "0.9rem" }} />
+                        <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
+                            <button type="submit" disabled={sending || !email}
+                                className="cta-btn" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>
+                                {sending ? "Sending…" : "Send link"}
+                            </button>
+                            <button type="button" onClick={onClose} className="link-btn" style={{ fontSize: "0.85rem" }}>
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                )}
+                {link && (
+                    <div>
+                        <p style={{ color: "#aaa", fontSize: "0.85rem" }}>
+                            In production this would be emailed. For dev, click to log in:
+                        </p>
+                        <button onClick={goVerify} className="cta-btn"
+                            style={{ fontSize: "0.88rem", padding: "0.5rem 1rem", marginTop: "0.4rem" }}>
+                            🔑 Use magic link
+                        </button>
+                    </div>
+                )}
+                {error && <div style={{ color: "#f88", marginTop: "0.6rem", fontSize: "0.85rem" }}>{error}</div>}
+            </div>
+        </div>
+    );
+}
+
+function InviteModal({ open, onClose, communityId }) {
+    const [inviteUrl, setInviteUrl] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (!open || !communityId) { setInviteUrl(null); setError(null); return; }
+        (async () => {
+            try {
+                const resp = await API.post(`/communities/${communityId}/invites`, {});
+                // Build a shareable URL using the current origin + viewer path
+                const base = window.location.origin + (BASE || "") + "/viewer/";
+                setInviteUrl(`${base}?invite=${resp.code}`);
+            } catch (err) {
+                setError(String(err));
+            }
+        })();
+    }, [open, communityId]);
+
+    if (!open) return null;
+
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 900,
+            background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={onClose}>
+            <div style={{
+                background: "var(--bg2, #16213e)", border: "1px solid rgba(78,204,163,.3)",
+                borderRadius: 10, padding: "1.4rem", maxWidth: 520, width: "90%",
+            }} onClick={(e) => e.stopPropagation()}>
+                <h3 style={{ marginTop: 0, color: "var(--white)" }}>Invite someone to this community</h3>
+                {inviteUrl ? (
+                    <>
+                        <p style={{ fontSize: "0.85rem", color: "#aaa" }}>
+                            Share this link. Anyone who opens it can claim a spot — a Membership
+                            proposal will be filed, and the community votes like any other.
+                        </p>
+                        <input readOnly value={inviteUrl}
+                            onClick={(e) => e.target.select()}
+                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #444", background: "#111", color: "#4ecca3", fontSize: "0.82rem", fontFamily: "monospace" }} />
+                        <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
+                            <button onClick={() => { navigator.clipboard?.writeText(inviteUrl); }}
+                                className="cta-btn" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>
+                                📋 Copy
+                            </button>
+                            <button onClick={onClose} className="link-btn" style={{ fontSize: "0.85rem" }}>
+                                Done
+                            </button>
+                        </div>
+                    </>
+                ) : error ? (
+                    <div style={{ color: "#f88", fontSize: "0.85rem" }}>Failed: {error}</div>
+                ) : (
+                    <div style={{ color: "#aaa" }}>Creating invite…</div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function InviteClaimModal({ code, onClose, onLoggedIn }) {
+    const [preview, setPreview] = useState(null);
+    const [email, setEmail] = useState("");
+    const [verifyLink, setVerifyLink] = useState(null);
+    const [error, setError] = useState(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!code) return;
+        (async () => {
+            try {
+                const p = await API.get(`/invites/${code}`);
+                setPreview(p);
+            } catch (err) {
+                setError(String(err));
+            }
+        })();
+    }, [code]);
+
+    if (!code) return null;
+
+    const submit = async (e) => {
+        e?.preventDefault?.();
+        setSubmitting(true);
+        setError(null);
+        try {
+            const resp = await API.post("/invites/claim", { invite_code: code, email });
+            setVerifyLink(resp.verify_link);
+        } catch (err) {
+            setError(String(err));
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const verifyAndLogin = async () => {
+        try {
+            await API.get(verifyLink);
+            const me = await API.get("/auth/me");
+            if (me.user) {
+                onLoggedIn(me.user);
+                // Clear the ?invite=... from the URL so reload doesn't re-prompt
+                const url = new URL(window.location.href);
+                url.searchParams.delete("invite");
+                window.history.replaceState({}, "", url.toString());
+                onClose();
+            }
+        } catch (err) {
+            setError(String(err));
+        }
+    };
+
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 900,
+            background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+            <div style={{
+                background: "var(--bg2, #16213e)", border: "1px solid rgba(78,204,163,.3)",
+                borderRadius: 10, padding: "1.4rem", maxWidth: 460, width: "90%",
+            }}>
+                {preview && !preview.claimed && (
+                    <h3 style={{ marginTop: 0, color: "var(--white)" }}>
+                        Join <span style={{ color: "var(--green)" }}>{preview.community_name}</span>?
+                    </h3>
+                )}
+                {preview && preview.claimed && (
+                    <div style={{ color: "#f88" }}>This invite has already been used.</div>
+                )}
+                {!preview && !error && <div style={{ color: "#aaa" }}>Loading invite…</div>}
+                {error && <div style={{ color: "#f88", fontSize: "0.85rem" }}>{error}</div>}
+                {preview && !preview.claimed && !verifyLink && (
+                    <form onSubmit={submit}>
+                        <p style={{ fontSize: "0.85rem", color: "#aaa" }}>
+                            A Membership proposal will be filed on your behalf. Existing
+                            members vote — if they approve, you're in.
+                        </p>
+                        <input type="email" required placeholder="you@example.com"
+                            value={email} onChange={(e) => setEmail(e.target.value)}
+                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #444", background: "#111", color: "#eee", fontSize: "0.9rem" }} />
+                        <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
+                            <button type="submit" disabled={submitting || !email}
+                                className="cta-btn" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>
+                                {submitting ? "Claiming…" : "Claim & apply"}
+                            </button>
+                            <button type="button" onClick={onClose} className="link-btn" style={{ fontSize: "0.85rem" }}>
+                                Not now
+                            </button>
+                        </div>
+                    </form>
+                )}
+                {verifyLink && (
+                    <div>
+                        <p style={{ color: "var(--green)", fontSize: "0.88rem" }}>
+                            Membership proposal filed. Click to activate your account:
+                        </p>
+                        <button onClick={verifyAndLogin} className="cta-btn"
+                            style={{ fontSize: "0.88rem", padding: "0.5rem 1rem" }}>
+                            🔑 Activate &amp; enter
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+
 // ── Main App ────────────────────────────────────────────
 function App() {
     const [activeTab, setActiveTab] = useState("dashboard");
@@ -3837,6 +4132,26 @@ function App() {
     const [paused, setPaused] = useState(false);
     const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
+
+    // ── Track C auth state ──
+    const [authUser, setAuthUser] = useState(null);
+    const [loginOpen, setLoginOpen] = useState(false);
+    const [inviteOpen, setInviteOpen] = useState(false);
+    // Pick up ?invite=<code> from URL on first render (one-time)
+    const [pendingInviteCode, setPendingInviteCode] = useState(() => {
+        try {
+            const p = new URLSearchParams(window.location.search);
+            return p.get("invite") || null;
+        } catch { return null; }
+    });
+    // Bootstrap — check session on load
+    useEffect(() => {
+        API.get("/auth/me").then(r => setAuthUser(r.user || null)).catch(() => {});
+    }, []);
+    const handleLogout = useCallback(async () => {
+        try { await API.post("/auth/logout", {}); } catch {}
+        setAuthUser(null);
+    }, []);
 
     // Scoped community navigation (for action sub-communities)
     const [activeCommunityId, setActiveCommunityId] = useState(null);
@@ -3881,7 +4196,11 @@ function App() {
     }, [agents, status]);
 
     const rootCommunityId = status?.community?.id;
-    const bbUserId = status?.bb_user_id || null;
+    // When a human is logged in, their user_id acts as the write-principal
+    // for every existing endpoint that accepts user_id in the body
+    // (Support, Comment, Commit, ...). Falls back to the synthetic
+    // bb_user_id pre-existing on /simulation/status when not logged in.
+    const bbUserId = authUser?.user_id || status?.bb_user_id || null;
     const effectiveCommunityId = activeCommunityId || rootCommunityId;
     // For backward compat, keep communityId pointing to effective
     const communityId = effectiveCommunityId;
@@ -4064,6 +4383,21 @@ function App() {
                 restarting={restarting}
             />
             <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} agentsByName={agentsByName} />
+            <AuthHeader authUser={authUser}
+                onLogin={() => setLoginOpen(true)}
+                onLogout={handleLogout}
+                onInvite={() => setInviteOpen(true)}
+                communityId={rootCommunityId}
+            />
+            <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)}
+                onLoggedIn={(u) => setAuthUser(u)} />
+            <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)}
+                communityId={rootCommunityId} />
+            {pendingInviteCode && !authUser && (
+                <InviteClaimModal code={pendingInviteCode}
+                    onClose={() => setPendingInviteCode(null)}
+                    onLoggedIn={(u) => { setAuthUser(u); setPendingInviteCode(null); }} />
+            )}
             <ActionBreadcrumb
                 activeCommunityId={activeCommunityId}
                 rootCommunityId={rootCommunityId}

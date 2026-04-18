@@ -14,6 +14,7 @@ from kbz.models.artifact_container import ArtifactContainer
 from kbz.models.artifact import Artifact
 from kbz.models.agent_memory import AgentMemory
 from kbz.models.tkg import TKGEdge, TKGEmbedding, TKGNode, TKGNodeKind, TKGRelation
+from kbz.models.auth import AuthToken, Invite
 
 __all__ = [
     "Base",
@@ -37,4 +38,6 @@ __all__ = [
     "TKGEmbedding",
     "TKGNodeKind",
     "TKGRelation",
+    "AuthToken",
+    "Invite",
 ]

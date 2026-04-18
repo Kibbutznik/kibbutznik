@@ -340,9 +340,11 @@ Examples:
     from kbz.routers import (
         actions,
         artifacts,
+        auth,
         closeness,
         comments,
         communities,
+        invites,
         members,
         memory,
         metrics,
@@ -372,6 +374,8 @@ Examples:
     combined_app.include_router(memory.router, tags=["memory"])
     combined_app.include_router(tkg.router)
     combined_app.include_router(metrics.router)
+    combined_app.include_router(auth.router)
+    combined_app.include_router(invites.router)
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

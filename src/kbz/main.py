@@ -8,9 +8,11 @@ from kbz.database import async_session
 from kbz.routers import (
     actions,
     artifacts,
+    auth,
     closeness,
     comments,
     communities,
+    invites,
     members,
     memory,
     metrics,
@@ -53,6 +55,8 @@ app.include_router(artifacts.router)
 app.include_router(memory.router, tags=["memory"])
 app.include_router(tkg.router)
 app.include_router(metrics.router)
+app.include_router(auth.router)
+app.include_router(invites.router)
 app.include_router(ws.router, tags=["websocket"])
 
 

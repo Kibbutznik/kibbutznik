@@ -16,6 +16,20 @@ class Settings(BaseSettings):
     tkg_semantic_timeout_ms: int = 300
     tkg_base_url: str = "http://localhost:8000"
 
+    # --- Human auth (Track C) ---
+    # Session lifetime — cookie + DB token — deliberately short so a
+    # leaked cookie has limited blast radius. Magic links are even
+    # shorter (15 min).
+    auth_session_ttl_minutes: int = 60 * 24 * 7       # 7 days
+    auth_magic_link_ttl_minutes: int = 15
+    auth_invite_ttl_hours: int = 72
+    # In dev mode, /auth/request-magic-link returns the verify URL in
+    # the JSON response. In prod this should be FALSE and an SMTP
+    # integration should email the link instead.
+    auth_dev_expose_magic_link: bool = True
+    # Cookie name used for the session. Keep stable.
+    auth_session_cookie: str = "kbz_session"
+
     model_config = {"env_prefix": "KBZ_"}
 
 
