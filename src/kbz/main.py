@@ -22,6 +22,8 @@ from kbz.routers import (
     statements,
     tkg,
     users,
+    wallet_webhook,
+    wallets,
     ws,
 )
 from kbz.services.artifact_service import ArtifactService
@@ -59,6 +61,8 @@ app.include_router(metrics.router)
 app.include_router(auth.router)
 app.include_router(invites.router)
 app.include_router(me.router)
+app.include_router(wallets.router)
+app.include_router(wallet_webhook.router)
 app.include_router(ws.router, tags=["websocket"])
 
 

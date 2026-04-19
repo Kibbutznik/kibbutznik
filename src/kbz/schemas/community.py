@@ -12,6 +12,11 @@ class CommunityCreate(BaseModel):
     # content this community is supposed to produce. Only used for root
     # communities (parent_id == ZERO_UUID); ignored for sub-actions.
     initial_artifact_mission: str | None = None
+    # If True, sets `variables['Financial'] = 'internal'` at creation
+    # time so the founder doesn't need to file a ChangeVariable
+    # proposal against themselves at t=0. Default False keeps
+    # existing API callers (simulation, agents) non-financial.
+    enable_financial: bool = False
 
 
 class CommunityResponse(BaseModel):

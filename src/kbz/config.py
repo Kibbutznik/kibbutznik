@@ -51,6 +51,20 @@ class Settings(BaseSettings):
     # Cookie name used for the session. Keep stable.
     auth_session_cookie: str = "kbz_session"
 
+    # --- Finance module (opt-in; Phase 1 = internal credits) ---
+    # One-time gift to every new human user on first sign-in. Makes
+    # the escrow-on-apply membership-fee flow tractable without real
+    # money. Set to 0 to disable.
+    welcome_credits: str = "100"   # stringified Decimal, parsed by WalletService
+    # HMAC secret for /webhooks/wallet-deposit. In prod MUST be
+    # rotated to a high-entropy random. Empty string disables the
+    # webhook endpoint entirely (returns 503).
+    webhook_secret: str = ""
+    # Which WalletBacking to instantiate when a community's
+    # `Financial` variable is "internal". Phase 2+ will route to
+    # "safe" / "stripe" based on the variable value itself.
+    wallet_backing: str = "internal"
+
     model_config = {"env_prefix": "KBZ_"}
 
 

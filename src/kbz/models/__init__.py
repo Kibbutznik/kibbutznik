@@ -16,6 +16,7 @@ from kbz.models.agent_memory import AgentMemory
 from kbz.models.tkg import TKGEdge, TKGEmbedding, TKGNode, TKGNodeKind, TKGRelation
 from kbz.models.auth import AuthToken, Invite
 from kbz.models.bot_profile import BotProfile
+from kbz.models.wallet import LedgerEntry, Wallet, WalletWebhookEvent
 
 __all__ = [
     "Base",
@@ -42,4 +43,7 @@ __all__ = [
     "AuthToken",
     "Invite",
     "BotProfile",
+    "Wallet",
+    "LedgerEntry",
+    "WalletWebhookEvent",
 ]

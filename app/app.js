@@ -240,6 +240,7 @@ function DashboardPage({ user }) {
     const [pendingApps, setPendingApps] = useState([]);
     const [sentInvites, setSentInvites] = useState([]);
     const [bots, setBots] = useState([]);
+    const [wallet, setWallet] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -248,17 +249,19 @@ function DashboardPage({ user }) {
         (async () => {
             setLoading(true);
             try {
-                const [m, a, s, b] = await Promise.all([
+                const [m, a, s, b, w] = await Promise.all([
                     api.get("/users/me/memberships"),
                     api.get("/users/me/pending-applications"),
                     api.get("/users/me/sent-invites"),
                     api.get("/users/me/bots"),
+                    api.get("/users/me/wallet").catch(() => null),
                 ]);
                 if (cancelled) return;
                 setMemberships(m);
                 setPendingApps(a);
                 setSentInvites(s);
                 setBots(b);
+                setWallet(w);
             } catch (e) { setError(e.message); }
             finally { if (!cancelled) setLoading(false); }
         })();
@@ -278,6 +281,26 @@ function DashboardPage({ user }) {
                 </div>
             </div>
             <ErrorBanner error={error} />
+
+            {wallet && parseFloat(wallet.balance) > 0 && (
+                <section style={{ marginBottom: "1.5rem" }}>
+                    <div className="card" style={{
+                        background: "var(--accent-soft)",
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                    }}>
+                        <div>
+                            <div className="muted" style={{ fontSize: "0.85rem" }}>💰 My credits</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--accent)" }}>
+                                {parseFloat(wallet.balance).toFixed(2)}
+                            </div>
+                        </div>
+                        <div className="muted" style={{ fontSize: "0.82rem", textAlign: "right", maxWidth: 300 }}>
+                            Used to pay membership fees when applying to financial kibbutzim.
+                            Grows via welcome gift, dividends, and webhook-backed deposits.
+                        </div>
+                    </div>
+                </section>
+            )}
 
             <section style={{ marginBottom: "1.5rem" }}>
                 <h3>Your kibbutzim</h3>
@@ -459,6 +482,7 @@ function BrowsePage({ user }) {
 function CreateKibbutzPage({ user }) {
     const [name, setName] = useState("");
     const [mission, setMission] = useState("");
+    const [enableFinancial, setEnableFinancial] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
 
@@ -470,6 +494,7 @@ function CreateKibbutzPage({ user }) {
                 name: name.trim(),
                 founder_user_id: user.user_id,
                 initial_artifact_mission: mission.trim() || null,
+                enable_financial: enableFinancial,
             });
             navigate(`#/kibbutz/${community.id}`);
         } catch (err) { setError(err.message); }
@@ -495,6 +520,19 @@ function CreateKibbutzPage({ user }) {
                     <textarea className="input" rows={4}
                               placeholder="What will this kibbutz work on together? (This becomes the briefing for any artifact work.)"
                               value={mission} onChange={(e) => setMission(e.target.value)} />
+                </label>
+                <label className="row" style={{ alignItems: "flex-start", gap: "0.5rem", padding: "0.5rem", background: "rgba(78,204,163,0.08)", borderRadius: 6 }}>
+                    <input type="checkbox" checked={enableFinancial}
+                           onChange={(e) => setEnableFinancial(e.target.checked)}
+                           style={{ marginTop: 2 }} />
+                    <div>
+                        <div className="bold">💰 Enable finance module</div>
+                        <div className="muted" style={{ fontSize: "0.82rem" }}>
+                            Adds a community wallet, funding requests from child actions,
+                            payment proposals, dividends, and escrow-based membership fees.
+                            You can enable this later via a ChangeVariable proposal too.
+                        </div>
+                    </div>
                 </label>
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                     <a href="#/dashboard" className="btn ghost">Cancel</a>
@@ -532,25 +570,40 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
         [user, members],
     );
 
+    const [variables, setVariables] = useState({});
     const reload = useCallback(async () => {
         setError(null);
         try {
-            const [c, m, p, s] = await Promise.all([
+            const [c, m, p, s, v] = await Promise.all([
                 api.get(`/communities/${communityId}`),
                 api.get(`/communities/${communityId}/members`),
                 api.get(`/communities/${communityId}/proposals`),
                 api.get(`/communities/${communityId}/statements`),
+                api.get(`/communities/${communityId}/variables`),
             ]);
             setCommunity(c);
             setMembers(m);
             setProposals(p);
             setStatements(s);
+            setVariables(v.variables || {});
         } catch (e) { setError(e.message); }
     }, [communityId]);
     useEffect(() => { reload(); }, [reload]);
 
+    const isFinancial = (variables?.Financial || "false") !== "false"
+                     && (variables?.Financial || "") !== "";
+    const membershipFee = parseFloat(variables?.membershipFee || "0") || 0;
+
     const apply = async () => {
         if (!user) { navigate("#/login"); return; }
+        if (isFinancial && membershipFee > 0) {
+            const ok = confirm(
+                `This kibbutz charges a ${membershipFee} credit membership fee. ` +
+                `Applying will escrow ${membershipFee} credits until the community votes. ` +
+                `If accepted, the fee is kept by the community. If rejected or expired, you get it back.\n\nProceed?`,
+            );
+            if (!ok) return;
+        }
         setApplyBusy(true);
         try {
             await api.post(`/communities/${communityId}/proposals`, {
@@ -617,14 +670,19 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             )}
             <ErrorBanner error={error} />
             <div className="row" style={{ margin: "1rem 0", borderBottom: "1px solid var(--border)" }}>
-                {(imMember ? ["proposals", "members", "statements", "bot"] : ["proposals", "members", "statements"]).map(t => (
+                {(() => {
+                    const base = ["proposals", "members", "statements"];
+                    if (isFinancial) base.push("treasury");
+                    if (imMember) base.push("bot");
+                    return base;
+                })().map(t => (
                     <button key={t} className={"btn ghost" + (tab === t ? " bold" : "")}
                         onClick={() => setTab(t)}
                         style={{
                             borderRadius: 0,
                             borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
                         }}>
-                        {t === "bot" ? "🤖 My bot" : t[0].toUpperCase() + t.slice(1)}
+                        {t === "bot" ? "🤖 My bot" : t === "treasury" ? "💰 Treasury" : t[0].toUpperCase() + t.slice(1)}
                     </button>
                 ))}
             </div>
@@ -658,6 +716,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             )}
             {tab === "bot" && imMember && (
                 <BotConfigPanel communityId={communityId} user={user} />
+            )}
+            {tab === "treasury" && isFinancial && (
+                <TreasuryPanel communityId={communityId} imMember={imMember} user={user} />
             )}
         </div>
     );
@@ -733,6 +794,94 @@ function Slider({ label, value, onChange, hint }) {
                    style={{ width: "100%" }} />
             {hint && <div className="muted" style={{ fontSize: "0.8rem" }}>{hint}</div>}
         </label>
+    );
+}
+
+// ── Treasury panel ──────────────────────────────────────
+function TreasuryPanel({ communityId, imMember, user }) {
+    const [wallet, setWallet] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const reload = useCallback(async () => {
+        setLoading(true); setError(null);
+        try {
+            const w = await api.get(`/communities/${communityId}/wallet`);
+            setWallet(w);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [communityId]);
+    useEffect(() => { reload(); }, [reload]);
+
+    if (loading) return <div className="muted">Loading treasury…</div>;
+    if (error) return <ErrorBanner error={error} />;
+    if (!wallet) return null;
+
+    return (
+        <div className="stack">
+            <div className="card">
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                    <div>
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>Community balance</div>
+                        <div style={{ fontSize: "1.8rem", fontWeight: 700, color: "var(--accent)" }}>
+                            {parseFloat(wallet.balance).toFixed(2)} <span style={{ fontSize: "0.9rem", color: "var(--text-dim)" }}>credits</span>
+                        </div>
+                    </div>
+                    {imMember && (
+                        <button className="btn primary" onClick={() => {
+                            const amount = prompt("Propose payment — amount?", "10");
+                            if (!amount) return;
+                            const pitch = prompt("Pitch / memo for the proposal:", "Pay external vendor");
+                            api.post(`/communities/${communityId}/payment-request`,
+                                { amount, pitch })
+                                .then(() => alert("Payment proposal filed. Community votes next pulse."))
+                                .catch((e) => alert(e.message));
+                        }}>
+                            ↗ Propose payment
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="bold" style={{ marginBottom: "0.5rem" }}>Recent ledger</div>
+                {wallet.recent_entries.length === 0 ? (
+                    <div className="muted">No movements yet. Deposits come via webhook; payments and funding flow through proposals.</div>
+                ) : (
+                    <div className="stack">
+                        {wallet.recent_entries.map(e => {
+                            const inbound = e.to_wallet === wallet.id;
+                            return (
+                                <div key={e.id} className="row" style={{ justifyContent: "space-between", padding: "0.4rem 0", borderBottom: "1px solid var(--border)" }}>
+                                    <div>
+                                        <span style={{ color: inbound ? "var(--accent)" : "var(--danger)", fontWeight: 600 }}>
+                                            {inbound ? "↓" : "↑"} {parseFloat(e.amount).toFixed(2)}
+                                        </span>
+                                        <span className="muted" style={{ fontSize: "0.82rem", marginLeft: 10 }}>
+                                            {e.memo || (e.webhook_event ? `webhook: ${e.webhook_event}` : "transfer")}
+                                        </span>
+                                    </div>
+                                    <span className="muted" style={{ fontSize: "0.8rem" }}>
+                                        {new Date(e.created_at).toLocaleString()}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {imMember && (
+                <div className="card" style={{ background: "var(--accent-soft)" }}>
+                    <div className="muted" style={{ fontSize: "0.9rem" }}>
+                        <strong>Money flow</strong>: deposits enter only via authenticated webhook
+                        (not a proposal). Parent → child action grants go through <code>Funding</code>
+                        proposals. Leaf actions propose <code>Payment</code> to move credits out.
+                        Dividends split the wallet across active members.
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 
