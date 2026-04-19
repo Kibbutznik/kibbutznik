@@ -134,9 +134,14 @@ function LandingPage({ user }) {
                 <div className="row" style={{ justifyContent: "center" }}>
                     {user
                       ? <a href="#/dashboard" className="btn primary">Open dashboard</a>
-                      : <a href="#/login" className="btn primary">Get started</a>}
+                      : <a href="#/login" className="btn primary">Sign up / sign in</a>}
                     <a href="#/browse" className="btn">Browse public kibbutzim</a>
                 </div>
+                {!user && (
+                    <div className="muted" style={{ marginTop: "0.8rem", fontSize: "0.9rem" }}>
+                        Free. No passwords. One email is all it takes.
+                    </div>
+                )}
             </section>
             <div className="container">
                 <div className="features">
@@ -192,9 +197,11 @@ function LoginPage({ onLoggedIn }) {
     return (
         <div className="container" style={{ maxWidth: 480 }}>
             <div className="card">
-                <h2 style={{ marginTop: 0 }}>Sign in</h2>
+                <h2 style={{ marginTop: 0 }}>Sign in or create your account</h2>
                 <p className="muted">
-                    Enter your email and we'll send you a one-time sign-in link. No passwords.
+                    Enter your email. If you're new, we'll create your Kibbutznik account
+                    automatically — no passwords, no forms. Same email tomorrow =
+                    same account. One-time sign-in link, valid 15 minutes.
                 </p>
                 {!devLink && !sent && (
                     <form className="stack" onSubmit={submit}>
@@ -228,6 +235,7 @@ function DashboardPage({ user }) {
     const [memberships, setMemberships] = useState([]);
     const [pendingApps, setPendingApps] = useState([]);
     const [sentInvites, setSentInvites] = useState([]);
+    const [bots, setBots] = useState([]);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -236,15 +244,17 @@ function DashboardPage({ user }) {
         (async () => {
             setLoading(true);
             try {
-                const [m, a, s] = await Promise.all([
+                const [m, a, s, b] = await Promise.all([
                     api.get("/users/me/memberships"),
                     api.get("/users/me/pending-applications"),
                     api.get("/users/me/sent-invites"),
+                    api.get("/users/me/bots"),
                 ]);
                 if (cancelled) return;
                 setMemberships(m);
                 setPendingApps(a);
                 setSentInvites(s);
+                setBots(b);
             } catch (e) { setError(e.message); }
             finally { if (!cancelled) setLoading(false); }
         })();
@@ -289,6 +299,37 @@ function DashboardPage({ user }) {
                     </div>
                 )}
             </section>
+
+            {bots.length > 0 && (
+                <section style={{ marginBottom: "1.5rem" }}>
+                    <h3>🤖 Your bots</h3>
+                    <div className="stack">
+                        {bots.map(b => (
+                            <a key={b.community_id} href={`#/kibbutz/${b.community_id}`}
+                                className="card" style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                                <div className="row" style={{ justifyContent: "space-between" }}>
+                                    <div>
+                                        <div className="bold">
+                                            {b.display_name || `${user.user_name}-bot`}
+                                            <span className="muted" style={{ fontWeight: "normal", marginLeft: 8 }}>
+                                                in {b.community_name}
+                                            </span>
+                                        </div>
+                                        <div className="muted">
+                                            {b.active ? "active" : "paused"} · {b.orientation} · init {b.initiative}/10 · agree {b.agreeableness}/10
+                                            {b.last_turn_at && ` · last turn ${new Date(b.last_turn_at).toLocaleTimeString()}`}
+                                        </div>
+                                    </div>
+                                    <span className="pill"
+                                        style={{ background: b.active ? "var(--accent-soft)" : "transparent", color: b.active ? "var(--accent)" : "var(--text-dim)" }}>
+                                        {b.active ? "🟢 on" : "⏸ off"}
+                                    </span>
+                                </div>
+                            </a>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             {pendingApps.length > 0 && (
                 <section style={{ marginBottom: "1.5rem" }}>
@@ -572,14 +613,14 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             )}
             <ErrorBanner error={error} />
             <div className="row" style={{ margin: "1rem 0", borderBottom: "1px solid var(--border)" }}>
-                {["proposals", "members", "statements"].map(t => (
+                {(imMember ? ["proposals", "members", "statements", "bot"] : ["proposals", "members", "statements"]).map(t => (
                     <button key={t} className={"btn ghost" + (tab === t ? " bold" : "")}
                         onClick={() => setTab(t)}
                         style={{
                             borderRadius: 0,
                             borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
                         }}>
-                        {t[0].toUpperCase() + t.slice(1)}
+                        {t === "bot" ? "🤖 My bot" : t[0].toUpperCase() + t.slice(1)}
                     </button>
                 ))}
             </div>
@@ -610,6 +651,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                         </div>
                     ))}
                 </div>
+            )}
+            {tab === "bot" && imMember && (
+                <BotConfigPanel communityId={communityId} user={user} />
             )}
         </div>
     );
@@ -662,6 +706,212 @@ const HUMAN_PROPOSAL_TYPES = [
     { value: "ChangeVariable",  label: "Change a governance variable" },
     { value: "ThrowOut",        label: "Throw out a member" },
 ];
+
+// ── Bot delegation (per-kibbutz) ────────────────────────
+const BOT_ORIENTATIONS = [
+    { value: "pragmatist",      label: "Pragmatist — balanced, cares about getting things done" },
+    { value: "producer",        label: "Producer — proposes concrete work, fills artifacts" },
+    { value: "consensus",       label: "Consensus-builder — tries to find common ground" },
+    { value: "devils_advocate", label: "Devil's advocate — pushes back, asks hard questions" },
+    { value: "idealist",        label: "Idealist — values-first, champions principles" },
+    { value: "diplomat",        label: "Diplomat — keeps conversation warm and productive" },
+];
+
+function Slider({ label, value, onChange, hint }) {
+    return (
+        <label style={{ display: "block", marginBottom: "0.75rem" }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="bold">{label}</span>
+                <span className="muted">{value} / 10</span>
+            </div>
+            <input type="range" min={1} max={10} value={value}
+                   onChange={(e) => onChange(parseInt(e.target.value, 10))}
+                   style={{ width: "100%" }} />
+            {hint && <div className="muted" style={{ fontSize: "0.8rem" }}>{hint}</div>}
+        </label>
+    );
+}
+
+function BotConfigPanel({ communityId, user }) {
+    // Phase A of the bot UI: load profile if it exists, edit, save.
+    // The panel always shows the current state of the bot — including
+    // `active` toggle, all persona fields, and the last-turn timestamp.
+    const [profile, setProfile] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [msg, setMsg] = useState(null);
+    const [error, setError] = useState(null);
+
+    // Default form values — used both for brand-new bots and as the
+    // baseline the edit form snaps back to on Reset.
+    const blank = {
+        active: true,
+        display_name: "",
+        orientation: "pragmatist",
+        initiative: 5,
+        agreeableness: 5,
+        goals: "",
+        boundaries: "",
+        approval_mode: "autonomous",
+        turn_interval_seconds: 300,
+    };
+    const [form, setForm] = useState(blank);
+
+    const reload = useCallback(async () => {
+        setLoading(true); setError(null); setMsg(null);
+        try {
+            const bots = await api.get("/users/me/bots");
+            const mine = bots.find(b => b.community_id === communityId);
+            if (mine) {
+                setProfile(mine);
+                setForm({
+                    active: mine.active,
+                    display_name: mine.display_name || "",
+                    orientation: mine.orientation,
+                    initiative: mine.initiative,
+                    agreeableness: mine.agreeableness,
+                    goals: mine.goals || "",
+                    boundaries: mine.boundaries || "",
+                    approval_mode: mine.approval_mode,
+                    turn_interval_seconds: mine.turn_interval_seconds,
+                });
+            } else {
+                setProfile(null);
+                setForm(blank);
+            }
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [communityId]);
+    useEffect(() => { reload(); }, [reload]);
+
+    const disable = async () => {
+        if (!confirm("Delete this bot? You can re-enable later.")) return;
+        try {
+            await api._fetch(`/users/me/bots/${communityId}`, { method: "DELETE" });
+            setProfile(null);
+            setForm(blank);
+            setMsg("Bot removed.");
+        } catch (err) { setError(err.message); }
+    };
+
+    const putSave = async (e) => {
+        e?.preventDefault?.();
+        setSaving(true); setError(null); setMsg(null);
+        try {
+            const body = { ...form };
+            if (!body.display_name.trim()) body.display_name = null;
+            const saved = await api._fetch(`/users/me/bots/${communityId}`, {
+                method: "PUT",
+                body: JSON.stringify(body),
+            });
+            setProfile(saved);
+            setMsg(profile ? "Saved." : "Bot activated.");
+        } catch (err) { setError(err.message); }
+        finally { setSaving(false); }
+    };
+
+    if (loading) return <div className="muted">Loading bot config…</div>;
+
+    return (
+        <form onSubmit={putSave} className="stack">
+            <div className="card">
+                <h3 style={{ margin: 0 }}>🤖 Your delegated bot</h3>
+                <p className="muted" style={{ marginBottom: 0 }}>
+                    Configure an AI proxy to act here on your behalf. The bot proposes,
+                    supports, and comments <strong>as you</strong> — your user_id is on every
+                    action. Toggle off anytime to take back the seat manually.
+                </p>
+                {profile && profile.last_turn_at && (
+                    <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                        Last turn: {new Date(profile.last_turn_at).toLocaleString()}
+                    </div>
+                )}
+            </div>
+
+            <div className="card">
+                <label className="row" style={{ alignItems: "center", marginBottom: "0.8rem" }}>
+                    <input type="checkbox" checked={form.active}
+                           onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+                    <span className="bold">Active</span>
+                    <span className="muted" style={{ fontSize: "0.85rem" }}>
+                        When off the bot keeps its config but stops acting.
+                    </span>
+                </label>
+
+                <label style={{ display: "block", marginBottom: "0.75rem" }}>
+                    <div className="bold" style={{ marginBottom: 4 }}>Bot name (optional)</div>
+                    <input className="input" maxLength={100}
+                           placeholder={`${user.user_name}-bot`}
+                           value={form.display_name}
+                           onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>
+                        How the bot refers to itself in comments. Defaults to "{user.user_name}-bot".
+                    </div>
+                </label>
+
+                <label style={{ display: "block", marginBottom: "0.75rem" }}>
+                    <div className="bold" style={{ marginBottom: 4 }}>Orientation</div>
+                    <select className="input" value={form.orientation}
+                            onChange={(e) => setForm({ ...form, orientation: e.target.value })}>
+                        {BOT_ORIENTATIONS.map(o => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                    </select>
+                </label>
+
+                <Slider label="Initiative" value={form.initiative}
+                        onChange={(v) => setForm({ ...form, initiative: v })}
+                        hint="Low = mostly observes, high = often proposes." />
+
+                <Slider label="Agreeableness" value={form.agreeableness}
+                        onChange={(v) => setForm({ ...form, agreeableness: v })}
+                        hint="Low = picky, high = supports most things." />
+
+                <label style={{ display: "block", marginBottom: "0.75rem" }}>
+                    <div className="bold" style={{ marginBottom: 4 }}>Goals (optional)</div>
+                    <textarea className="input" rows={3}
+                              placeholder="What should this kibbutz accomplish? e.g. 'Ship an onboarding handbook by May.'"
+                              value={form.goals}
+                              onChange={(e) => setForm({ ...form, goals: e.target.value })} />
+                </label>
+
+                <label style={{ display: "block", marginBottom: "0.75rem" }}>
+                    <div className="bold" style={{ marginBottom: 4 }}>Boundaries (optional)</div>
+                    <textarea className="input" rows={3}
+                              placeholder="What should the bot NEVER do? e.g. 'Never propose ThrowOut. Never commit an artifact alone.'"
+                              value={form.boundaries}
+                              onChange={(e) => setForm({ ...form, boundaries: e.target.value })} />
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>
+                        Copied verbatim into the bot's prompt as "HARD BOUNDARIES".
+                    </div>
+                </label>
+
+                <label style={{ display: "block", marginBottom: "0.75rem" }}>
+                    <div className="bold" style={{ marginBottom: 4 }}>Turn cadence</div>
+                    <select className="input" value={form.turn_interval_seconds}
+                            onChange={(e) => setForm({ ...form, turn_interval_seconds: parseInt(e.target.value, 10) })}>
+                        <option value={120}>Every 2 minutes (fast)</option>
+                        <option value={300}>Every 5 minutes (default)</option>
+                        <option value={900}>Every 15 minutes</option>
+                        <option value={3600}>Every hour</option>
+                        <option value={86400}>Once a day</option>
+                    </select>
+                </label>
+
+                <div className="row" style={{ justifyContent: "space-between", marginTop: "1rem" }}>
+                    {profile
+                        ? <button type="button" className="btn ghost" onClick={disable}>Delete bot</button>
+                        : <span />}
+                    <button type="submit" className="btn primary" disabled={saving}>
+                        {saving ? "Saving…" : (profile ? "Save changes" : "Activate bot")}
+                    </button>
+                </div>
+                {msg && <p style={{ color: "var(--accent)" }}>{msg}</p>}
+                <ErrorBanner error={error} />
+            </div>
+        </form>
+    );
+}
 
 function ProposePage({ communityId, user }) {
     const [ptype, setPtype]     = useState("AddStatement");

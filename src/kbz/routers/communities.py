@@ -1,11 +1,14 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
 from kbz.models.community import Community
+from kbz.models.member import Member
+from kbz.models.proposal import Proposal
+from kbz.models.user import User
 from kbz.schemas.community import CommunityCreate, CommunityResponse, CommunityVariablesResponse
 from kbz.services.community_service import CommunityService
 
@@ -40,12 +43,34 @@ async def list_communities(
 
     Deliberately returns only root kibbutzim by default so humans don't
     see the thousands of sub-action communities the simulation spawns.
+
+    Also filters out dead-sim clutter — communities are hidden unless
+    one of these is true:
+      - has at least one human member (is_human=true)
+      - has proposal activity in the last 48 hours
+    Keeps the Browse page useful without needing a separate cleanup job.
+    The `include_dead=true` query param disables the filter.
     """
     where = []
     if not include_actions:
         where.append(Community.parent_id == _ZERO_UUID)
     if q:
         where.append(func.lower(Community.name).like(f"%{q.lower()}%"))
+
+    has_human_member = exists().where(
+        Member.community_id == Community.id,
+        Member.user_id == User.id,
+        User.is_human.is_(True),
+    )
+    has_recent_activity = exists().where(
+        Proposal.community_id == Community.id,
+        Proposal.created_at > func.now() - text("interval '48 hours'"),
+    )
+    # A freshly-created kibbutz with no activity yet also counts as alive
+    # so the founder sees it on Browse immediately.
+    recently_created = Community.created_at > func.now() - text("interval '48 hours'")
+    where.append(or_(has_human_member, has_recent_activity, recently_created))
+
     stmt = (
         select(Community)
         .where(and_(*where) if where else True)

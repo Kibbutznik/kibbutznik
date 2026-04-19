@@ -20,6 +20,7 @@ from kbz.auth_deps import require_user
 from kbz.database import get_db
 from kbz.enums import MemberStatus, ProposalStatus, ProposalType
 from kbz.models.auth import Invite
+from kbz.models.bot_profile import ORIENTATIONS, BotProfile
 from kbz.models.community import Community
 from kbz.models.member import Member
 from kbz.models.proposal import Proposal
@@ -198,3 +199,198 @@ async def update_me(
         "about": user.about,
         "is_human": user.is_human,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Bot profiles — delegate the user's participation to an AI proxy
+# ═══════════════════════════════════════════════════════════════════
+
+class BotProfileOut(BaseModel):
+    community_id: uuid.UUID
+    community_name: str
+    active: bool
+    display_name: str | None
+    orientation: str
+    initiative: int
+    agreeableness: int
+    goals: str
+    boundaries: str
+    approval_mode: str
+    turn_interval_seconds: int
+    last_turn_at: datetime | None
+
+
+class BotProfileUpsert(BaseModel):
+    """All fields optional on update — only provided ones change."""
+    active: bool | None = None
+    display_name: str | None = None
+    orientation: str | None = None
+    initiative: int | None = None
+    agreeableness: int | None = None
+    goals: str | None = None
+    boundaries: str | None = None
+    approval_mode: str | None = None
+    turn_interval_seconds: int | None = None
+
+
+def _validate_bot_fields(profile: BotProfile) -> None:
+    if profile.orientation not in ORIENTATIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"orientation must be one of {ORIENTATIONS}",
+        )
+    for field in ("initiative", "agreeableness"):
+        val = getattr(profile, field)
+        if not (1 <= val <= 10):
+            raise HTTPException(status_code=400, detail=f"{field} must be 1..10")
+    if profile.approval_mode not in ("autonomous", "review"):
+        raise HTTPException(
+            status_code=400,
+            detail="approval_mode must be 'autonomous' or 'review'",
+        )
+    if not (30 <= profile.turn_interval_seconds <= 86400):
+        raise HTTPException(
+            status_code=400,
+            detail="turn_interval_seconds must be 30..86400",
+        )
+
+
+@router.get("/bots", response_model=list[BotProfileOut])
+async def my_bots(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (
+        await db.execute(
+            select(BotProfile, Community.name)
+            .join(Community, Community.id == BotProfile.community_id)
+            .where(BotProfile.user_id == user.id)
+            .order_by(BotProfile.updated_at.desc())
+        )
+    ).all()
+    return [
+        BotProfileOut(
+            community_id=bp.community_id,
+            community_name=name,
+            active=bp.active,
+            display_name=bp.display_name,
+            orientation=bp.orientation,
+            initiative=bp.initiative,
+            agreeableness=bp.agreeableness,
+            goals=bp.goals,
+            boundaries=bp.boundaries,
+            approval_mode=bp.approval_mode,
+            turn_interval_seconds=bp.turn_interval_seconds,
+            last_turn_at=bp.last_turn_at,
+        )
+        for bp, name in rows
+    ]
+
+
+@router.put("/bots/{community_id}", response_model=BotProfileOut)
+async def upsert_bot(
+    community_id: uuid.UUID,
+    body: BotProfileUpsert,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or update the bot profile for a community.
+
+    The caller must already be an active member of the community — a
+    bot can't deputize for a seat the user doesn't have.
+    """
+    # Membership check
+    is_member = (
+        await db.execute(
+            select(Member).where(
+                Member.community_id == community_id,
+                Member.user_id == user.id,
+                Member.status == MemberStatus.ACTIVE,
+            )
+        )
+    ).scalar_one_or_none()
+    if is_member is None:
+        raise HTTPException(
+            status_code=403,
+            detail="You must be an active member to activate a bot here.",
+        )
+
+    existing = (
+        await db.execute(
+            select(BotProfile).where(
+                BotProfile.user_id == user.id,
+                BotProfile.community_id == community_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing is None:
+        # Initialize with explicit Python-side defaults. Alembic
+        # `server_default` only kicks in at INSERT time (after flush);
+        # we run `_validate_bot_fields` BEFORE flush, so each field
+        # has to carry a value from the start.
+        profile = BotProfile(
+            user_id=user.id,
+            community_id=community_id,
+            active=True,
+            display_name=None,
+            orientation="pragmatist",
+            initiative=5,
+            agreeableness=5,
+            goals="",
+            boundaries="",
+            approval_mode="autonomous",
+            turn_interval_seconds=300,
+        )
+        db.add(profile)
+    else:
+        profile = existing
+
+    # Apply only provided fields
+    for field in (
+        "active", "display_name", "orientation", "initiative",
+        "agreeableness", "goals", "boundaries", "approval_mode",
+        "turn_interval_seconds",
+    ):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(profile, field, val)
+    profile.updated_at = datetime.now(timezone.utc)
+    _validate_bot_fields(profile)
+    await db.commit()
+    await db.refresh(profile)
+
+    community = (
+        await db.execute(select(Community).where(Community.id == community_id))
+    ).scalar_one()
+    return BotProfileOut(
+        community_id=profile.community_id,
+        community_name=community.name,
+        active=profile.active,
+        display_name=profile.display_name,
+        orientation=profile.orientation,
+        initiative=profile.initiative,
+        agreeableness=profile.agreeableness,
+        goals=profile.goals,
+        boundaries=profile.boundaries,
+        approval_mode=profile.approval_mode,
+        turn_interval_seconds=profile.turn_interval_seconds,
+        last_turn_at=profile.last_turn_at,
+    )
+
+
+@router.delete("/bots/{community_id}", status_code=204)
+async def delete_bot(
+    community_id: uuid.UUID,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove the bot profile entirely. Equivalent to setting active=false
+    then clearing the config — we just drop the row."""
+    await db.execute(
+        BotProfile.__table__.delete().where(
+            BotProfile.user_id == user.id,
+            BotProfile.community_id == community_id,
+        )
+    )
+    await db.commit()

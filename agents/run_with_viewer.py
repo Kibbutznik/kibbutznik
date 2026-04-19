@@ -314,12 +314,22 @@ Examples:
     # lifespan so it dies cleanly with the app.
     from kbz.database import async_session
     from kbz.services.tkg_ingestor import TKGIngestor
+    from agents.bot_runner import BotRunner
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         cascade_task = asyncio.create_task(_artifact_cascade_loop())
         tkg_ingestor = TKGIngestor(async_session)
         await tkg_ingestor.start()
+        # Bots delegated by humans run alongside the sim, with the same
+        # LLM engine. They poll the DB for active BotProfiles and take
+        # turns on behalf of their owning users.
+        bot_runner = BotRunner(
+            session_factory=async_session,
+            engine=orch.engine,
+            api_base_url="http://localhost:8000",
+        )
+        await bot_runner.start()
         sim_task = asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
         _sim_state["task"] = sim_task
         set_restart_callback(_restart)
@@ -331,6 +341,10 @@ Examples:
                 await cascade_task
             except asyncio.CancelledError:
                 pass
+            try:
+                await bot_runner.stop()
+            except Exception:
+                log.exception("BotRunner shutdown failed")
             try:
                 await tkg_ingestor.stop()
             except Exception:
