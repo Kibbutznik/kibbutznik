@@ -47,6 +47,178 @@ const api = {
     patch(p, body){ return this._fetch(p, { method: "PATCH",  body: JSON.stringify(body || {}) }); },
 };
 
+// ── WebSocket live-events hook ──────────────────────────
+// Mirrors the simulation viewer's pattern — single connection, feeds
+// news ticker + triggers debounced refetches on state-change events.
+// Scoped by optional community_id filter so tabs only show their own
+// events.
+function useLiveEvents({ communityId, onRefresh } = {}) {
+    const [events, setEvents] = useState([]);     // rolling buffer, newest first
+    const [connected, setConnected] = useState(false);
+    const wsRef = useRef(null);
+    const refreshTimer = useRef(null);
+
+    useEffect(() => {
+        function connect() {
+            const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const base = API_BASE || "";
+            const url = `${proto}//${window.location.host}${base}/ws/events`;
+            const ws = new WebSocket(url);
+            ws.onopen = () => setConnected(true);
+            ws.onclose = () => {
+                setConnected(false);
+                setTimeout(connect, 3000);  // auto-reconnect
+            };
+            ws.onerror = () => ws.close();
+            ws.onmessage = (e) => {
+                try {
+                    const evt = JSON.parse(e.data);
+                    // Scope by community_id if the caller asked
+                    if (communityId && evt.community_id && evt.community_id !== communityId) {
+                        return;
+                    }
+                    setEvents(xs => [evt, ...xs].slice(0, 50));  // keep last 50
+                    // Debounced refresh on state-change events
+                    const stateChange = new Set([
+                        "proposal.created", "proposal.accepted", "proposal.rejected",
+                        "support.cast", "support.withdrawn", "pulse.executed",
+                        "round.end", "comment.posted",
+                    ]);
+                    if (onRefresh && stateChange.has(evt.event_type)) {
+                        if (refreshTimer.current) clearTimeout(refreshTimer.current);
+                        refreshTimer.current = setTimeout(onRefresh, 600);
+                    }
+                } catch {}
+            };
+            wsRef.current = ws;
+        }
+        connect();
+        return () => {
+            if (refreshTimer.current) clearTimeout(refreshTimer.current);
+            if (wsRef.current) wsRef.current.close();
+        };
+    }, [communityId, onRefresh]);
+
+    return { events, connected };
+}
+
+// ── Pulse progress bar + support button ─────────────────
+function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
+    const nextPulse = pulses.find(p => p.status === 0);   // 0 = NEXT per enum
+    const activePulse = pulses.find(p => p.status === 1); // 1 = ACTIVE
+    const [busy, setBusy] = useState(false);
+
+    const support = async () => {
+        if (!imMember || !user) return;
+        setBusy(true);
+        try {
+            await api.post(`/communities/${communityId}/pulses/support`, {
+                user_id: user.user_id,
+            });
+            onChanged?.();
+        } catch (e) { alert(e.message); }
+        finally { setBusy(false); }
+    };
+
+    if (!nextPulse && !activePulse) return null;
+
+    // Support progress: use NEXT pulse (the one gathering support) as primary signal
+    const p = nextPulse || activePulse;
+    const pct = Math.min(100, (p.support_count / Math.max(1, p.threshold)) * 100);
+    const ready = p.support_count >= p.threshold;
+
+    return (
+        <div className="card" style={{
+            padding: "0.6rem 0.9rem", marginBottom: "1rem",
+            background: ready ? "rgba(78,204,163,0.1)" : "var(--bg-card)",
+        }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ flex: 1 }}>
+                    <div className="row" style={{ gap: "0.6rem", alignItems: "baseline" }}>
+                        <strong>⚡ Next pulse</strong>
+                        <span className="muted" style={{ fontSize: "0.85rem" }}>
+                            {p.support_count} / {p.threshold} supporters
+                            {ready && " — ready to fire"}
+                        </span>
+                    </div>
+                    <div style={{
+                        height: 6, background: "rgba(0,0,0,0.08)",
+                        borderRadius: 3, marginTop: 6, overflow: "hidden",
+                    }}>
+                        <div style={{
+                            width: `${pct}%`, height: "100%",
+                            background: ready ? "var(--accent)" : "var(--warn)",
+                            transition: "width .3s",
+                        }} />
+                    </div>
+                </div>
+                {imMember && (
+                    <button className="btn primary" style={{ marginLeft: "0.8rem" }}
+                            disabled={busy} onClick={support}>
+                        {busy ? "…" : "⚡ Support pulse"}
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ── News ticker — live event feed (like the sim viewer) ─
+function NewsTicker({ events, communityId }) {
+    const [open, setOpen] = useState(false);
+    if (events.length === 0) return null;
+
+    const formatEvent = (e) => {
+        const t = e.event_type;
+        if (t === "pulse.executed") return "⚡ Pulse fired";
+        if (t === "proposal.created") return `📝 New ${e.data?.proposal_type || "proposal"}`;
+        if (t === "proposal.accepted") return `✅ Proposal accepted`;
+        if (t === "proposal.rejected") return `❌ Proposal rejected`;
+        if (t === "support.cast") return `👍 Support cast`;
+        if (t === "comment.posted") return `💬 New comment`;
+        if (t === "round.end") return `🔄 Round ended`;
+        return t;
+    };
+
+    const latest = events[0];
+    return (
+        <div style={{
+            position: "sticky", top: 0, zIndex: 50,
+            background: "var(--bg-card)", borderBottom: "1px solid var(--border)",
+            padding: "0.4rem 0.9rem", fontSize: "0.82rem",
+        }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="row" style={{ gap: "0.5rem", overflow: "hidden" }}>
+                    <span style={{
+                        background: "var(--accent)", color: "white",
+                        fontSize: "0.65rem", padding: "1px 6px", borderRadius: 3,
+                        fontWeight: 700, letterSpacing: "0.05em",
+                    }}>LIVE</span>
+                    <span className="muted" style={{
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}>{formatEvent(latest)} · {new Date(latest.timestamp).toLocaleTimeString()}</span>
+                </div>
+                <button className="btn ghost" onClick={() => setOpen(!open)}
+                        style={{ fontSize: "0.78rem", padding: "0.2rem 0.5rem" }}>
+                    {open ? "▲" : `▼ ${events.length} recent`}
+                </button>
+            </div>
+            {open && (
+                <div style={{
+                    maxHeight: 240, overflow: "auto", marginTop: "0.5rem",
+                    fontSize: "0.8rem", fontFamily: "ui-monospace, Menlo, monospace",
+                }}>
+                    {events.slice(0, 30).map((e, i) => (
+                        <div key={i} className="muted" style={{ padding: "0.15rem 0" }}>
+                            {new Date(e.timestamp).toLocaleTimeString()} · {formatEvent(e)}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Tiny hash router ────────────────────────────────────
 function useHashRoute() {
     const parse = () => {
@@ -560,6 +732,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const [members, setMembers] = useState([]);
     const [proposals, setProposals] = useState([]);
     const [statements, setStatements] = useState([]);
+    const [pulses, setPulses] = useState([]);
     const [tab, setTab] = useState("proposals");
     const [error, setError] = useState(null);
     const [inviteUrl, setInviteUrl] = useState(null);
@@ -574,21 +747,29 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const reload = useCallback(async () => {
         setError(null);
         try {
-            const [c, m, p, s, v] = await Promise.all([
+            const [c, m, p, s, v, pl] = await Promise.all([
                 api.get(`/communities/${communityId}`),
                 api.get(`/communities/${communityId}/members`),
                 api.get(`/communities/${communityId}/proposals`),
                 api.get(`/communities/${communityId}/statements`),
                 api.get(`/communities/${communityId}/variables`),
+                api.get(`/communities/${communityId}/pulses`),
             ]);
             setCommunity(c);
             setMembers(m);
             setProposals(p);
             setStatements(s);
             setVariables(v.variables || {});
+            setPulses(pl || []);
         } catch (e) { setError(e.message); }
     }, [communityId]);
     useEffect(() => { reload(); }, [reload]);
+
+    // Live event stream scoped to this community; auto-refreshes on
+    // state-change events.
+    const { events: liveEvents } = useLiveEvents({
+        communityId, onRefresh: reload,
+    });
 
     const isFinancial = (variables?.Financial || "false") !== "false"
                      && (variables?.Financial || "") !== "";
@@ -635,7 +816,12 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     });
 
     return (
-        <div className="container">
+        <div>
+            <NewsTicker events={liveEvents} communityId={communityId} />
+            <div className="container">
+            <PulseBar communityId={communityId} user={user}
+                      imMember={imMember} pulses={pulses} members={members}
+                      onChanged={reload} />
             <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
                 <div>
                     <h2 style={{ margin: 0 }}>{community.name}</h2>
@@ -671,7 +857,10 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             <ErrorBanner error={error} />
             <div className="row" style={{ margin: "1rem 0", borderBottom: "1px solid var(--border)" }}>
                 {(() => {
-                    const base = ["proposals", "members", "statements"];
+                    const base = [
+                        "proposals", "chat", "members",
+                        "statements", "variables", "actions",
+                    ];
                     if (isFinancial) base.push("treasury");
                     if (imMember) base.push("bot");
                     return base;
@@ -682,7 +871,14 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                             borderRadius: 0,
                             borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
                         }}>
-                        {t === "bot" ? "🤖 My bot" : t === "treasury" ? "💰 Treasury" : t[0].toUpperCase() + t.slice(1)}
+                        {
+                            t === "bot" ? "🤖 My bot" :
+                            t === "treasury" ? "💰 Treasury" :
+                            t === "chat" ? "💬 Chat" :
+                            t === "variables" ? "⚙️ Variables" :
+                            t === "actions" ? "🌳 Actions" :
+                            t[0].toUpperCase() + t.slice(1)
+                        }
                     </button>
                 ))}
             </div>
@@ -714,22 +910,37 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                     ))}
                 </div>
             )}
+            {tab === "chat" && (
+                <ChatPanel communityId={communityId} user={user}
+                           imMember={imMember} members={members}
+                           liveEvents={liveEvents} />
+            )}
+            {tab === "variables" && (
+                <VariablesPanel communityId={communityId} variables={variables}
+                                imMember={imMember} user={user} onChanged={reload} />
+            )}
+            {tab === "actions" && (
+                <ActionsPanel communityId={communityId} />
+            )}
             {tab === "bot" && imMember && (
                 <BotConfigPanel communityId={communityId} user={user} />
             )}
             {tab === "treasury" && isFinancial && (
                 <TreasuryPanel communityId={communityId} imMember={imMember} user={user} />
             )}
+            </div>
         </div>
     );
 }
 
 function ProposalCard({ proposal, imMember, user, onChanged }) {
     const [supporting, setSupporting] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
     const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
     const canAct = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
 
-    const support = async () => {
+    const support = async (e) => {
+        e?.stopPropagation?.();
         setSupporting(true);
         try {
             await api.post(`/proposals/${proposal.id}/support`, { user_id: user.user_id });
@@ -738,26 +949,229 @@ function ProposalCard({ proposal, imMember, user, onChanged }) {
         finally { setSupporting(false); }
     };
     return (
-        <div className="card">
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                    <div className="row" style={{ marginBottom: 4 }}>
+        <>
+            <div className="card" onClick={() => setDetailOpen(true)}
+                 style={{ cursor: "pointer" }}
+                 title="Click for details, supporters, and comments">
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                        <div className="row" style={{ marginBottom: 4 }}>
+                            <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
+                            <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }}>
+                                {proposal.proposal_status}
+                            </span>
+                            <span className="muted" style={{ fontSize: "0.75rem" }}>age {proposal.age} · support {proposal.support_count}</span>
+                        </div>
+                        <div>{proposal.val_text || proposal.proposal_text || <span className="muted">(untitled)</span>}</div>
+                        {proposal.val_text && proposal.proposal_text && proposal.val_text !== proposal.proposal_text && (
+                            <div className="muted" style={{ marginTop: 4, fontSize: "0.88rem" }}>{proposal.proposal_text}</div>
+                        )}
+                    </div>
+                    {canAct && (
+                        <button className="btn" disabled={supporting} onClick={support}>
+                            {supporting ? "…" : "👍 Support"}
+                        </button>
+                    )}
+                </div>
+            </div>
+            {detailOpen && (
+                <ProposalDetailModal proposal={proposal} user={user} imMember={imMember}
+                    onClose={() => setDetailOpen(false)} onChanged={onChanged} />
+            )}
+        </>
+    );
+}
+
+// ── Proposal detail modal — supporters + comments + inline actions ─
+function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
+    const [supporters, setSupporters] = useState([]);
+    const [comments, setComments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [draft, setDraft] = useState("");
+    const [busy, setBusy] = useState(null);  // "support" | "comment" | "withdraw"
+    const [error, setError] = useState(null);
+
+    const reload = useCallback(async () => {
+        setLoading(true); setError(null);
+        try {
+            const [sup, cmts] = await Promise.all([
+                api.get(`/proposals/${proposal.id}/supporters`).catch(() => []),
+                api.get(`/entities/proposal/${proposal.id}/comments?limit=100`)
+                    .catch(() => []),
+            ]);
+            setSupporters(sup || []);
+            setComments(cmts || []);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [proposal.id]);
+    useEffect(() => { reload(); }, [reload]);
+
+    const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
+    const canSupport = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
+    const canComment = imMember && canSupport;
+    const isAuthor = user && proposal.user_id === user.user_id;
+    const canWithdraw = isAuthor && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "Draft");
+    const alreadySupported = user && supporters.some(s => (s.user_id || s) === user.user_id);
+
+    const doSupport = async () => {
+        if (!user) return;
+        setBusy("support"); setError(null);
+        try {
+            await api.post(`/proposals/${proposal.id}/support`,
+                { user_id: user.user_id });
+            await reload();
+            onChanged?.();
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
+    };
+
+    const doComment = async (e) => {
+        e?.preventDefault?.();
+        if (!user) return;
+        const text = draft.trim();
+        if (!text) return;
+        setBusy("comment"); setError(null);
+        try {
+            await api.post(`/entities/proposal/${proposal.id}/comments`, {
+                user_id: user.user_id, comment_text: text,
+            });
+            setDraft("");
+            await reload();
+            onChanged?.();
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
+    };
+
+    const doWithdraw = async () => {
+        if (!confirm("Withdraw this proposal? Status becomes Canceled.")) return;
+        setBusy("withdraw"); setError(null);
+        try {
+            await api.post(`/proposals/${proposal.id}/withdraw`,
+                { user_id: user.user_id });
+            onChanged?.();
+            onClose();
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
+    };
+
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem",
+        }} onClick={onClose}>
+            <div className="card" style={{
+                maxWidth: 640, width: "100%", maxHeight: "92vh",
+                overflow: "auto", padding: "1.4rem",
+            }} onClick={(e) => e.stopPropagation()}>
+                <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.6rem" }}>
+                    <div className="row">
                         <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
                         <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }}>
                             {proposal.proposal_status}
                         </span>
-                        <span className="muted" style={{ fontSize: "0.75rem" }}>age {proposal.age} · support {proposal.support_count}</span>
                     </div>
-                    <div>{proposal.val_text || proposal.proposal_text || <span className="muted">(untitled)</span>}</div>
-                    {proposal.val_text && proposal.proposal_text && proposal.val_text !== proposal.proposal_text && (
-                        <div className="muted" style={{ marginTop: 4, fontSize: "0.88rem" }}>{proposal.proposal_text}</div>
+                    <button className="btn ghost" onClick={onClose}
+                            style={{ fontSize: "1.2rem", padding: "0 0.5rem" }}>×</button>
+                </div>
+                <h3 style={{ marginTop: 0 }}>
+                    {proposal.val_text || proposal.proposal_text || "(untitled)"}
+                </h3>
+                {proposal.val_text && proposal.proposal_text
+                    && proposal.val_text !== proposal.proposal_text && (
+                    <div className="muted" style={{
+                        whiteSpace: "pre-wrap", marginBottom: "0.6rem",
+                    }}>{proposal.proposal_text}</div>
+                )}
+                <div className="muted" style={{ fontSize: "0.82rem" }}>
+                    age {proposal.age} · support {proposal.support_count} · created{" "}
+                    {new Date(proposal.created_at).toLocaleString()}
+                </div>
+
+                <div className="row" style={{ margin: "1rem 0", flexWrap: "wrap", gap: "0.5rem" }}>
+                    {canSupport && (
+                        <button className="btn primary" onClick={doSupport}
+                                disabled={busy === "support" || alreadySupported}>
+                            {alreadySupported ? "✓ Supported" :
+                             busy === "support" ? "…" : "👍 Support"}
+                        </button>
+                    )}
+                    {canWithdraw && (
+                        <button className="btn ghost" onClick={doWithdraw}
+                                disabled={busy === "withdraw"}>
+                            {busy === "withdraw" ? "…" : "↩ Withdraw"}
+                        </button>
                     )}
                 </div>
-                {canAct && (
-                    <button className="btn" disabled={supporting} onClick={support}>
-                        {supporting ? "…" : "👍 Support"}
-                    </button>
-                )}
+
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.8rem" }}>
+                    <div className="bold" style={{ marginBottom: "0.4rem" }}>
+                        👥 Supporters ({supporters.length})
+                    </div>
+                    {loading ? (
+                        <div className="muted">Loading…</div>
+                    ) : supporters.length === 0 ? (
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>No supporters yet.</div>
+                    ) : (
+                        <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
+                            {supporters.map((s, i) => (
+                                <span key={i} className="pill" style={{
+                                    background: "var(--accent-soft)", color: "var(--accent)",
+                                }}>{(s.user_name || s.user_id || "").slice(0, 16)}</span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.8rem", paddingTop: "0.8rem" }}>
+                    <div className="bold" style={{ marginBottom: "0.4rem" }}>
+                        💬 Comments ({comments.length})
+                    </div>
+                    {loading ? <div className="muted">Loading…</div>
+                     : comments.length === 0 ? (
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>
+                            No comments yet.{canComment && " Leave the first."}
+                        </div>
+                    ) : (
+                        <div className="stack" style={{ gap: "0.5rem" }}>
+                            {comments.map(c => (
+                                <div key={c.id} style={{
+                                    padding: "0.5rem 0.7rem",
+                                    background: "rgba(0,0,0,0.04)",
+                                    borderRadius: 6,
+                                }}>
+                                    <div className="muted" style={{ fontSize: "0.72rem" }}>
+                                        {(c.user_name || c.user_id || "").slice(0, 16)}
+                                        {" · "}
+                                        {new Date(c.created_at).toLocaleTimeString()}
+                                    </div>
+                                    <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>
+                                        {c.comment_text}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {canComment && (
+                        <form className="stack" onSubmit={doComment} style={{ marginTop: "0.8rem" }}>
+                            <textarea className="input" rows={2} maxLength={300}
+                                      placeholder="Add a comment (300 char max, be punchy)…"
+                                      value={draft}
+                                      onChange={(e) => setDraft(e.target.value)} />
+                            <div className="row" style={{ justifyContent: "space-between" }}>
+                                <span className="muted" style={{ fontSize: "0.75rem" }}>
+                                    {draft.length}/300
+                                </span>
+                                <button className="btn primary"
+                                        disabled={busy === "comment" || !draft.trim()}>
+                                    {busy === "comment" ? "…" : "Post comment"}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+                <ErrorBanner error={error} />
             </div>
         </div>
     );
@@ -798,6 +1212,263 @@ function Slider({ label, value, onChange, hint }) {
 }
 
 // ── Treasury panel ──────────────────────────────────────
+// ── Chat tab — community-level comments as live chat ────
+function ChatPanel({ communityId, user, imMember, members, liveEvents }) {
+    const [messages, setMessages] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [draft, setDraft] = useState("");
+    const [sending, setSending] = useState(false);
+    const [error, setError] = useState(null);
+    const bottomRef = useRef(null);
+
+    const load = useCallback(async () => {
+        setLoading(true); setError(null);
+        try {
+            const msgs = await api.get(
+                `/entities/community/${communityId}/comments?limit=50`,
+            );
+            // API returns newest-first; reverse for natural chat order
+            setMessages([...msgs].reverse());
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [communityId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    // Refresh on any comment.posted event for this community
+    useEffect(() => {
+        if (!liveEvents || liveEvents.length === 0) return;
+        const latest = liveEvents[0];
+        if (latest.event_type === "comment.posted") load();
+    }, [liveEvents, load]);
+
+    // Auto-scroll to bottom when new message arrives
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, [messages]);
+
+    const send = async (e) => {
+        e?.preventDefault?.();
+        const text = draft.trim();
+        if (!text || !user) return;
+        setSending(true); setError(null);
+        try {
+            await api.post(`/entities/community/${communityId}/comments`, {
+                user_id: user.user_id,
+                comment_text: text,
+            });
+            setDraft("");
+            await load();
+        } catch (err) { setError(err.message); }
+        finally { setSending(false); }
+    };
+
+    const nameFor = (uid) => {
+        const m = members.find(m => m.user_id === uid);
+        return m?.user_name || uid.slice(0, 8);
+    };
+
+    return (
+        <div className="stack">
+            <div className="card" style={{
+                maxHeight: 500, overflow: "auto",
+                display: "flex", flexDirection: "column", gap: "0.5rem",
+            }}>
+                {loading && <div className="muted">Loading chat…</div>}
+                {!loading && messages.length === 0 && (
+                    <div className="muted" style={{ textAlign: "center", padding: "1rem" }}>
+                        No messages yet. Say hi.
+                    </div>
+                )}
+                {messages.map(m => {
+                    const mine = m.user_id === user?.user_id;
+                    return (
+                        <div key={m.id} style={{
+                            alignSelf: mine ? "flex-end" : "flex-start",
+                            maxWidth: "80%",
+                            background: mine ? "var(--accent-soft)" : "rgba(0,0,0,0.04)",
+                            borderRadius: 10,
+                            padding: "0.5rem 0.8rem",
+                        }}>
+                            <div className="muted" style={{ fontSize: "0.72rem", marginBottom: 2 }}>
+                                {nameFor(m.user_id)} · {new Date(m.created_at).toLocaleTimeString()}
+                            </div>
+                            <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>
+                                {m.comment_text}
+                            </div>
+                        </div>
+                    );
+                })}
+                <div ref={bottomRef} />
+            </div>
+            {imMember ? (
+                <form className="row" onSubmit={send} style={{ gap: "0.5rem" }}>
+                    <input className="input" placeholder="Message the community…"
+                           value={draft}
+                           onChange={(e) => setDraft(e.target.value)}
+                           maxLength={300}
+                           style={{ flex: 1 }} />
+                    <button className="btn primary" disabled={sending || !draft.trim()}>
+                        {sending ? "…" : "Send"}
+                    </button>
+                </form>
+            ) : (
+                <div className="muted" style={{ textAlign: "center", padding: "0.5rem" }}>
+                    Only members can post. Apply to join above.
+                </div>
+            )}
+            <ErrorBanner error={error} />
+        </div>
+    );
+}
+
+// ── Variables tab — view + propose a ChangeVariable ────
+function VariablesPanel({ communityId, variables, imMember, user, onChanged }) {
+    const [editing, setEditing] = useState(null);  // variable name being edited
+
+    const propose = async (name, newValue) => {
+        if (!user) return;
+        try {
+            const resp = await api.post(`/communities/${communityId}/proposals`, {
+                user_id: user.user_id,
+                proposal_type: "ChangeVariable",
+                proposal_text: name,
+                val_text: newValue,
+            });
+            try { await api._fetch(`/proposals/${resp.id}/submit`, { method: "PATCH" }); } catch {}
+            alert(`ChangeVariable proposal filed: ${name} → ${newValue}`);
+            setEditing(null);
+            onChanged?.();
+        } catch (e) { alert(e.message); }
+    };
+
+    // Group for readability
+    const groups = {
+        "Governance thresholds (% of members)": [
+            "PulseSupport", "ProposalSupport", "Membership", "ThrowOut",
+            "AddStatement", "RemoveStatement", "ReplaceStatement",
+            "AddAction", "EndAction", "JoinAction", "ChangeVariable",
+            "Funding", "Payment", "payBack", "Dividend",
+        ],
+        "Community settings": [
+            "Name", "MaxAge", "MinCommittee", "seniorityWeight",
+            "membershipFee", "dividendBySeniority", "proposalCooldown",
+            "quorumThreshold", "Financial", "membershipHandler",
+        ],
+        "Artifact governance (% of members)": [
+            "CreateArtifact", "EditArtifact", "RemoveArtifact",
+            "DelegateArtifact", "CommitArtifact",
+        ],
+    };
+    // Bucket unknown vars into "Other"
+    const known = new Set([].concat(...Object.values(groups)));
+    const other = Object.keys(variables).filter(k => !known.has(k));
+    if (other.length) groups["Other"] = other;
+
+    return (
+        <div className="stack">
+            {Object.entries(groups).map(([label, names]) => {
+                const rows = names.filter(n => n in variables);
+                if (rows.length === 0) return null;
+                return (
+                    <div key={label} className="card">
+                        <div className="bold" style={{ marginBottom: "0.5rem" }}>{label}</div>
+                        <div className="stack" style={{ gap: "0.3rem" }}>
+                            {rows.map(n => (
+                                <div key={n} className="row" style={{
+                                    justifyContent: "space-between",
+                                    padding: "0.35rem 0",
+                                    borderBottom: "1px solid var(--border)",
+                                }}>
+                                    <div>
+                                        <div className="bold" style={{ fontSize: "0.9rem" }}>{n}</div>
+                                        {editing === n ? (
+                                            <input className="input" autoFocus
+                                                   defaultValue={variables[n]}
+                                                   onKeyDown={(e) => {
+                                                       if (e.key === "Enter") propose(n, e.target.value);
+                                                       if (e.key === "Escape") setEditing(null);
+                                                   }}
+                                                   style={{ maxWidth: 200, marginTop: 4 }} />
+                                        ) : (
+                                            <code style={{
+                                                background: "rgba(0,0,0,0.04)",
+                                                padding: "1px 6px", borderRadius: 3,
+                                                fontSize: "0.82rem",
+                                            }}>{variables[n] || "(empty)"}</code>
+                                        )}
+                                    </div>
+                                    {imMember && editing !== n && (
+                                        <button className="btn ghost" style={{ fontSize: "0.8rem" }}
+                                                onClick={() => setEditing(n)}>
+                                            Propose change
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
+            {imMember && (
+                <div className="muted" style={{ fontSize: "0.8rem", padding: "0 0.5rem" }}>
+                    Editing a variable files a <code>ChangeVariable</code> proposal —
+                    the community votes like any other decision. Enter-to-submit,
+                    Esc to cancel.
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Action tree tab — navigate child action-communities ─
+function ActionsPanel({ communityId }) {
+    const [actions, setActions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        setLoading(true); setError(null);
+        api.get(`/communities/${communityId}/children`)
+            .then(setActions)
+            .catch((e) => setError(e.message))
+            .finally(() => setLoading(false));
+    }, [communityId]);
+
+    if (loading) return <div className="muted">Loading actions…</div>;
+    if (error) return <ErrorBanner error={error} />;
+    if (actions.length === 0) {
+        return (
+            <Empty title="No sub-actions yet">
+                Actions are focused working groups. File an <code>AddAction</code>{" "}
+                proposal via <strong>+ New proposal</strong> above to create one.
+            </Empty>
+        );
+    }
+
+    return (
+        <div className="stack">
+            {actions.map(a => (
+                <a key={a.id} href={`#/kibbutz/${a.id}`}
+                   className="card" style={{
+                       textDecoration: "none", color: "inherit", display: "block",
+                   }}>
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                        <div>
+                            <div className="bold">🌳 {a.name}</div>
+                            <div className="muted" style={{ fontSize: "0.82rem" }}>
+                                {a.member_count} member{a.member_count === 1 ? "" : "s"}
+                                {a.status !== 1 && " · ended"}
+                            </div>
+                        </div>
+                        <span className="muted">→</span>
+                    </div>
+                </a>
+            ))}
+        </div>
+    );
+}
+
 function TreasuryPanel({ communityId, imMember, user }) {
     const [wallet, setWallet] = useState(null);
     const [error, setError] = useState(null);
