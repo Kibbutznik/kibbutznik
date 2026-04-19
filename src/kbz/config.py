@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # then Resend lets us send from the reserved onboarding@resend.dev
     # (useful for the first 50 test sends per API key).
     email_from: str = "Kibbutznik <onboarding@resend.dev>"
+    # Public origin used to build absolute URLs in OUTBOUND email bodies
+    # (magic links, invite links). Email clients cannot resolve relative
+    # hrefs — they see `http:///auth/verify?…` and bail. Set to e.g.
+    # "https://kibbutznik.org/kbz" in prod. Empty means the email body
+    # falls back to a relative URL (only useful for manual inspection
+    # in dev; never click it from an inbox).
+    public_base_url: str = ""
 
     # --- Human auth (Track C) ---
     # Session lifetime — cookie + DB token — deliberately short so a

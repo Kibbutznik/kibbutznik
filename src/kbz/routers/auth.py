@@ -89,11 +89,14 @@ async def request_magic_link(
     await db.commit()
 
     verify_path = f"/auth/verify?token={issued.raw}"
-    # Compose the full URL. Behind a reverse proxy the Host header is
-    # the right signal; we don't have Request here but the product UI
-    # adds the origin itself when rendering the "click here" link. For
-    # the email we default to a setting; fall back to relative if absent.
-    msg = render_magic_link_email(verify_url=verify_path)
+    # Email body NEEDS an absolute URL — email clients can't resolve a
+    # relative href like "/auth/verify?..." and render it as
+    # "http:///auth/verify?..." which fails. The in-app dev-link below
+    # stays relative because the browser resolves it against the
+    # current origin.
+    base = (settings.public_base_url or "").rstrip("/")
+    email_url = f"{base}{verify_path}" if base else verify_path
+    msg = render_magic_link_email(verify_url=email_url)
     msg.to = user.email or body.email
     try:
         await EmailService().send(msg)
