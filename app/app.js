@@ -1,5 +1,5 @@
 /*
- * KBZ Kibbutz — Phase B product UI.
+ * Kibbutznik — Phase B product UI.
  *
  * Hash-routed SPA. No build step. Same backend as the simulation viewer
  * (FastAPI at /kbz/ behind nginx, same in dev via CORS).
@@ -88,7 +88,7 @@ function useAuth() {
 function Header({ user, onLogout }) {
     return (
         <header className="app-header">
-            <a href="#/" className="brand">KBZ Kibbutz</a>
+            <a href="#/" className="brand">Kibbutznik</a>
             <div className="row">
                 {user ? (
                     <>
@@ -126,7 +126,7 @@ function LandingPage({ user }) {
             <section className="hero">
                 <h1>Run your community by pulse, not politics.</h1>
                 <p>
-                    KBZ Kibbutz is a shared-decision tool for groups who want to move together
+                    Kibbutznik is a shared-decision tool for groups who want to move together
                     without voting everything to death. Propose, support, pulse, and watch
                     decisions settle. Built on the same pulse engine that runs our AI simulation at{" "}
                     <a href="/kbz/viewer/">kibbutznik.org/kbz/viewer</a>.
@@ -875,7 +875,7 @@ function App() {
             <Header user={user} onLogout={async () => { await logout(); navigate("#/"); }} />
             {content}
             <footer className="app-footer">
-                KBZ Kibbutz · <a href="/kbz/viewer/">AI simulation</a> · <a href="/">landing</a>
+                Kibbutznik · <a href="/kbz/viewer/">AI simulation</a> · <a href="/">landing</a>
             </footer>
         </>
     );

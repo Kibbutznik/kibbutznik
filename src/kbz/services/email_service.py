@@ -166,7 +166,7 @@ class EmailService:
 # Keep these as small formatter functions (not classes) so they're easy
 # to override per-environment / locale later.
 
-def render_magic_link_email(*, verify_url: str, app_name: str = "KBZ") -> EmailMessage:
+def render_magic_link_email(*, verify_url: str, app_name: str = "Kibbutznik") -> EmailMessage:
     """A bare-bones magic-link message. Template deliberately spartan;
     richer HTML can come when the product has more brand."""
     subject = f"Your {app_name} sign-in link"
@@ -192,7 +192,7 @@ def render_invite_email(
     invite_url: str,
     inviter_name: str,
     community_name: str,
-    app_name: str = "KBZ",
+    app_name: str = "Kibbutznik",
 ) -> EmailMessage:
     """An invite handoff. The recipient clicks through, enters their
     email, and the claim flow files a Membership proposal."""

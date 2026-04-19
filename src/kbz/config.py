@@ -24,7 +24,11 @@ class Settings(BaseSettings):
     # Must be an address on a DOMAIN you've verified in Resend. For dev
     # we default to the reserved `onboarding@resend.dev` which works out
     # of the box for the first 50 test sends per API key.
-    email_from: str = "KBZ <onboarding@resend.dev>"
+    # Production should set KBZ_EMAIL_FROM="Kibbutznik <hello@mail.kibbutznik.org>"
+    # once the mail.kibbutznik.org subdomain is verified in Resend. Until
+    # then Resend lets us send from the reserved onboarding@resend.dev
+    # (useful for the first 50 test sends per API key).
+    email_from: str = "Kibbutznik <onboarding@resend.dev>"
 
     # --- Human auth (Track C) ---
     # Session lifetime — cookie + DB token — deliberately short so a

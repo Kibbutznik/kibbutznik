@@ -1,11 +1,11 @@
-# KBZ Kibbutz — Product Design
+# Kibbutznik — Product Design
 
 > A pulse-based-democracy tool for real human communities. Uses the same
 > governance primitives as the AI simulation (communities, proposals,
 > supports, pulses, statements, artifacts) but wrapped in a human-first
 > interface with accounts, invites, notifications, and trust.
 
-Working name: **KBZ Kibbutz**. We can rename later.
+Working name: **Kibbutznik**. We can rename later.
 
 Lives in `/app/` at the repo root and is served statically at
 `/app/` via nginx. The backend is the same FastAPI app as the
@@ -169,7 +169,7 @@ modern HTTP API, clean SDK, strong deliverability, simple DNS setup
 2. Add DNS records Resend prescribes (SPF + DKIM) for
    `mail.kibbutznik.org` subdomain.
 3. Set env on the server: `KBZ_EMAIL_BACKEND=resend`,
-   `KBZ_RESEND_API_KEY=...`, `KBZ_EMAIL_FROM="KBZ Kibbutz <hello@kibbutznik.org>"`.
+   `KBZ_RESEND_API_KEY=...`, `KBZ_EMAIL_FROM="Kibbutznik <hello@kibbutznik.org>"`.
 4. Restart `kbz.service` once.
 5. Verify by hitting `/auth/request-magic-link` with a real address.
 
@@ -225,7 +225,7 @@ emails in memory so dev + tests work without spending anything.
 
 ## Open questions for the user
 
-1. **Product name** — "KBZ Kibbutz" is a placeholder. Should we pick a
+1. **Product name** — "Kibbutznik" is a placeholder. Should we pick a
    final name before Phase B starts? Affects the logo, the email
    sender name ("<NAME> Kibbutz <hello@…>"), and marketing copy.
 2. **Domain for email** — use `kibbutznik.org` (current domain) or a
