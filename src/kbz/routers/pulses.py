@@ -3,7 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kbz.auth_deps import enforce_session_matches_body, get_current_user
 from kbz.database import get_db
+from kbz.models.user import User
 from kbz.schemas.pulse import PulseResponse, PulseSupportCreate
 from kbz.services.pulse_service import PulseService
 from kbz.services.support_service import SupportService
@@ -27,7 +29,13 @@ async def get_pulse(pulse_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/communities/{community_id}/pulses/support", status_code=201)
-async def add_pulse_support(community_id: uuid.UUID, data: PulseSupportCreate, db: AsyncSession = Depends(get_db)):
+async def add_pulse_support(
+    community_id: uuid.UUID,
+    data: PulseSupportCreate,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    enforce_session_matches_body(data.user_id, session_user)
     svc = SupportService(db)
     result = await svc.add_pulse_support(community_id, data.user_id)
     return result

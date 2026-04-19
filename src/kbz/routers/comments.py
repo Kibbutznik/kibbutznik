@@ -4,7 +4,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kbz.auth_deps import enforce_session_matches_body, get_current_user
 from kbz.database import get_db
+from kbz.models.user import User
 from kbz.schemas.comment import CommentCreate, CommentResponse, ScoreUpdate
 from kbz.services.comment_service import CommentService
 
@@ -12,7 +14,14 @@ router = APIRouter()
 
 
 @router.post("/entities/{entity_type}/{entity_id}/comments", response_model=CommentResponse, status_code=201)
-async def add_comment(entity_type: str, entity_id: uuid.UUID, data: CommentCreate, db: AsyncSession = Depends(get_db)):
+async def add_comment(
+    entity_type: str,
+    entity_id: uuid.UUID,
+    data: CommentCreate,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    enforce_session_matches_body(data.user_id, session_user)
     svc = CommentService(db)
     return await svc.add_comment(entity_id, entity_type, data)
 

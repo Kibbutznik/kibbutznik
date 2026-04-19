@@ -13,6 +13,7 @@ from kbz.routers import (
     comments,
     communities,
     invites,
+    me,
     members,
     memory,
     metrics,
@@ -57,6 +58,7 @@ app.include_router(tkg.router)
 app.include_router(metrics.router)
 app.include_router(auth.router)
 app.include_router(invites.router)
+app.include_router(me.router)
 app.include_router(ws.router, tags=["websocket"])
 
 

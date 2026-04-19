@@ -345,6 +345,7 @@ Examples:
         comments,
         communities,
         invites,
+        me,
         members,
         memory,
         metrics,
@@ -376,6 +377,7 @@ Examples:
     combined_app.include_router(metrics.router)
     combined_app.include_router(auth.router)
     combined_app.include_router(invites.router)
+    combined_app.include_router(me.router)
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")

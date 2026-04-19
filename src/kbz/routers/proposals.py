@@ -3,7 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kbz.auth_deps import enforce_session_matches_body, get_current_user
 from kbz.database import get_db
+from kbz.models.user import User
 from kbz.schemas.proposal import ProposalCreate, ProposalEdit, ProposalResponse, SupportCreate
 from kbz.services.proposal_service import ProposalService
 from kbz.services.support_service import SupportService
@@ -12,7 +14,13 @@ router = APIRouter()
 
 
 @router.post("/communities/{community_id}/proposals", response_model=ProposalResponse, status_code=201)
-async def create_proposal(community_id: uuid.UUID, data: ProposalCreate, db: AsyncSession = Depends(get_db)):
+async def create_proposal(
+    community_id: uuid.UUID,
+    data: ProposalCreate,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    enforce_session_matches_body(data.user_id, session_user)
     svc = ProposalService(db)
     proposal = await svc.create(community_id, data)
     return proposal
@@ -63,8 +71,58 @@ async def submit_proposal(proposal_id: uuid.UUID, db: AsyncSession = Depends(get
     return proposal
 
 
+@router.post("/proposals/{proposal_id}/withdraw", response_model=ProposalResponse)
+async def withdraw_proposal(
+    proposal_id: uuid.UUID,
+    data: SupportCreate,  # reused: body = {"user_id": "..."}
+    db: AsyncSession = Depends(get_db),
+):
+    """Author cancels their own proposal before quorum.
+
+    Only valid while the proposal is still DRAFT or OUT_THERE — once it's
+    ON_THE_AIR, ACCEPTED, REJECTED, or CANCELED, we don't allow retraction
+    (too late, or already done). The author's user_id must match.
+    """
+    from sqlalchemy import select, update
+
+    from kbz.enums import ProposalStatus
+    from kbz.models.proposal import Proposal
+
+    proposal = (
+        await db.execute(select(Proposal).where(Proposal.id == proposal_id))
+    ).scalar_one_or_none()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.user_id != data.user_id:
+        raise HTTPException(status_code=403, detail="Only the author can withdraw")
+    if proposal.proposal_status not in (
+        ProposalStatus.DRAFT,
+        ProposalStatus.OUT_THERE,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot withdraw — proposal is {proposal.proposal_status}",
+        )
+    await db.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal_id)
+        .values(proposal_status=ProposalStatus.CANCELED)
+    )
+    await db.commit()
+    proposal = (
+        await db.execute(select(Proposal).where(Proposal.id == proposal_id))
+    ).scalar_one()
+    return proposal
+
+
 @router.post("/proposals/{proposal_id}/support", status_code=201)
-async def add_support(proposal_id: uuid.UUID, data: SupportCreate, db: AsyncSession = Depends(get_db)):
+async def add_support(
+    proposal_id: uuid.UUID,
+    data: SupportCreate,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    enforce_session_matches_body(data.user_id, session_user)
     svc = SupportService(db)
     await svc.add_proposal_support(proposal_id, data.user_id)
     return {"status": "supported"}

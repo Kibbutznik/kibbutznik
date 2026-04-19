@@ -45,3 +45,30 @@ async def require_user(
             detail="authentication required",
         )
     return user
+
+
+def enforce_session_matches_body(
+    body_user_id,
+    session_user: User | None,
+) -> None:
+    """If a session cookie is present, the body's user_id MUST match it.
+
+    Use this at the top of any write endpoint that accepts a `user_id` in
+    its request body (support, comment, support_pulse, create_proposal,
+    …). Agents — which never carry a session cookie — are unaffected
+    because `session_user` will be None.
+
+    Raises 403 if a logged-in human tries to spoof another user.
+    """
+    if session_user is None:
+        return
+    # body_user_id may be uuid.UUID or str depending on pydantic model
+    try:
+        same = str(body_user_id) == str(session_user.id)
+    except Exception:
+        same = False
+    if not same:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="session user does not match body.user_id",
+        )
