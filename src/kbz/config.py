@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     tkg_semantic_timeout_ms: int = 300
     tkg_base_url: str = "http://localhost:8000"
 
+    # --- Email (transactional) ---
+    # Backend: "log" (dev/test — no network) or "resend" (real sends).
+    # If "resend" is chosen but resend_api_key is empty we degrade to log.
+    email_backend: str = "log"
+    resend_api_key: str = ""
+    # Must be an address on a DOMAIN you've verified in Resend. For dev
+    # we default to the reserved `onboarding@resend.dev` which works out
+    # of the box for the first 50 test sends per API key.
+    email_from: str = "KBZ <onboarding@resend.dev>"
+
     # --- Human auth (Track C) ---
     # Session lifetime — cookie + DB token — deliberately short so a
     # leaked cookie has limited blast radius. Magic links are even

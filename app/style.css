@@ -1,0 +1,156 @@
+/* KBZ Kibbutz — product theme.
+ *
+ * Different from the simulation viewer's palette: warmer, more "tool"
+ * than "spectator dashboard". Ships no-build via <link> tag.
+ */
+
+:root {
+  --bg: #f6f3ec;
+  --bg-card: #fffdf9;
+  --text: #1f2230;
+  --text-dim: #6a6f82;
+  --border: #d9d4c7;
+  --accent: #3b8070;     /* kibbutz green */
+  --accent-soft: #e5f1ed;
+  --warn: #d97746;
+  --danger: #c14b57;
+  --radius: 10px;
+  --shadow: 0 2px 12px rgba(20, 24, 38, 0.08);
+  --shadow-hover: 0 4px 20px rgba(20, 24, 38, 0.12);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+a:hover { text-decoration: underline; }
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+
+header.app-header {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.btn {
+  font: inherit;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.btn.primary:hover { background: #2f6c5e; box-shadow: var(--shadow-hover); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn.ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+.input {
+  font: inherit;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: white;
+  width: 100%;
+}
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  padding: 4rem 1.5rem 3rem;
+  text-align: center;
+}
+.hero h1 {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  margin: 0 0 0.5rem;
+}
+.hero p {
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  margin: 0 auto 1.5rem;
+  max-width: 620px;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+.feature {
+  padding: 1rem 1.1rem;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.feature-title {
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+  color: var(--accent);
+}
+
+.muted { color: var(--text-dim); font-size: 0.9rem; }
+.bold { font-weight: 600; }
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.stack { display: flex; flex-direction: column; gap: 0.8rem; }
+.row { display: flex; align-items: center; gap: 0.75rem; }
+.row.right { justify-content: flex-end; }
+
+footer.app-footer {
+  border-top: 1px solid var(--border);
+  padding: 1.5rem 1.25rem;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}

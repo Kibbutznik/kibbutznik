@@ -4133,25 +4133,11 @@ function App() {
     const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
 
-    // ── Track C auth state ──
-    const [authUser, setAuthUser] = useState(null);
-    const [loginOpen, setLoginOpen] = useState(false);
-    const [inviteOpen, setInviteOpen] = useState(false);
-    // Pick up ?invite=<code> from URL on first render (one-time)
-    const [pendingInviteCode, setPendingInviteCode] = useState(() => {
-        try {
-            const p = new URLSearchParams(window.location.search);
-            return p.get("invite") || null;
-        } catch { return null; }
-    });
-    // Bootstrap — check session on load
-    useEffect(() => {
-        API.get("/auth/me").then(r => setAuthUser(r.user || null)).catch(() => {});
-    }, []);
-    const handleLogout = useCallback(async () => {
-        try { await API.post("/auth/logout", {}); } catch {}
-        setAuthUser(null);
-    }, []);
+    // Track C auth state is intentionally NOT wired into the simulation
+    // viewer — humans log into the product at `/app/`, not here. The
+    // AuthHeader / LoginModal components remain defined above for reuse
+    // by the product codebase.
+    const authUser = null;
 
     // Scoped community navigation (for action sub-communities)
     const [activeCommunityId, setActiveCommunityId] = useState(null);
@@ -4196,11 +4182,10 @@ function App() {
     }, [agents, status]);
 
     const rootCommunityId = status?.community?.id;
-    // When a human is logged in, their user_id acts as the write-principal
-    // for every existing endpoint that accepts user_id in the body
-    // (Support, Comment, Commit, ...). Falls back to the synthetic
-    // bb_user_id pre-existing on /simulation/status when not logged in.
-    const bbUserId = authUser?.user_id || status?.bb_user_id || null;
+    // Simulation is spectator mode — use the pre-existing BB ghost user
+    // from /simulation/status. Real-human authentication lives in the
+    // separate `app/` product, not here.
+    const bbUserId = status?.bb_user_id || null;
     const effectiveCommunityId = activeCommunityId || rootCommunityId;
     // For backward compat, keep communityId pointing to effective
     const communityId = effectiveCommunityId;
@@ -4383,21 +4368,11 @@ function App() {
                 restarting={restarting}
             />
             <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} agentsByName={agentsByName} />
-            <AuthHeader authUser={authUser}
-                onLogin={() => setLoginOpen(true)}
-                onLogout={handleLogout}
-                onInvite={() => setInviteOpen(true)}
-                communityId={rootCommunityId}
-            />
-            <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)}
-                onLoggedIn={(u) => setAuthUser(u)} />
-            <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)}
-                communityId={rootCommunityId} />
-            {pendingInviteCode && !authUser && (
-                <InviteClaimModal code={pendingInviteCode}
-                    onClose={() => setPendingInviteCode(null)}
-                    onLoggedIn={(u) => { setAuthUser(u); setPendingInviteCode(null); }} />
-            )}
+            {/* Auth UI suppressed from the simulation viewer. The simulation
+                is spectator-only; real human accounts and invites live in
+                the new `app/` product codebase. AuthHeader / LoginModal /
+                InviteModal / InviteClaimModal components remain defined
+                above in case the human product imports this file later. */}
             <ActionBreadcrumb
                 activeCommunityId={activeCommunityId}
                 rootCommunityId={rootCommunityId}

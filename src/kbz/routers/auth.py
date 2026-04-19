@@ -23,6 +23,7 @@ from kbz.config import settings
 from kbz.database import get_db
 from kbz.models.user import User
 from kbz.services.auth_service import AuthService
+from kbz.services.email_service import EmailService, render_magic_link_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -74,16 +75,35 @@ async def request_magic_link(
 ) -> MagicLinkResponse:
     """Create-or-fetch a human user for this email, mint a magic-link.
 
-    In dev mode the verify URL is returned in the response so the viewer
-    can surface it directly. In prod this would go to SMTP instead.
+    Always sends the link via the configured EmailService (log backend in
+    dev → captured in-memory; Resend backend → real email in prod).
+
+    The `link` field in the response is exposed only in dev
+    (`auth_dev_expose_magic_link=True`) as a convenience so the product
+    UI can surface "click here" without needing a separate email client.
+    In prod this field MUST be null.
     """
     svc = AuthService(db)
     user = await svc.get_or_create_human(body.email)
     issued = await svc.issue_magic_link(user)
     await db.commit()
+
+    verify_path = f"/auth/verify?token={issued.raw}"
+    # Compose the full URL. Behind a reverse proxy the Host header is
+    # the right signal; we don't have Request here but the product UI
+    # adds the origin itself when rendering the "click here" link. For
+    # the email we default to a setting; fall back to relative if absent.
+    msg = render_magic_link_email(verify_url=verify_path)
+    msg.to = user.email or body.email
+    try:
+        await EmailService().send(msg)
+    except Exception:
+        # Never fail this endpoint just because email couldn't go out.
+        pass
+
     link: str | None = None
     if settings.auth_dev_expose_magic_link:
-        link = f"/auth/verify?token={issued.raw}"
+        link = verify_path
     return MagicLinkResponse(sent=True, link=link)
 
 

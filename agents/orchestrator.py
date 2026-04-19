@@ -97,6 +97,13 @@ class Orchestrator:
         self._paused = False
         self._pause_event = asyncio.Event()
         self._pause_event.set()  # starts unpaused
+        # ── API-credit safety: auto-pause every N events ──────────────
+        # After N events the sim pauses itself so unattended runs don't
+        # burn unbounded OpenRouter credit. Set to 0 to disable. When
+        # the viewer resumes, the counter resets and the sim runs for
+        # another N events before the next auto-pause.
+        self._auto_pause_every: int = 500
+        self._events_since_resume: int = 0
         self.max_idle_rounds = max_idle_rounds
         self.agents_per_round_fraction = agents_per_round_fraction
         self.newcomer_users: list[dict] = []  # users who applied but aren't members yet
@@ -586,17 +593,21 @@ class Orchestrator:
             except Exception as e:
                 logger.warning(f"[Memory] Reflection failed for {agent.persona.name}: {e}")
 
-    def pause(self) -> None:
-        """Pause the simulation. Current round will finish, then pause before the next."""
+    def pause(self, *, reason: str = "manual") -> None:
+        """Pause the simulation. Current round will finish, then pause before the next.
+
+        `reason` is a free-form tag for telemetry/UI ("manual", "auto_api_budget", …).
+        """
         self._paused = True
         self._pause_event.clear()
-        logger.info("Simulation PAUSED")
+        logger.info(f"Simulation PAUSED (reason={reason})")
 
     def resume(self) -> None:
-        """Resume the simulation."""
+        """Resume the simulation. Also resets the auto-pause event counter."""
         self._paused = False
+        self._events_since_resume = 0
         self._pause_event.set()
-        logger.info("Simulation RESUMED")
+        logger.info("Simulation RESUMED (auto-pause counter reset)")
 
     @property
     def is_paused(self) -> bool:
@@ -819,6 +830,27 @@ class Orchestrator:
             # Trim events to prevent unbounded memory growth
             self._trim_events()
 
+            # ── Auto-pause after N events since last resume ────────────
+            # Protects unattended runs from eating unbounded OpenRouter
+            # credit. Checked after each round so we don't pause mid-round.
+            if self._auto_pause_every > 0:
+                self._events_since_resume += len(events)
+                if self._events_since_resume >= self._auto_pause_every and not self._paused:
+                    logger.warning(
+                        f"[Auto-pause] {self._events_since_resume} events since last resume "
+                        f"(threshold={self._auto_pause_every}) — pausing simulation to preserve API credit."
+                    )
+                    self.pause(reason="auto_api_budget")
+                    try:
+                        await event_bus.emit(
+                            "simulation.auto_paused",
+                            events_in_window=self._events_since_resume,
+                            threshold=self._auto_pause_every,
+                            round_num=self._round,
+                        )
+                    except Exception:
+                        pass
+
             # Log LLM stats every 10 rounds for monitoring long simulations
             round_num += 1
             if round_num % 10 == 0:
@@ -893,6 +925,10 @@ class Orchestrator:
             "community": community,
             "round": self._round,
             "paused": self._paused,
+            "auto_pause": {
+                "every": self._auto_pause_every,
+                "events_since_resume": self._events_since_resume,
+            },
             "newcomers": self.newcomer_users,
             "agents": [
                 {
