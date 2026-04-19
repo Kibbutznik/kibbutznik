@@ -16,7 +16,7 @@ return None from `get_current_user`. Existing endpoints that accept
 
 from __future__ import annotations
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.config import settings
@@ -30,10 +30,29 @@ async def get_current_user(
     kbz_session: str | None = Cookie(
         default=None, alias=settings.auth_session_cookie
     ),
+    authorization: str | None = Header(default=None),
 ) -> User | None:
-    if not kbz_session:
-        return None
-    return await AuthService(db).resolve_session(kbz_session)
+    """Resolve the current user from EITHER a session cookie OR an
+    `Authorization: Bearer <api_token>` header.
+
+    Cookies are how the browser-based product authenticates; API tokens
+    are how external bots (MCP servers, LangChain, curl scripts,
+    custom agents) authenticate. Both look up into the same
+    `auth_tokens` table — just different `token_type`.
+    """
+    svc = AuthService(db)
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1]:
+            user = await svc.resolve_api_token(parts[1])
+            if user is not None:
+                return user
+            # Malformed / expired bearer tokens fall through to cookie —
+            # we don't want to reject a perfectly good browser session
+            # just because an accidental header was set.
+    if kbz_session:
+        return await svc.resolve_session(kbz_session)
+    return None
 
 
 async def require_user(

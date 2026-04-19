@@ -94,11 +94,15 @@ function Header({ user, onLogout }) {
                     <>
                         <a href="#/dashboard" className="btn ghost">Dashboard</a>
                         <a href="#/browse" className="btn ghost">Browse</a>
+                        <a href="#/skills" className="btn ghost">Skills</a>
                         <a href="#/profile" className="btn ghost">👤 {user.user_name}</a>
                         <button className="btn ghost" onClick={onLogout}>Log out</button>
                     </>
                 ) : (
-                    <a href="#/login" className="btn primary">Sign in</a>
+                    <>
+                        <a href="#/skills" className="btn ghost">Skills</a>
+                        <a href="#/login" className="btn primary">Sign in</a>
+                    </>
                 )}
             </div>
         </header>
@@ -1062,7 +1066,7 @@ function ProfilePage({ user, onRefresh, onLogout }) {
     };
 
     return (
-        <div className="container" style={{ maxWidth: 560 }}>
+        <div className="container" style={{ maxWidth: 640 }}>
             <h2>Profile</h2>
             <div className="muted" style={{ marginBottom: "1rem" }}>{user.email}</div>
             <form className="stack card" onSubmit={save}>
@@ -1081,6 +1085,188 @@ function ProfilePage({ user, onRefresh, onLogout }) {
                 {msg && <p style={{ color: "var(--accent)" }}>{msg}</p>}
                 <ErrorBanner error={error} />
             </form>
+
+            <ApiTokenManager />
+        </div>
+    );
+}
+
+// ── API tokens ─────────────────────────────────────────
+function ApiTokenManager() {
+    const [tokens, setTokens] = useState([]);
+    const [name, setName] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [justCreated, setJustCreated] = useState(null);  // raw value, shown once
+    const [error, setError] = useState(null);
+
+    const reload = useCallback(async () => {
+        try {
+            const ts = await api.get("/users/me/tokens");
+            setTokens(ts);
+        } catch (e) { setError(e.message); }
+    }, []);
+    useEffect(() => { reload(); }, [reload]);
+
+    const create = async (e) => {
+        e.preventDefault();
+        setCreating(true); setError(null);
+        try {
+            const t = await api.post("/users/me/tokens", { name: name.trim() });
+            setJustCreated(t.token);   // raw, shown once
+            setName("");
+            await reload();
+        } catch (err) { setError(err.message); }
+        finally { setCreating(false); }
+    };
+
+    const revoke = async (tid) => {
+        if (!confirm("Revoke this token? Bots using it will immediately lose access.")) return;
+        try {
+            await api._fetch(`/users/me/tokens/${tid}`, { method: "DELETE" });
+            await reload();
+        } catch (err) { setError(err.message); }
+    };
+
+    return (
+        <div className="card" style={{ marginTop: "1.25rem" }}>
+            <h3 style={{ marginTop: 0 }}>🔑 API tokens</h3>
+            <p className="muted">
+                Long-lived bearer tokens for external bots — use them with the{" "}
+                <a href="#/skills">Kibbutznik MCP server</a> or any agent that can
+                set an <code>Authorization: Bearer</code> header. The raw value
+                is shown exactly once.
+            </p>
+            {justCreated && (
+                <div className="card" style={{ background: "var(--accent-soft)", marginBottom: "0.8rem" }}>
+                    <div className="bold">Save this now — it won't be shown again:</div>
+                    <input className="input" readOnly value={justCreated}
+                           onClick={(e) => e.target.select()}
+                           style={{ fontFamily: "monospace", marginTop: 6 }} />
+                    <div className="row" style={{ marginTop: "0.5rem" }}>
+                        <button className="btn" onClick={() => navigator.clipboard?.writeText(justCreated)}>
+                            📋 Copy
+                        </button>
+                        <button className="btn ghost" onClick={() => setJustCreated(null)}>Done</button>
+                    </div>
+                </div>
+            )}
+            <form className="row" onSubmit={create} style={{ marginBottom: "0.8rem" }}>
+                <input className="input" placeholder="Token name (e.g. claude-desktop)"
+                       maxLength={80} value={name}
+                       onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
+                <button className="btn primary" disabled={creating || !name.trim()}>
+                    {creating ? "Creating…" : "Create token"}
+                </button>
+            </form>
+            {tokens.length === 0
+                ? <div className="muted">No tokens yet.</div>
+                : <div className="stack">
+                    {tokens.map(t => (
+                        <div key={t.id} className="card" style={{ padding: "0.6rem 0.9rem" }}>
+                            <div className="row" style={{ justifyContent: "space-between" }}>
+                                <div>
+                                    <div className="bold">{t.name || "(unnamed)"}</div>
+                                    <div className="muted" style={{ fontSize: "0.8rem" }}>
+                                        created {new Date(t.created_at).toLocaleDateString()} ·
+                                        {" "}expires {new Date(t.expires_at).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <button className="btn ghost" onClick={() => revoke(t.id)}>Revoke</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>}
+            <ErrorBanner error={error} />
+        </div>
+    );
+}
+
+// ── Skills page (public, no auth required to read) ─────
+function SkillsPage() {
+    return (
+        <div className="container" style={{ maxWidth: 760 }}>
+            <h2>Bring your own bot</h2>
+            <p className="muted">
+                Kibbutznik exposes its governance actions as tools your AI agent
+                can use directly — Claude Desktop, Claude Code, Cursor, ChatGPT,
+                LangChain, or your own harness. You run the bot, you pay your
+                own LLM bill, we just handle the governance.
+            </p>
+
+            <div className="card" style={{ marginBottom: "1rem" }}>
+                <h3 style={{ marginTop: 0 }}>1. Get an API token</h3>
+                <p className="muted" style={{ margin: 0 }}>
+                    Sign in, go to{" "}
+                    <a href="#/profile">Profile</a> → API tokens → Create token.
+                    The value is shown exactly once — paste it into your bot's
+                    config immediately.
+                </p>
+            </div>
+
+            <div className="card" style={{ marginBottom: "1rem" }}>
+                <h3 style={{ marginTop: 0 }}>2a. MCP server (Claude Desktop, Claude Code, Cursor, Zed, Goose, …)</h3>
+                <p className="muted">
+                    The <code>kibbutznik-mcp</code> Python package exposes 9 typed
+                    tools to any MCP host. The agent reasons locally; the server
+                    is a thin, authenticated wrapper over our HTTP API.
+                </p>
+                <pre style={{ background: "#0f1a1a", color: "#9cd", padding: "0.8rem", borderRadius: 6, overflow: "auto", fontSize: "0.85rem" }}>
+{`pip install kibbutznik-mcp
+# add to your MCP host config:
+{
+  "mcpServers": {
+    "kibbutznik": {
+      "command": "kibbutznik-mcp",
+      "env": { "KIBBUTZNIK_API_TOKEN": "kbz_..." }
+    }
+  }
+}`}
+                </pre>
+                <div className="row" style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <a className="btn" href="https://github.com/kibbutznik/kibbutznik-mcp" target="_blank" rel="noopener">GitHub</a>
+                    <a className="btn ghost" href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">What is MCP?</a>
+                </div>
+            </div>
+
+            <div className="card" style={{ marginBottom: "1rem" }}>
+                <h3 style={{ marginTop: 0 }}>2b. Claude Code skill (markdown)</h3>
+                <p className="muted">
+                    If your host doesn't speak MCP, drop our <code>SKILL.md</code>
+                    into your Claude Code skills dir. It tells the agent how to
+                    hit our HTTP API directly with <code>curl</code>.
+                </p>
+                <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+                    <a className="btn primary" href="/app/skills/SKILL.md" download>
+                        📄 Download SKILL.md
+                    </a>
+                    <a className="btn ghost" href="/app/skills/SKILL.md" target="_blank" rel="noopener">
+                        View in browser
+                    </a>
+                </div>
+            </div>
+
+            <div className="card" style={{ marginBottom: "1rem" }}>
+                <h3 style={{ marginTop: 0 }}>2c. Anything else (OpenAI Custom GPT, LangChain, autogen, curl, …)</h3>
+                <p className="muted">
+                    Point your framework at the OpenAPI spec. Auth with{" "}
+                    <code>Authorization: Bearer $KIBBUTZNIK_API_TOKEN</code>.
+                </p>
+                <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+                    <a className="btn" href="/kbz/openapi.json" target="_blank" rel="noopener">
+                        📜 openapi.json
+                    </a>
+                    <a className="btn ghost" href="/kbz/docs" target="_blank" rel="noopener">
+                        Swagger UI
+                    </a>
+                </div>
+            </div>
+
+            <div className="muted" style={{ fontSize: "0.85rem", marginTop: "1.5rem" }}>
+                Heads up: every bot write is signed as your user_id — the server
+                refuses requests where <code>body.user_id</code> doesn't match
+                your token. You can revoke any token anytime from{" "}
+                <a href="#/profile">Profile</a>.
+            </div>
         </div>
     );
 }
@@ -1096,6 +1282,7 @@ function App() {
         if (route.path === "/" || route.path === "") return <LandingPage user={user} />;
         if (route.path === "/login") return <LoginPage onLoggedIn={refresh} />;
         if (route.path === "/browse") return <BrowsePage user={user} />;
+        if (route.path === "/skills") return <SkillsPage />;
         if (root === "invite" && arg) return <InviteClaimPage code={arg} onLoggedIn={refresh} />;
         if (root === "kibbutz" && arg === "new") {
             if (!user) { navigate("#/login"); return null; }

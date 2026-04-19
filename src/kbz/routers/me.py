@@ -394,3 +394,84 @@ async def delete_bot(
         )
     )
     await db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# API tokens — long-lived bearer tokens for external bots / scripts
+# ═══════════════════════════════════════════════════════════════════
+
+class ApiTokenCreate(BaseModel):
+    name: str  # user-chosen label, e.g. "claude-code-skill"
+
+
+class ApiTokenOut(BaseModel):
+    """Shape returned from LIST + DELETE. The raw token value is
+    deliberately NOT in here — it's only in the one-time CREATE
+    response below. Once lost, mint a new token."""
+    id: uuid.UUID
+    name: str | None
+    created_at: datetime
+    expires_at: datetime
+
+
+class ApiTokenCreateOut(ApiTokenOut):
+    # The raw, un-hashed token. Shown exactly once. If the user loses
+    # it they must create a new one and revoke this one.
+    token: str
+
+
+@router.post("/tokens", response_model=ApiTokenCreateOut)
+async def create_api_token(
+    body: ApiTokenCreate,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mint a personal API token. The `token` value in the response is
+    visible exactly once — the user must paste it into their bot's
+    config immediately. We only store SHA-256(token) on our side."""
+    from kbz.services.auth_service import AuthService
+    svc = AuthService(db)
+    try:
+        issued = await svc.issue_api_token(user, name=body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.commit()
+    # Fetch the row we just inserted to return full metadata
+    from kbz.models.auth import AuthToken
+    row = (
+        await db.execute(select(AuthToken).where(AuthToken.id == issued.token_id))
+    ).scalar_one()
+    return ApiTokenCreateOut(
+        id=row.id,
+        name=row.name,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        token=issued.raw,
+    )
+
+
+@router.get("/tokens", response_model=list[ApiTokenOut])
+async def list_api_tokens(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from kbz.services.auth_service import AuthService
+    rows = await AuthService(db).list_api_tokens(user)
+    return [
+        ApiTokenOut(
+            id=r.id, name=r.name,
+            created_at=r.created_at, expires_at=r.expires_at,
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/tokens/{token_id}", status_code=204)
+async def revoke_api_token(
+    token_id: uuid.UUID,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from kbz.services.auth_service import AuthService
+    await AuthService(db).revoke_api_token(user, token_id)
+    await db.commit()

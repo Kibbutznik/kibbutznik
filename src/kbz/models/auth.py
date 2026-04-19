@@ -50,6 +50,9 @@ class AuthToken(Base):
     used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Only populated for token_type='api_token' rows. Lets a user
+    # tell their tokens apart in the management UI. NULL otherwise.
+    name: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
 class Invite(Base):

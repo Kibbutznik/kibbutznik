@@ -42,6 +42,11 @@ from kbz.models.user import User
 
 TOKEN_TYPE_MAGIC = "magic_link"
 TOKEN_TYPE_SESSION = "session"
+TOKEN_TYPE_API = "api_token"
+
+# Long-lived — API tokens are meant for bots / scripts. Users revoke
+# them explicitly via the management UI if they rotate.
+API_TOKEN_TTL_DAYS = 365
 
 
 def _now() -> datetime:
@@ -200,6 +205,84 @@ class AuthService:
             await self.db.execute(select(User).where(User.id == row.user_id))
         ).scalar_one_or_none()
         return user
+
+    async def resolve_api_token(self, raw_token: str) -> User | None:
+        """Look up a live API token (bearer auth for external bots).
+
+        Same hashing / lookup as session tokens, but matches rows of
+        `token_type='api_token'` which have a long TTL and a user-
+        visible `name` label. Returns None on unknown / expired / revoked.
+        """
+        if not raw_token:
+            return None
+        now = _now()
+        h = _hash_token(raw_token)
+        row = (
+            await self.db.execute(
+                select(AuthToken).where(
+                    AuthToken.token_hash == h,
+                    AuthToken.token_type == TOKEN_TYPE_API,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None or row.expires_at <= now:
+            return None
+        user = (
+            await self.db.execute(select(User).where(User.id == row.user_id))
+        ).scalar_one_or_none()
+        return user
+
+    async def issue_api_token(
+        self, user: User, *, name: str, ttl_days: int = API_TOKEN_TTL_DAYS,
+    ) -> IssuedToken:
+        """Mint a long-lived API token the user can paste into an
+        external bot. The raw string is returned ONCE — we store only
+        SHA-256(raw) so the user must save it at creation time."""
+        if not name.strip():
+            raise ValueError("token name is required")
+        raw = _random_token()
+        expires = _now() + timedelta(days=ttl_days)
+        token = AuthToken(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            token_hash=_hash_token(raw),
+            token_type=TOKEN_TYPE_API,
+            expires_at=expires,
+            name=name.strip()[:80],
+        )
+        self.db.add(token)
+        await self.db.flush()
+        return IssuedToken(raw=raw, token_id=token.id, expires_at=expires)
+
+    async def list_api_tokens(self, user: User) -> list[AuthToken]:
+        """All this user's non-expired API tokens, without raw values."""
+        now = _now()
+        rows = (
+            await self.db.execute(
+                select(AuthToken).where(
+                    AuthToken.user_id == user.id,
+                    AuthToken.token_type == TOKEN_TYPE_API,
+                    AuthToken.expires_at > now,
+                ).order_by(AuthToken.created_at.desc())
+            )
+        ).scalars().all()
+        return list(rows)
+
+    async def revoke_api_token(self, user: User, token_id: uuid.UUID) -> bool:
+        """Set the row's expiry to NOW so it stops validating. We keep
+        the row around for audit rather than DELETE."""
+        now = _now()
+        result = await self.db.execute(
+            update(AuthToken)
+            .where(
+                AuthToken.id == token_id,
+                AuthToken.user_id == user.id,
+                AuthToken.token_type == TOKEN_TYPE_API,
+            )
+            .values(expires_at=now)
+            .returning(AuthToken.id)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def revoke_session(self, raw_token: str) -> None:
         """Delete a session token (logout). No-op if unknown."""
