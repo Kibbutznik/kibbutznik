@@ -15,6 +15,7 @@ GET  /auth/me                   — returns the currently-logged-in user or null
 from __future__ import annotations
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,26 @@ from kbz.services.auth_service import AuthService
 from kbz.services.email_service import EmailService, render_magic_link_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+_DEFAULT_POST_LOGIN = "/app/#/dashboard"
+
+
+def _safe_next_path(candidate: str | None) -> str:
+    """Anti-open-redirect: accept only relative paths starting with a
+    single '/'. Reject protocol-relative ('//evil.com/...') and anything
+    with a scheme. Falls back to the default post-login destination.
+    """
+    if not candidate:
+        return _DEFAULT_POST_LOGIN
+    if not candidate.startswith("/"):
+        return _DEFAULT_POST_LOGIN
+    if candidate.startswith("//"):
+        return _DEFAULT_POST_LOGIN
+    # Disallow any scheme-like prefix (e.g. "/http://..." after decoding)
+    if "://" in candidate:
+        return _DEFAULT_POST_LOGIN
+    return candidate
 
 
 class MagicLinkRequest(BaseModel):
@@ -89,13 +110,16 @@ async def request_magic_link(
     await db.commit()
 
     verify_path = f"/auth/verify?token={issued.raw}"
-    # Email body NEEDS an absolute URL — email clients can't resolve a
-    # relative href like "/auth/verify?..." and render it as
-    # "http:///auth/verify?..." which fails. The in-app dev-link below
-    # stays relative because the browser resolves it against the
-    # current origin.
+    # Email body NEEDS (a) an absolute URL — email clients can't resolve
+    # a relative href and render it as "http:///auth/verify?..." which
+    # fails; and (b) a `next=` param — so clicking the link lands on
+    # the app dashboard instead of a raw JSON response.
+    # The in-app dev-link below stays bare: the viewer JS consumes it
+    # via fetch and navigates to the dashboard itself.
     base = (settings.public_base_url or "").rstrip("/")
-    email_url = f"{base}{verify_path}" if base else verify_path
+    from urllib.parse import quote
+    email_verify_path = f"{verify_path}&next={quote('/app/#/dashboard', safe='/#')}"
+    email_url = f"{base}{email_verify_path}" if base else email_verify_path
     msg = render_magic_link_email(verify_url=email_url)
     msg.to = user.email or body.email
     try:
@@ -114,18 +138,45 @@ async def request_magic_link(
 async def verify_magic_link(
     token: str,
     response: Response,
+    next: str | None = None,
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Consume a magic-link token, issue a session, set the cookie."""
+):
+    """Consume a magic-link token, issue a session, set the cookie.
+
+    Two response shapes:
+
+    - **No `next` param** (default): returns JSON `{"user": {...}}`. Used
+      by the viewer's dev-mode one-click flow that calls this via fetch
+      and then navigates itself.
+    - **With `next=/some/path`**: returns a 303 See Other redirect to
+      that path. Used by email links so clicking in an inbox lands on
+      the app dashboard instead of showing raw JSON.
+
+    The `next` path is validated to be a safe relative URL — no
+    protocol-relative, no scheme. Anything else falls back to the
+    default dashboard path.
+    """
     svc = AuthService(db)
     user = await svc.consume_magic_link(token)
     if user is None:
+        if next is not None:
+            # Browser click on an expired/bad link — send them to the
+            # login page with a flag rather than a raw 400 error page.
+            return RedirectResponse(
+                url="/app/#/login?error=expired", status_code=303,
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid or expired magic link",
         )
     session = await svc.issue_session(user)
     await db.commit()
+
+    if next is not None:
+        redirect = RedirectResponse(url=_safe_next_path(next), status_code=303)
+        _set_session_cookie(redirect, session.raw)
+        return redirect
+
     _set_session_cookie(response, session.raw)
     return {
         "user": {

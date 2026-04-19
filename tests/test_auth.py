@@ -115,6 +115,47 @@ async def test_magic_link_reuses_existing_user_by_email(client):
 
 
 @pytest.mark.asyncio
+async def test_verify_with_next_redirects(client):
+    """When the email-link handler passes `next=/app/#/dashboard`, the
+    endpoint responds with a 303 redirect instead of raw JSON."""
+    r = await client.post(
+        "/auth/request-magic-link", json={"email": "redir@example.com"}
+    )
+    link = r.json()["link"]
+    # Append next param — httpx doesn't follow redirects by default
+    r = await client.get(link + "&next=/app/%23/dashboard", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/app/")
+    # Cookie gets set on the redirect response
+    assert client.cookies.get("kbz_session") is not None
+
+
+@pytest.mark.asyncio
+async def test_verify_next_rejects_open_redirect(client):
+    """`next=//evil.com/…` must fall back to the default dashboard path,
+    not let an attacker send users off-site."""
+    r = await client.post(
+        "/auth/request-magic-link", json={"email": "saferedir@example.com"}
+    )
+    link = r.json()["link"]
+    r = await client.get(link + "&next=//evil.com/phish", follow_redirects=False)
+    assert r.status_code == 303
+    assert "evil.com" not in r.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_verify_expired_with_next_redirects_to_login(client):
+    """Expired/invalid token + next param → redirect to /app/#/login
+    rather than surfacing a 400 JSON error."""
+    r = await client.get(
+        "/auth/verify?token=invalid&next=/app/%23/dashboard",
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "login" in r.headers["location"]
+
+
+@pytest.mark.asyncio
 async def test_logout_invalidates_cookie_value(client):
     """After logout, the same raw token should not resolve anymore."""
     r = await client.post(
