@@ -47,6 +47,80 @@ const api = {
     patch(p, body){ return this._fetch(p, { method: "PATCH",  body: JSON.stringify(body || {}) }); },
 };
 
+// ── Toast notifications ────────────────────────────────
+// Slide-in, auto-dismiss. One host at the root level; emit via
+// `toast(msg, kind?)` from anywhere. Kinds: "success" | "error" |
+// "info". Replaces every alert() in the app — alerts hijack focus
+// and feel like 1999.
+const _toastListeners = new Set();
+let _toastCounter = 0;
+
+function toast(message, kind = "info", timeoutMs = 4000) {
+    const id = ++_toastCounter;
+    const item = { id, message, kind, timeoutMs };
+    _toastListeners.forEach(fn => fn({ type: "push", item }));
+    return id;
+}
+
+function ToastHost() {
+    const [items, setItems] = useState([]);
+    useEffect(() => {
+        const handler = (evt) => {
+            if (evt.type === "push") {
+                setItems(xs => [...xs, evt.item]);
+                if (evt.item.timeoutMs > 0) {
+                    setTimeout(
+                        () => setItems(xs => xs.filter(t => t.id !== evt.item.id)),
+                        evt.item.timeoutMs,
+                    );
+                }
+            }
+        };
+        _toastListeners.add(handler);
+        return () => _toastListeners.delete(handler);
+    }, []);
+    const dismiss = (id) => setItems(xs => xs.filter(t => t.id !== id));
+
+    return (
+        <div style={{
+            position: "fixed", bottom: "1rem", right: "1rem",
+            zIndex: 1000, display: "flex", flexDirection: "column",
+            gap: "0.5rem", maxWidth: 380, pointerEvents: "none",
+        }}>
+            {items.map(t => {
+                const palette = {
+                    success: { bg: "#e6f7ef", border: "#4ecca3", fg: "#0c6047" },
+                    error:   { bg: "#ffe5e9", border: "#c14b57", fg: "#7a1a24" },
+                    info:    { bg: "#eef2ff", border: "#6b7fd7", fg: "#2a3566" },
+                }[t.kind] || {};
+                return (
+                    <div key={t.id}
+                         onClick={() => dismiss(t.id)}
+                         className="toast-slide-in"
+                         style={{
+                             pointerEvents: "auto", cursor: "pointer",
+                             background: palette.bg, color: palette.fg,
+                             border: `1px solid ${palette.border}`,
+                             padding: "0.6rem 0.9rem", borderRadius: 8,
+                             boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+                             fontSize: "0.88rem", lineHeight: 1.35,
+                         }}>
+                        {t.message}
+                    </div>
+                );
+            })}
+            <style>{`
+                @keyframes toast-slide-in-kf {
+                    from { transform: translateX(120%); opacity: 0; }
+                    to   { transform: translateX(0);     opacity: 1; }
+                }
+                .toast-slide-in { animation: toast-slide-in-kf 0.25s ease-out; }
+            `}</style>
+        </div>
+    );
+}
+
+
 // ── WebSocket live-events hook ──────────────────────────
 // Mirrors the simulation viewer's pattern — single connection, feeds
 // news ticker + triggers debounced refetches on state-change events.
@@ -116,7 +190,7 @@ function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
                 user_id: user.user_id,
             });
             onChanged?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
         finally { setBusy(false); }
     };
 
@@ -416,29 +490,62 @@ function DashboardPage({ user }) {
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            try {
-                const [m, a, s, b, w] = await Promise.all([
-                    api.get("/users/me/memberships"),
-                    api.get("/users/me/pending-applications"),
-                    api.get("/users/me/sent-invites"),
-                    api.get("/users/me/bots"),
-                    api.get("/users/me/wallet").catch(() => null),
-                ]);
-                if (cancelled) return;
-                setMemberships(m);
-                setPendingApps(a);
-                setSentInvites(s);
-                setBots(b);
-                setWallet(w);
-            } catch (e) { setError(e.message); }
-            finally { if (!cancelled) setLoading(false); }
-        })();
-        return () => { cancelled = true; };
+    // Per-kibbutz live stats: { community_id: { pulses, proposals, mySupportedIds } }
+    const [stats, setStats] = useState({});
+
+    const reload = useCallback(async () => {
+        try {
+            const [m, a, s, b, w] = await Promise.all([
+                api.get("/users/me/memberships"),
+                api.get("/users/me/pending-applications"),
+                api.get("/users/me/sent-invites"),
+                api.get("/users/me/bots"),
+                api.get("/users/me/wallet").catch(() => null),
+            ]);
+            setMemberships(m);
+            setPendingApps(a);
+            setSentInvites(s);
+            setBots(b);
+            setWallet(w);
+            // Fan out per-kibbutz fetches for live state
+            const nextStats = {};
+            await Promise.all((m || []).map(async mm => {
+                try {
+                    const [pulses, proposals] = await Promise.all([
+                        api.get(`/communities/${mm.community_id}/pulses`),
+                        api.get(`/communities/${mm.community_id}/proposals`),
+                    ]);
+                    nextStats[mm.community_id] = { pulses, proposals };
+                } catch {
+                    nextStats[mm.community_id] = { pulses: [], proposals: [] };
+                }
+            }));
+            setStats(nextStats);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
     }, []);
+
+    useEffect(() => { reload(); }, [reload]);
+
+    // Subscribe to ALL events (no community filter) so any activity in
+    // any of the user's kibbutzim triggers a silent refresh.
+    useLiveEvents({ onRefresh: reload });
+
+    // Aggregate "needs your attention"
+    const attention = useMemo(() => {
+        let unsupportedCount = 0;
+        let readyPulses = 0;
+        const activeStatuses = new Set(["OutThere", "OnTheAir"]);
+        for (const mm of memberships) {
+            const s = stats[mm.community_id];
+            if (!s) continue;
+            const activeProps = (s.proposals || []).filter(p => activeStatuses.has(p.proposal_status));
+            unsupportedCount += activeProps.length;  // conservative: we don't fetch per-proposal supporter lists
+            const nextPulse = (s.pulses || []).find(p => p.status === 0);
+            if (nextPulse && nextPulse.support_count >= nextPulse.threshold) readyPulses++;
+        }
+        return { unsupportedCount, readyPulses };
+    }, [memberships, stats]);
 
     return (
         <div className="container">
@@ -474,6 +581,27 @@ function DashboardPage({ user }) {
                 </section>
             )}
 
+            {(attention.unsupportedCount > 0 || attention.readyPulses > 0) && (
+                <section style={{ marginBottom: "1.5rem" }}>
+                    <div className="card" style={{
+                        background: "rgba(240, 192, 64, 0.12)",
+                        borderLeft: "3px solid var(--warn)",
+                    }}>
+                        <div className="bold" style={{ marginBottom: "0.3rem" }}>
+                            🔔 Needs your attention
+                        </div>
+                        <div className="muted" style={{ fontSize: "0.9rem" }}>
+                            {attention.readyPulses > 0 && (
+                                <div>⚡ {attention.readyPulses} pulse{attention.readyPulses > 1 ? "s" : ""} ready to fire — your support would lock in the pending decisions.</div>
+                            )}
+                            {attention.unsupportedCount > 0 && (
+                                <div>📝 {attention.unsupportedCount} active proposal{attention.unsupportedCount > 1 ? "s" : ""} across your kibbutzim — visit each to vote.</div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+            )}
+
             <section style={{ marginBottom: "1.5rem" }}>
                 <h3>Your kibbutzim</h3>
                 {loading ? <div className="muted">Loading…</div>
@@ -483,18 +611,64 @@ function DashboardPage({ user }) {
                     </Empty>
                 ) : (
                     <div className="stack">
-                        {memberships.map(m => (
-                            <a key={m.community_id} href={`#/kibbutz/${m.community_id}`}
-                                className="card" style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-                                <div className="row" style={{ justifyContent: "space-between" }}>
-                                    <div>
-                                        <div className="bold">{m.community_name}</div>
-                                        <div className="muted">Joined {new Date(m.joined_at).toLocaleDateString()} · seniority {m.seniority}</div>
+                        {memberships.map(m => {
+                            const s = stats[m.community_id] || { pulses: [], proposals: [] };
+                            const nextPulse = s.pulses.find(p => p.status === 0);
+                            const active = s.proposals.filter(
+                                p => p.proposal_status === "OutThere" || p.proposal_status === "OnTheAir",
+                            );
+                            const landed24h = s.proposals.filter(p => {
+                                if (p.proposal_status !== "Accepted") return false;
+                                try {
+                                    return (Date.now() - new Date(p.created_at).getTime()) < 86400000;
+                                } catch { return false; }
+                            }).length;
+                            const pulsePct = nextPulse
+                                ? Math.min(100, (nextPulse.support_count / Math.max(1, nextPulse.threshold)) * 100)
+                                : 0;
+                            const pulseReady = nextPulse && nextPulse.support_count >= nextPulse.threshold;
+                            return (
+                                <a key={m.community_id} href={`#/kibbutz/${m.community_id}`}
+                                    className="card"
+                                    style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                                    <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div className="row" style={{ gap: "0.5rem" }}>
+                                                <strong>{m.community_name}</strong>
+                                                <span className="pill">member</span>
+                                                {pulseReady && (
+                                                    <span className="pill" style={{ background: "rgba(240,192,64,0.2)", color: "var(--warn)" }}>
+                                                        ⚡ ready
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="muted" style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                                                {active.length} active proposal{active.length === 1 ? "" : "s"}
+                                                {landed24h > 0 && ` · ${landed24h} accepted today`}
+                                                {" · seniority "}{m.seniority}
+                                            </div>
+                                            {nextPulse && (
+                                                <div style={{ marginTop: 8 }}>
+                                                    <div className="muted" style={{ fontSize: "0.75rem", marginBottom: 2 }}>
+                                                        Next pulse: {nextPulse.support_count}/{nextPulse.threshold}
+                                                    </div>
+                                                    <div style={{
+                                                        height: 4, background: "rgba(0,0,0,0.08)",
+                                                        borderRadius: 2, overflow: "hidden",
+                                                    }}>
+                                                        <div style={{
+                                                            width: `${pulsePct}%`, height: "100%",
+                                                            background: pulseReady ? "var(--accent)" : "var(--warn)",
+                                                        }} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <span className="muted" style={{ marginLeft: "0.5rem" }}>→</span>
                                     </div>
-                                    <span className="pill">member</span>
-                                </div>
-                            </a>
-                        ))}
+                                </a>
+                            );
+                        })}
                     </div>
                 )}
             </section>
@@ -591,7 +765,7 @@ function WithdrawBtn({ proposalId, userId, onDone }) {
         try {
             await api.post(`/proposals/${proposalId}/withdraw`, { user_id: userId });
             onDone?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
         finally { setBusy(false); }
     };
     return <button className="btn ghost" disabled={busy} onClick={withdraw}>{busy ? "…" : "Withdraw"}</button>;
@@ -744,6 +918,25 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     );
 
     const [variables, setVariables] = useState({});
+
+    // When ProposePage just navigated back, it stashes the new
+    // proposal's id in sessionStorage so we can scroll to + highlight
+    // that card. Read it once on mount; clear so the next view
+    // doesn't re-animate it.
+    const [newProposalId, setNewProposalId] = useState(() => {
+        try {
+            const id = sessionStorage.getItem("kbz-new-proposal-id");
+            if (id) sessionStorage.removeItem("kbz-new-proposal-id");
+            return id;
+        } catch { return null; }
+    });
+    useEffect(() => {
+        if (!newProposalId) return;
+        // Let the card animate for ~3s then drop the highlight
+        const t = setTimeout(() => setNewProposalId(null), 3500);
+        return () => clearTimeout(t);
+    }, [newProposalId]);
+
     const reload = useCallback(async () => {
         setError(null);
         try {
@@ -793,9 +986,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 proposal_text: `${user.user_name} applied to join`,
                 val_uuid: user.user_id,
             });
-            alert("Application filed. Check your dashboard for progress.");
+            toast("Application filed. Check your dashboard for progress.", "success");
             onRefreshMembership?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
         finally { setApplyBusy(false); }
     };
 
@@ -803,7 +996,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
         try {
             const r = await api.post(`/communities/${communityId}/invites`, {});
             setInviteUrl(window.location.origin + "/app/#/invite/" + r.code);
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
     };
 
     if (!community) {
@@ -886,7 +1079,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 sortedProposals.length === 0 ? <Empty title="No proposals yet">Be the first to propose something.</Empty> :
                 <div className="stack">
                     {sortedProposals.map(p => (
-                        <ProposalCard key={p.id} proposal={p} imMember={imMember} user={user} onChanged={reload} />
+                        <ProposalCard key={p.id} proposal={p} imMember={imMember}
+                            user={user} onChanged={reload}
+                            highlightNew={p.id === newProposalId} />
                     ))}
                 </div>
             )}
@@ -933,9 +1128,18 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     );
 }
 
-function ProposalCard({ proposal, imMember, user, onChanged }) {
+function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
     const [supporting, setSupporting] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
+    const cardRef = useRef(null);
+
+    // Scroll the card into view when it's freshly created by this
+    // user — makes "I just clicked File proposal" feel tangible.
+    useEffect(() => {
+        if (highlightNew && cardRef.current) {
+            cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }, [highlightNew]);
     const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
     const canAct = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
 
@@ -945,12 +1149,14 @@ function ProposalCard({ proposal, imMember, user, onChanged }) {
         try {
             await api.post(`/proposals/${proposal.id}/support`, { user_id: user.user_id });
             onChanged?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
         finally { setSupporting(false); }
     };
     return (
         <>
-            <div className="card" onClick={() => setDetailOpen(true)}
+            <div className={"card" + (highlightNew ? " proposal-new-pulse" : "")}
+                 ref={cardRef}
+                 onClick={() => setDetailOpen(true)}
                  style={{ cursor: "pointer" }}
                  title="Click for details, supporters, and comments">
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1178,13 +1384,102 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
 }
 
 // ── Propose form ────────────────────────────────────────
-const HUMAN_PROPOSAL_TYPES = [
-    { value: "AddStatement",    label: "Add a statement (community rule)" },
-    { value: "RemoveStatement", label: "Remove a statement" },
-    { value: "ReplaceStatement", label: "Replace an existing statement" },
-    { value: "ChangeVariable",  label: "Change a governance variable" },
-    { value: "ThrowOut",        label: "Throw out a member" },
+// Full proposal-type catalog with per-type field specs.
+// `needs` declares which of {text, val_text, val_uuid} are required;
+// `pickFrom` says which existing-entity list the val_uuid dropdown
+// should be populated from (statements | members | actions | artifacts
+// | containers). `financialOnly` hides the type unless the community
+// has the Financial module on.
+const PROPOSAL_CATALOG = [
+    // ── Governance
+    { value: "AddStatement",    group: "Governance",  label: "Add a statement (rule)",
+      help: "Describe the rule. If accepted, it becomes a community statement.",
+      needs: { text: true } },
+    { value: "RemoveStatement", group: "Governance",  label: "Remove a statement",
+      help: "Pick which existing statement to retire, and say why.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "statements", val_uuid_label: "Statement to remove" },
+    { value: "ReplaceStatement", group: "Governance", label: "Replace an existing statement",
+      help: "Pick the statement to replace. Your description is the new text.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "statements", val_uuid_label: "Statement to replace" },
+    { value: "ChangeVariable",  group: "Governance",  label: "Change a governance variable",
+      help: "Variable name in Description, new value below. See the ⚙️ Variables tab for names.",
+      needs: { text: true, val_text: true },
+      text_placeholder: "e.g. PulseSupport", val_text_label: "New value", val_text_placeholder: "e.g. 60" },
+    { value: "ThrowOut",        group: "Governance",  label: "Throw out a member",
+      help: "Pick who and say why. Needs community support to pass.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "members", val_uuid_label: "Member to remove" },
+
+    // ── Actions (working groups)
+    { value: "AddAction",       group: "Actions",     label: "Start a new action (working group)",
+      help: "Describe the work. Short name becomes the group's label.",
+      needs: { text: true, val_text: true },
+      val_text_label: "Short name", val_text_placeholder: "e.g. Onboarding Writers" },
+    { value: "EndAction",       group: "Actions",     label: "Close an action",
+      help: "Pick a sub-action to close. Its wallet (if any) sweeps back to parent.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Action to close" },
+    { value: "JoinAction",      group: "Actions",     label: "Join an action",
+      help: "Pick an action to join. You become a member of its sub-community.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Action to join" },
+
+    // ── Artifacts (collaborative documents)
+    { value: "CreateArtifact",  group: "Artifacts",   label: "Add a section (empty slot)",
+      help: "Creates an EMPTY artifact with a title in the chosen container. Filling comes via EditArtifact.",
+      needs: { val_text: true, val_uuid: true },
+      pickFrom: "containers", val_uuid_label: "Container",
+      val_text_label: "Section title", val_text_placeholder: "e.g. Conflict Resolution Steps" },
+    { value: "EditArtifact",    group: "Artifacts",   label: "Edit an artifact",
+      help: "Description is the NEW body. Current content is replaced verbatim on accept.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "artifacts", val_uuid_label: "Artifact to edit",
+      text_placeholder: "Full new content…", text_rows: 8 },
+    { value: "DelegateArtifact", group: "Artifacts",  label: "Delegate an artifact to an action",
+      help: "Hand an artifact to a sub-action to fill in. val_text = target action community id.",
+      needs: { text: true, val_uuid: true, val_text: true },
+      pickFrom: "artifacts", val_uuid_label: "Artifact",
+      val_text_label: "Target action community id" },
+    { value: "RemoveArtifact",  group: "Artifacts",   label: "Remove an artifact",
+      help: "Retire an artifact. Usually for placeholders or duplicates.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "artifacts", val_uuid_label: "Artifact to remove" },
+    { value: "CommitArtifact",  group: "Artifacts",   label: "Commit a container",
+      help: "Lock in all ACTIVE artifacts in the container as its final output.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "containers", val_uuid_label: "Container to commit" },
+
+    // ── Finance (only visible on financial kibbutzim)
+    { value: "Funding",         group: "Finance",     label: "Funding (parent → child action)",
+      help: "Transfer credits from this community to a child action.",
+      needs: { text: true, val_uuid: true, val_text: true },
+      financialOnly: true, pickFrom: "actions", val_uuid_label: "Target action",
+      val_text_label: "Amount (credits)", val_text_placeholder: "e.g. 50" },
+    { value: "Payment",         group: "Finance",     label: "Payment (out of community)",
+      help: "Burn credits from this community (leaf only — no active sub-actions). Phase 1 is log-only.",
+      needs: { text: true, val_text: true },
+      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 20",
+      text_placeholder: "Who's being paid and why?" },
+    { value: "payBack",         group: "Finance",     label: "PayBack (external inbound refund)",
+      help: "Mint credits back into the community wallet (e.g., a refund or return).",
+      needs: { text: true, val_text: true },
+      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 15" },
+    { value: "Dividend",        group: "Finance",     label: "Dividend (split to members)",
+      help: "Split an amount equally across active members' user wallets.",
+      needs: { text: true, val_text: true },
+      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 100" },
+
+    // ── Advanced / rare
+    { value: "SetMembershipHandler", group: "Advanced", label: "Set membership-handler action",
+      help: "Delegate admission decisions to a specific action. Usually not needed.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Handler action" },
 ];
+
+// Groups in display order
+const PROPOSAL_GROUPS = ["Governance", "Actions", "Artifacts", "Finance", "Advanced"];
 
 // ── Bot delegation (per-kibbutz) ────────────────────────
 const BOT_ORIENTATIONS = [
@@ -1336,10 +1631,10 @@ function VariablesPanel({ communityId, variables, imMember, user, onChanged }) {
                 val_text: newValue,
             });
             try { await api._fetch(`/proposals/${resp.id}/submit`, { method: "PATCH" }); } catch {}
-            alert(`ChangeVariable proposal filed: ${name} → ${newValue}`);
+            toast(`ChangeVariable proposal filed: ${name} → ${newValue}`, "success");
             setEditing(null);
             onChanged?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
     };
 
     // Group for readability
@@ -1505,8 +1800,8 @@ function TreasuryPanel({ communityId, imMember, user }) {
                             const pitch = prompt("Pitch / memo for the proposal:", "Pay external vendor");
                             api.post(`/communities/${communityId}/payment-request`,
                                 { amount, pitch })
-                                .then(() => alert("Payment proposal filed. Community votes next pulse."))
-                                .catch((e) => alert(e.message));
+                                .then(() => toast("Payment proposal filed. Community votes next pulse.", "success"))
+                                .catch((e) => toast(e.message, "error"));
                         }}>
                             ↗ Propose payment
                         </button>
@@ -1738,11 +2033,122 @@ function BotConfigPanel({ communityId, user }) {
 }
 
 function ProposePage({ communityId, user }) {
-    const [ptype, setPtype]     = useState("AddStatement");
-    const [text, setText]       = useState("");
-    const [valText, setValText] = useState("");
+    const [ptype, setPtype]       = useState("AddStatement");
+    const [text, setText]         = useState("");
+    const [valText, setValText]   = useState("");
+    const [valUuid, setValUuid]   = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
+
+    // Community context — drives which types are shown + dropdown data
+    const [isFinancial, setIsFinancial] = useState(false);
+    const [statements, setStatements]   = useState([]);
+    const [members, setMembers]         = useState([]);
+    const [actions, setActions]         = useState([]);
+    const [containers, setContainers]   = useState([]);
+    const [artifacts, setArtifacts]     = useState([]);
+    const [ctxLoaded, setCtxLoaded]     = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const [v, s, m, a] = await Promise.all([
+                    api.get(`/communities/${communityId}/variables`),
+                    api.get(`/communities/${communityId}/statements`),
+                    api.get(`/communities/${communityId}/members`),
+                    api.get(`/communities/${communityId}/children`),
+                ]);
+                const fin = (v?.variables?.Financial || "false");
+                setIsFinancial(fin !== "false" && fin !== "");
+                setStatements(s || []);
+                setMembers(m || []);
+                setActions(a || []);
+                // Containers + artifacts best-effort (may not exist)
+                try {
+                    const tree = await api.get(`/artifacts/communities/${communityId}/work_tree`);
+                    const conts = Array.isArray(tree) ? tree : [];
+                    setContainers(conts);
+                    const arts = [];
+                    const walk = (c) => {
+                        (c.artifacts || []).forEach(a => {
+                            arts.push(a);
+                            (a.delegated_to || []).forEach(walk);
+                        });
+                    };
+                    conts.forEach(walk);
+                    setArtifacts(arts);
+                } catch {}
+            } catch (e) { setError(e.message); }
+            finally { setCtxLoaded(true); }
+        })();
+    }, [communityId]);
+
+    // Only show types allowed for this community
+    const availableTypes = useMemo(
+        () => PROPOSAL_CATALOG.filter(t => !t.financialOnly || isFinancial),
+        [isFinancial],
+    );
+
+    // Group by category for the dropdown
+    const groupedTypes = useMemo(() => {
+        const by = {};
+        for (const t of availableTypes) {
+            (by[t.group] = by[t.group] || []).push(t);
+        }
+        return by;
+    }, [availableTypes]);
+
+    const spec = PROPOSAL_CATALOG.find(t => t.value === ptype);
+
+    // Reset the type-specific fields when the type changes
+    useEffect(() => {
+        setValText("");
+        setValUuid("");
+    }, [ptype]);
+
+    // Resolve the dropdown items for the chosen type's `pickFrom`
+    const pickItems = useMemo(() => {
+        if (!spec?.pickFrom) return [];
+        switch (spec.pickFrom) {
+            case "statements":
+                return statements.map(s => ({
+                    id: s.id,
+                    label: (s.statement_text || "").slice(0, 80) + (s.statement_text?.length > 80 ? "…" : ""),
+                }));
+            case "members":
+                return members
+                    .filter(m => m.status === 1)
+                    .map(m => ({
+                        id: m.user_id,
+                        label: m.user_name || m.user_id.slice(0, 8),
+                    }));
+            case "actions":
+                return actions.map(a => ({
+                    id: a.id,
+                    label: `${a.name}${a.status !== 1 ? " (ended)" : ""}`,
+                }));
+            case "containers":
+                return containers.map(c => ({
+                    id: c.id,
+                    label: `${c.title || c.id.slice(0, 8)} — ${c.artifacts?.length || 0} artifacts`,
+                }));
+            case "artifacts":
+                return artifacts.map(a => ({
+                    id: a.id,
+                    label: (a.title || a.id.slice(0, 8)).slice(0, 80),
+                }));
+            default:
+                return [];
+        }
+    }, [spec, statements, members, actions, containers, artifacts]);
+
+    const canSubmit = (() => {
+        if (!spec) return false;
+        if (spec.needs?.text && !text.trim()) return false;
+        if (spec.needs?.val_text && !valText.trim()) return false;
+        if (spec.needs?.val_uuid && !valUuid.trim()) return false;
+        return true;
+    })();
 
     const submit = async (e) => {
         e.preventDefault();
@@ -1754,13 +2160,20 @@ function ProposePage({ communityId, user }) {
                 proposal_text: text.trim(),
             };
             if (valText.trim()) body.val_text = valText.trim();
+            if (valUuid.trim()) body.val_uuid = valUuid.trim();
             const p = await api.post(`/communities/${communityId}/proposals`, body);
-            // Submit it so it reaches OutThere
+            // Auto-submit so it reaches OutThere
             try { await api._fetch(`/proposals/${p.id}/submit`, { method: "PATCH" }); } catch {}
+            // Mark the newly-created proposal so the Kibbutz view can
+            // animate it in. Cleared after one render by the consumer.
+            try { sessionStorage.setItem("kbz-new-proposal-id", p.id); } catch {}
+            toast(`${spec?.label || ptype} filed — scroll down to see it in OutThere`, "success");
             navigate(`#/kibbutz/${communityId}`);
         } catch (err) { setError(err.message); }
         finally { setSubmitting(false); }
     };
+
+    if (!ctxLoaded) return <div className="container">Loading…</div>;
 
     return (
         <div className="container" style={{ maxWidth: 640 }}>
@@ -1769,26 +2182,74 @@ function ProposePage({ communityId, user }) {
             <form className="stack card" onSubmit={submit}>
                 <label>
                     <div className="bold" style={{ marginBottom: 4 }}>Type</div>
-                    <select className="input" value={ptype} onChange={(e) => setPtype(e.target.value)}>
-                        {HUMAN_PROPOSAL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    <select className="input" value={ptype}
+                            onChange={(e) => setPtype(e.target.value)}>
+                        {PROPOSAL_GROUPS.map(g => (
+                            (groupedTypes[g] || []).length > 0 && (
+                                <optgroup key={g} label={g}>
+                                    {groupedTypes[g].map(t => (
+                                        <option key={t.value} value={t.value}>{t.label}</option>
+                                    ))}
+                                </optgroup>
+                            )
+                        ))}
                     </select>
+                    {spec?.help && (
+                        <div className="muted" style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                            {spec.help}
+                        </div>
+                    )}
                 </label>
-                <label>
-                    <div className="bold" style={{ marginBottom: 4 }}>Description</div>
-                    <textarea className="input" rows={4} required
-                              placeholder="What are you proposing, and why?"
-                              value={text} onChange={(e) => setText(e.target.value)} />
-                </label>
-                {ptype === "ChangeVariable" && (
+
+                {spec?.pickFrom && (
                     <label>
-                        <div className="bold" style={{ marginBottom: 4 }}>New value</div>
-                        <input className="input" placeholder="e.g. 60"
-                               value={valText} onChange={(e) => setValText(e.target.value)} />
+                        <div className="bold" style={{ marginBottom: 4 }}>
+                            {spec.val_uuid_label || "Target"}
+                        </div>
+                        {pickItems.length === 0 ? (
+                            <div className="muted" style={{ fontSize: "0.85rem" }}>
+                                No {spec.pickFrom} available. You may need one to exist first.
+                            </div>
+                        ) : (
+                            <select className="input" required value={valUuid}
+                                    onChange={(e) => setValUuid(e.target.value)}>
+                                <option value="">— choose —</option>
+                                {pickItems.map(it => (
+                                    <option key={it.id} value={it.id}>{it.label}</option>
+                                ))}
+                            </select>
+                        )}
                     </label>
                 )}
+
+                {spec?.needs?.text !== false && (
+                    <label>
+                        <div className="bold" style={{ marginBottom: 4 }}>
+                            {spec?.text_label || "Description"}
+                        </div>
+                        <textarea className="input"
+                                  rows={spec?.text_rows || 4}
+                                  required={!!spec?.needs?.text}
+                                  placeholder={spec?.text_placeholder || "What are you proposing, and why?"}
+                                  value={text} onChange={(e) => setText(e.target.value)} />
+                    </label>
+                )}
+
+                {spec?.needs?.val_text && (
+                    <label>
+                        <div className="bold" style={{ marginBottom: 4 }}>
+                            {spec.val_text_label || "Value"}
+                        </div>
+                        <input className="input" required
+                               placeholder={spec.val_text_placeholder || ""}
+                               value={valText}
+                               onChange={(e) => setValText(e.target.value)} />
+                    </label>
+                )}
+
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                     <a href={`#/kibbutz/${communityId}`} className="btn ghost">Cancel</a>
-                    <button className="btn primary" disabled={submitting || !text.trim()}>
+                    <button className="btn primary" disabled={submitting || !canSubmit}>
                         {submitting ? "Filing…" : "File proposal"}
                     </button>
                 </div>
@@ -2134,6 +2595,7 @@ function App() {
             <footer className="app-footer">
                 Kibbutznik · <a href="/kbz/viewer/">AI simulation</a> · <a href="/">landing</a>
             </footer>
+            <ToastHost />
         </>
     );
 }
