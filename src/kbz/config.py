@@ -24,10 +24,9 @@ class Settings(BaseSettings):
     # Must be an address on a DOMAIN you've verified in Resend. For dev
     # we default to the reserved `onboarding@resend.dev` which works out
     # of the box for the first 50 test sends per API key.
-    # Production should set KBZ_EMAIL_FROM="Kibbutznik <hello@mail.kibbutznik.org>"
-    # once the mail.kibbutznik.org subdomain is verified in Resend. Until
-    # then Resend lets us send from the reserved onboarding@resend.dev
-    # (useful for the first 50 test sends per API key).
+    # Production: kibbutznik.org is verified as an apex domain in Resend,
+    # so set KBZ_EMAIL_FROM="Kibbutznik <hello@kibbutznik.org>" (or
+    # noreply@kibbutznik.org if you don't want to monitor replies).
     email_from: str = "Kibbutznik <onboarding@resend.dev>"
     # Public origin used to build absolute URLs in OUTBOUND email bodies
     # (magic links, invite links). Email clients cannot resolve relative
@@ -41,7 +40,10 @@ class Settings(BaseSettings):
     # Session lifetime — cookie + DB token — deliberately short so a
     # leaked cookie has limited blast radius. Magic links are even
     # shorter (15 min).
-    auth_session_ttl_minutes: int = 60 * 24 * 7       # 7 days
+    # Two TTLs: the long one fires when the user ticks "remember me" on
+    # the login form; the short one for shared-device sign-ins.
+    auth_session_ttl_minutes: int = 60 * 24 * 30      # 30 days (remember me)
+    auth_session_short_ttl_minutes: int = 60 * 24 * 1 # 1 day (shared device)
     auth_magic_link_ttl_minutes: int = 15
     auth_invite_ttl_hours: int = 72
     # In dev mode, /auth/request-magic-link returns the verify URL in

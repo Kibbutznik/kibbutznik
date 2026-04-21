@@ -51,6 +51,9 @@ def _safe_next_path(candidate: str | None) -> str:
 
 class MagicLinkRequest(BaseModel):
     email: EmailStr
+    # "Remember me on this device" — long-lived session cookie. False
+    # (default) gives a 1-day session suitable for shared machines.
+    remember: bool = False
 
 
 class MagicLinkResponse(BaseModel):
@@ -66,12 +69,15 @@ class MeResponse(BaseModel):
     is_human: bool
 
 
-def _set_session_cookie(resp: Response, raw_token: str) -> None:
+def _set_session_cookie(
+    resp: Response, raw_token: str, ttl_minutes: int | None = None,
+) -> None:
     """Same flags on set + clear so browsers actually drop the cookie."""
+    minutes = ttl_minutes if ttl_minutes is not None else settings.auth_session_ttl_minutes
     resp.set_cookie(
         key=settings.auth_session_cookie,
         value=raw_token,
-        max_age=settings.auth_session_ttl_minutes * 60,
+        max_age=minutes * 60,
         httponly=True,
         samesite="lax",
         # secure=True should be set in prod via reverse proxy / TLS; we
@@ -109,7 +115,8 @@ async def request_magic_link(
     issued = await svc.issue_magic_link(user)
     await db.commit()
 
-    verify_path = f"/auth/verify?token={issued.raw}"
+    remember_qs = "&remember=1" if body.remember else ""
+    verify_path = f"/auth/verify?token={issued.raw}{remember_qs}"
     # Email body NEEDS (a) an absolute URL — email clients can't resolve
     # a relative href and render it as "http:///auth/verify?..." which
     # fails; and (b) a `next=` param — so clicking the link lands on
@@ -139,6 +146,7 @@ async def verify_magic_link(
     token: str,
     response: Response,
     next: str | None = None,
+    remember: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
     """Consume a magic-link token, issue a session, set the cookie.
@@ -169,15 +177,19 @@ async def verify_magic_link(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid or expired magic link",
         )
-    session = await svc.issue_session(user)
+    ttl = (
+        settings.auth_session_ttl_minutes if remember
+        else settings.auth_session_short_ttl_minutes
+    )
+    session = await svc.issue_session(user, ttl_minutes=ttl)
     await db.commit()
 
     if next is not None:
         redirect = RedirectResponse(url=_safe_next_path(next), status_code=303)
-        _set_session_cookie(redirect, session.raw)
+        _set_session_cookie(redirect, session.raw, ttl_minutes=ttl)
         return redirect
 
-    _set_session_cookie(response, session.raw)
+    _set_session_cookie(response, session.raw, ttl_minutes=ttl)
     return {
         "user": {
             "user_id": str(user.id),
