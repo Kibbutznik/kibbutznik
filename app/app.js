@@ -181,23 +181,60 @@ function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
     const nextPulse = pulses.find(p => p.status === 0);   // 0 = NEXT per enum
     const activePulse = pulses.find(p => p.status === 1); // 1 = ACTIVE
     const [busy, setBusy] = useState(false);
+    const [supporters, setSupporters] = useState([]);
+    const [showSupporters, setShowSupporters] = useState(false);
+
+    const p = nextPulse || activePulse;
+    const pulseId = p?.id;
+
+    // Fetch current supporters so we can toggle support/withdraw instead
+    // of letting the user click a second time and get a 409.
+    useEffect(() => {
+        if (!pulseId) { setSupporters([]); return; }
+        let cancelled = false;
+        api.get(`/pulses/${pulseId}/supporters`)
+            .then(list => { if (!cancelled) setSupporters(list || []); })
+            .catch(() => { if (!cancelled) setSupporters([]); });
+        return () => { cancelled = true; };
+    }, [pulseId, p?.support_count]);
+
+    const alreadySupported = user && supporters.some(
+        s => (s.user_id || s) === user.user_id,
+    );
 
     const support = async () => {
         if (!imMember || !user) return;
         setBusy(true);
         try {
-            await api.post(`/communities/${communityId}/pulses/support`, {
+            const r = await api.post(`/communities/${communityId}/pulses/support`, {
                 user_id: user.user_id,
             });
+            if (r?.pulse_triggered) {
+                toast("⚡ Pulse fired — proposals are being decided.", "success");
+            } else {
+                toast("Support recorded.", "success");
+            }
             onChanged?.();
         } catch (e) { toast(e.message, "error"); }
         finally { setBusy(false); }
     };
 
-    if (!nextPulse && !activePulse) return null;
+    const withdraw = async () => {
+        if (!imMember || !user) return;
+        setBusy(true);
+        try {
+            await api._fetch(
+                `/communities/${communityId}/pulses/support/${user.user_id}`,
+                { method: "DELETE" },
+            );
+            toast("Support withdrawn.", "info");
+            onChanged?.();
+        } catch (e) { toast(e.message, "error"); }
+        finally { setBusy(false); }
+    };
 
-    // Support progress: use NEXT pulse (the one gathering support) as primary signal
-    const p = nextPulse || activePulse;
+    if (!p) return null;
+
     const pct = Math.min(100, (p.support_count / Math.max(1, p.threshold)) * 100);
     const ready = p.support_count >= p.threshold;
 
@@ -227,12 +264,46 @@ function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
                     </div>
                 </div>
                 {imMember && (
-                    <button className="btn primary" style={{ marginLeft: "0.8rem" }}
-                            disabled={busy} onClick={support}>
-                        {busy ? "…" : "⚡ Support pulse"}
-                    </button>
+                    alreadySupported ? (
+                        <button className="btn" style={{ marginLeft: "0.8rem" }}
+                                disabled={busy} onClick={withdraw}
+                                title="You've already supported — click to withdraw">
+                            {busy ? "…" : "✓ Supported"}
+                        </button>
+                    ) : (
+                        <button className="btn primary" style={{ marginLeft: "0.8rem" }}
+                                disabled={busy} onClick={support}>
+                            {busy ? "…" : "⚡ Support pulse"}
+                        </button>
+                    )
                 )}
             </div>
+            {supporters.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                    <button className="btn ghost"
+                            onClick={() => setShowSupporters(s => !s)}
+                            style={{ fontSize: "0.75rem", padding: "2px 6px" }}>
+                        {showSupporters ? "▾" : "▸"} {supporters.length} supporter{supporters.length === 1 ? "" : "s"}
+                    </button>
+                    {showSupporters && (
+                        <div className="row" style={{
+                            gap: "0.3rem", flexWrap: "wrap", marginTop: 4,
+                        }}>
+                            {supporters.map((s, i) => {
+                                const uid = s.user_id || s;
+                                const m = members.find(mm => mm.user_id === uid);
+                                const label = m?.user_name || String(uid).slice(0, 8);
+                                return (
+                                    <span key={i} className="pill" style={{
+                                        background: "var(--accent-soft)", color: "var(--accent)",
+                                        fontSize: "0.75rem",
+                                    }}>{label}</span>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -420,6 +491,10 @@ function LandingPage({ user }) {
 // ── Login ───────────────────────────────────────────────
 function LoginPage({ onLoggedIn }) {
     const [email, setEmail] = useState("");
+    const [remember, setRemember] = useState(() => {
+        try { return localStorage.getItem("kbz-remember") !== "false"; }
+        catch { return true; }
+    });
     const [sending, setSending] = useState(false);
     const [devLink, setDevLink] = useState(null);
     const [sent, setSent] = useState(false);
@@ -428,8 +503,10 @@ function LoginPage({ onLoggedIn }) {
     const submit = async (e) => {
         e.preventDefault();
         setSending(true); setError(null); setDevLink(null); setSent(false);
+        try { localStorage.setItem("kbz-remember", remember ? "true" : "false"); }
+        catch {}
         try {
-            const r = await api.post("/auth/request-magic-link", { email });
+            const r = await api.post("/auth/request-magic-link", { email, remember });
             if (r.link) setDevLink(r.link);
             else setSent(true);
         } catch (err) { setError(err.message); }
@@ -458,6 +535,11 @@ function LoginPage({ onLoggedIn }) {
                         <input className="input" type="email" required
                             placeholder="you@example.com"
                             value={email} onChange={(e) => setEmail(e.target.value)} />
+                        <label className="row" style={{ gap: "0.5rem", fontSize: "0.88rem", cursor: "pointer" }}>
+                            <input type="checkbox" checked={remember}
+                                   onChange={(e) => setRemember(e.target.checked)} />
+                            <span>Remember me on this device (30 days)</span>
+                        </label>
                         <button className="btn primary" disabled={sending || !email}>
                             {sending ? "Sending…" : "Send magic link"}
                         </button>
@@ -471,7 +553,8 @@ function LoginPage({ onLoggedIn }) {
                 )}
                 {sent && (
                     <p className="muted">
-                        Check your inbox — the link signs you in for 7 days.
+                        Check your inbox — the link signs you in
+                        for {remember ? "30 days" : "1 day"}.
                     </p>
                 )}
                 <ErrorBanner error={error} />
@@ -1188,6 +1271,146 @@ function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
     );
 }
 
+// ── Comment thread — nested replies + up/down votes ─────
+// The agent can reply_comment and vote_comment; humans get the same
+// surface here. Replies render one level deep (indented); deeper
+// replies render as flat siblings under their closest ancestor to
+// keep the modal readable.
+function CommentThread({ comments, user, canReply, onReload }) {
+    const byParent = useMemo(() => {
+        const m = new Map();
+        for (const c of comments) {
+            const key = c.parent_comment_id || null;
+            if (!m.has(key)) m.set(key, []);
+            m.get(key).push(c);
+        }
+        return m;
+    }, [comments]);
+
+    const roots = byParent.get(null) || [];
+    return (
+        <div className="stack" style={{ gap: "0.5rem" }}>
+            {roots.map(c => (
+                <CommentNode key={c.id} c={c} byParent={byParent}
+                    user={user} canReply={canReply} onReload={onReload}
+                    depth={0} />
+            ))}
+        </div>
+    );
+}
+
+function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
+    const [replying, setReplying] = useState(false);
+    const [replyDraft, setReplyDraft] = useState("");
+    const [voteBusy, setVoteBusy] = useState(false);
+    const [replyBusy, setReplyBusy] = useState(false);
+    const children = byParent.get(c.id) || [];
+
+    const vote = async (delta) => {
+        if (!user || voteBusy) return;
+        setVoteBusy(true);
+        try {
+            await api.post(`/comments/${c.id}/score`, { delta });
+            await onReload?.();
+        } catch (e) { toast(e.message, "error"); }
+        finally { setVoteBusy(false); }
+    };
+
+    const submitReply = async (e) => {
+        e?.preventDefault?.();
+        const text = replyDraft.trim();
+        if (!text || !user) return;
+        setReplyBusy(true);
+        try {
+            await api.post(
+                `/entities/${c.entity_type}/${c.entity_id}/comments`,
+                {
+                    user_id: user.user_id,
+                    comment_text: text,
+                    parent_comment_id: c.id,
+                },
+            );
+            setReplyDraft("");
+            setReplying(false);
+            await onReload?.();
+        } catch (err) { toast(err.message, "error"); }
+        finally { setReplyBusy(false); }
+    };
+
+    return (
+        <div style={{ marginLeft: depth > 0 ? 14 : 0 }}>
+            <div style={{
+                padding: "0.5rem 0.7rem",
+                background: "rgba(0,0,0,0.04)",
+                borderRadius: 6,
+                borderLeft: depth > 0 ? "2px solid var(--border)" : "none",
+            }}>
+                <div className="muted" style={{ fontSize: "0.72rem" }}>
+                    {(c.user_name || c.user_id || "").slice(0, 16)}
+                    {" · "}
+                    {new Date(c.created_at).toLocaleTimeString()}
+                </div>
+                <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>
+                    {c.comment_text}
+                </div>
+                <div className="row" style={{
+                    gap: "0.6rem", marginTop: 4, fontSize: "0.75rem",
+                }}>
+                    {user && (
+                        <>
+                            <button className="btn ghost" disabled={voteBusy}
+                                    onClick={() => vote(1)}
+                                    style={{ padding: "0 6px", fontSize: "0.8rem" }}
+                                    title="Upvote">▲</button>
+                            <span className="muted" style={{ minWidth: 16, textAlign: "center" }}>
+                                {c.score || 0}
+                            </span>
+                            <button className="btn ghost" disabled={voteBusy}
+                                    onClick={() => vote(-1)}
+                                    style={{ padding: "0 6px", fontSize: "0.8rem" }}
+                                    title="Downvote">▼</button>
+                        </>
+                    )}
+                    {canReply && !replying && depth < 3 && (
+                        <button className="btn ghost"
+                                onClick={() => setReplying(true)}
+                                style={{ padding: "0 6px", fontSize: "0.75rem" }}>
+                            ↩ Reply
+                        </button>
+                    )}
+                </div>
+                {replying && (
+                    <form onSubmit={submitReply} style={{ marginTop: 6 }}>
+                        <textarea className="input" rows={2} maxLength={300}
+                                  autoFocus
+                                  placeholder="Reply…" value={replyDraft}
+                                  onChange={(e) => setReplyDraft(e.target.value)} />
+                        <div className="row" style={{ justifyContent: "flex-end", gap: "0.4rem", marginTop: 4 }}>
+                            <button type="button" className="btn ghost"
+                                    onClick={() => { setReplying(false); setReplyDraft(""); }}>
+                                Cancel
+                            </button>
+                            <button className="btn primary"
+                                    disabled={replyBusy || !replyDraft.trim()}>
+                                {replyBusy ? "…" : "Reply"}
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
+            {children.length > 0 && (
+                <div className="stack" style={{ gap: "0.35rem", marginTop: "0.35rem" }}>
+                    {children.map(ch => (
+                        <CommentNode key={ch.id} c={ch} byParent={byParent}
+                            user={user} canReply={canReply} onReload={onReload}
+                            depth={depth + 1} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Proposal detail modal — supporters + comments + inline actions ─
 function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
     const [supporters, setSupporters] = useState([]);
@@ -1340,24 +1563,8 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
                             No comments yet.{canComment && " Leave the first."}
                         </div>
                     ) : (
-                        <div className="stack" style={{ gap: "0.5rem" }}>
-                            {comments.map(c => (
-                                <div key={c.id} style={{
-                                    padding: "0.5rem 0.7rem",
-                                    background: "rgba(0,0,0,0.04)",
-                                    borderRadius: 6,
-                                }}>
-                                    <div className="muted" style={{ fontSize: "0.72rem" }}>
-                                        {(c.user_name || c.user_id || "").slice(0, 16)}
-                                        {" · "}
-                                        {new Date(c.created_at).toLocaleTimeString()}
-                                    </div>
-                                    <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>
-                                        {c.comment_text}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                        <CommentThread comments={comments} user={user}
+                            canReply={canComment} onReload={reload} />
                     )}
                     {canComment && (
                         <form className="stack" onSubmit={doComment} style={{ marginTop: "0.8rem" }}>
