@@ -1172,7 +1172,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 <div className="stack">
                     {members.map(m => (
                         <div key={m.user_id} className="card">
-                            <div className="bold">{m.user_name || m.user_id.slice(0, 8)}</div>
+                            <div className="bold">{m.display_name || m.user_name || m.user_id.slice(0, 8)}</div>
                             <div className="muted">seniority {m.seniority}</div>
                         </div>
                     ))}

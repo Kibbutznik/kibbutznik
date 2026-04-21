@@ -1,11 +1,14 @@
 import uuid
+from types import SimpleNamespace
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import MemberStatus
+from kbz.models.bot_profile import BotProfile
 from kbz.models.community import Community
 from kbz.models.member import Member
+from kbz.models.user import User
 
 
 class MemberService:
@@ -99,23 +102,63 @@ class MemberService:
         member = await self.get(community_id, user_id)
         return member is not None and member.status == MemberStatus.ACTIVE
 
-    async def list_by_community(self, community_id: uuid.UUID) -> list[Member]:
-        result = await self.db.execute(
-            select(Member).where(
+    async def list_by_community(self, community_id: uuid.UUID) -> list[SimpleNamespace]:
+        """Return active members joined with user_name and the optional
+        per-community bot display_name.
+
+        Returns SimpleNamespace objects so callers can use attribute
+        access (`m.user_id`) and pydantic MemberResponse can pick up
+        user_name / display_name via from_attributes.
+        """
+        stmt = (
+            select(Member, User.user_name, BotProfile.display_name)
+            .outerjoin(User, User.id == Member.user_id)
+            .outerjoin(
+                BotProfile,
+                (BotProfile.user_id == Member.user_id)
+                & (BotProfile.community_id == Member.community_id),
+            )
+            .where(
                 Member.community_id == community_id,
                 Member.status == MemberStatus.ACTIVE,
             )
         )
-        return list(result.scalars().all())
+        rows = await self.db.execute(stmt)
+        return [
+            SimpleNamespace(
+                community_id=m.community_id,
+                user_id=m.user_id,
+                user_name=user_name,
+                display_name=display_name,
+                status=m.status,
+                seniority=m.seniority,
+                joined_at=m.joined_at,
+            )
+            for m, user_name, display_name in rows.all()
+        ]
 
-    async def list_by_user(self, user_id: uuid.UUID) -> list[Member]:
-        result = await self.db.execute(
-            select(Member).where(
+    async def list_by_user(self, user_id: uuid.UUID) -> list[SimpleNamespace]:
+        stmt = (
+            select(Member, User.user_name)
+            .outerjoin(User, User.id == Member.user_id)
+            .where(
                 Member.user_id == user_id,
                 Member.status == MemberStatus.ACTIVE,
             )
         )
-        return list(result.scalars().all())
+        rows = await self.db.execute(stmt)
+        return [
+            SimpleNamespace(
+                community_id=m.community_id,
+                user_id=m.user_id,
+                user_name=user_name,
+                display_name=None,
+                status=m.status,
+                seniority=m.seniority,
+                joined_at=m.joined_at,
+            )
+            for m, user_name in rows.all()
+        ]
 
     async def increment_seniority(self, community_id: uuid.UUID) -> None:
         await self.db.execute(
