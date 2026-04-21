@@ -6,10 +6,12 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import MemberStatus, PulseStatus, ProposalStatus
+from kbz.models.bot_profile import BotProfile
 from kbz.models.member import Member
 from kbz.models.proposal import Proposal
 from kbz.models.pulse import Pulse
 from kbz.models.support import Support, PulseSupport
+from kbz.models.user import User
 from kbz.services.event_bus import event_bus
 from kbz.services.member_service import MemberService
 from kbz.services.pulse_service import PulseService
@@ -158,25 +160,49 @@ class SupportService:
         return {"status": "supported", "pulse_triggered": False}
 
     async def get_proposal_supporters(self, proposal_id: uuid.UUID) -> list[dict]:
-        """Return list of {user_id, created_at} for all supporters of a proposal."""
+        """Return list of {user_id, user_name, display_name, created_at} for all supporters."""
         result = await self.db.execute(
-            select(Support).where(Support.proposal_id == proposal_id)
+            select(Support, User.user_name, BotProfile.display_name)
+            .outerjoin(User, User.id == Support.user_id)
+            .outerjoin(
+                BotProfile,
+                (BotProfile.user_id == Support.user_id)
+                & (BotProfile.community_id == Proposal.community_id),
+            )
+            .join(Proposal, Proposal.id == Support.proposal_id)
+            .where(Support.proposal_id == proposal_id)
         )
-        supports = result.scalars().all()
         return [
-            {"user_id": str(s.user_id), "created_at": s.created_at.isoformat() if s.created_at else None}
-            for s in supports
+            {
+                "user_id": str(s.user_id),
+                "user_name": user_name,
+                "display_name": display_name,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s, user_name, display_name in result.all()
         ]
 
     async def get_pulse_supporters(self, pulse_id: uuid.UUID) -> list[dict]:
-        """Return list of {user_id, created_at} for all supporters of a pulse."""
+        """Return list of {user_id, user_name, display_name, created_at} for all supporters."""
         result = await self.db.execute(
-            select(PulseSupport).where(PulseSupport.pulse_id == pulse_id)
+            select(PulseSupport, User.user_name, BotProfile.display_name)
+            .outerjoin(User, User.id == PulseSupport.user_id)
+            .outerjoin(
+                BotProfile,
+                (BotProfile.user_id == PulseSupport.user_id)
+                & (BotProfile.community_id == Pulse.community_id),
+            )
+            .join(Pulse, Pulse.id == PulseSupport.pulse_id)
+            .where(PulseSupport.pulse_id == pulse_id)
         )
-        supports = result.scalars().all()
         return [
-            {"user_id": str(s.user_id), "created_at": s.created_at.isoformat() if s.created_at else None}
-            for s in supports
+            {
+                "user_id": str(s.user_id),
+                "user_name": user_name,
+                "display_name": display_name,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s, user_name, display_name in result.all()
         ]
 
     async def remove_pulse_support(self, community_id: uuid.UUID, user_id: uuid.UUID) -> None:

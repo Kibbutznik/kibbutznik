@@ -292,7 +292,9 @@ function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
                             {supporters.map((s, i) => {
                                 const uid = s.user_id || s;
                                 const m = members.find(mm => mm.user_id === uid);
-                                const label = m?.user_name || String(uid).slice(0, 8);
+                                const label = s.display_name || s.user_name
+                                    || m?.display_name || m?.user_name
+                                    || String(uid).slice(0, 8);
                                 return (
                                     <span key={i} className="pill" style={{
                                         background: "var(--accent-soft)", color: "var(--accent)",
@@ -1547,7 +1549,7 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
                             {supporters.map((s, i) => (
                                 <span key={i} className="pill" style={{
                                     background: "var(--accent-soft)", color: "var(--accent)",
-                                }}>{(s.user_name || s.user_id || "").slice(0, 16)}</span>
+                                }}>{(s.display_name || s.user_name || s.user_id || "").slice(0, 16)}</span>
                             ))}
                         </div>
                     )}
