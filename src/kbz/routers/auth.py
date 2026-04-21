@@ -14,7 +14,7 @@ GET  /auth/me                   — returns the currently-logged-in user or null
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,19 @@ from kbz.database import get_db
 from kbz.models.user import User
 from kbz.services.auth_service import AuthService
 from kbz.services.email_service import EmailService, render_magic_link_email
+from kbz.services.rate_limit import magic_link_limiter
+
+# Per-email: 5 magic-link requests per hour. Tuned to the actual human
+# use case (request, mistype, re-request, wait for email, give up and
+# retry) while still stopping bulk spam of someone else's inbox.
+_EMAIL_LIMIT = 5
+_EMAIL_WINDOW_S = 3600
+
+# Per-IP: 30 per hour. Higher than per-email because a NATed office or
+# mobile carrier legitimately produces many requests from one IP. Still
+# low enough that a single box can't spray thousands of addresses.
+_IP_LIMIT = 30
+_IP_WINDOW_S = 3600
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -95,9 +108,24 @@ def _clear_session_cookie(resp: Response) -> None:
     )
 
 
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP. Honors X-Forwarded-For when present (we sit
+    behind nginx in prod which sets it), else falls back to the raw peer.
+
+    Only the LEFTMOST X-Forwarded-For entry is used — that's the client
+    the edge proxy saw. Intermediate proxies append, so anything after
+    the first comma is infrastructure, not the caller.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/request-magic-link", response_model=MagicLinkResponse)
 async def request_magic_link(
     body: MagicLinkRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> MagicLinkResponse:
     """Create-or-fetch a human user for this email, mint a magic-link.
@@ -109,7 +137,31 @@ async def request_magic_link(
     (`auth_dev_expose_magic_link=True`) as a convenience so the product
     UI can surface "click here" without needing a separate email client.
     In prod this field MUST be null.
+
+    Rate-limited on two axes: per-email (to stop spraying one inbox) and
+    per-IP (to stop a single attacker spraying many inboxes). Both must
+    pass; whichever trips first wins the 429.
     """
+    # Normalize email for rate-limit keying — otherwise "Alice@X.com" and
+    # "alice@x.com" are separate buckets and the attacker trivially
+    # doubles their budget.
+    email_key = body.email.strip().lower()
+    ip = _client_ip(request)
+
+    email_hit = magic_link_limiter.check(
+        key=f"email:{email_key}", limit=_EMAIL_LIMIT, window_s=_EMAIL_WINDOW_S,
+    )
+    ip_hit = magic_link_limiter.check(
+        key=f"ip:{ip}", limit=_IP_LIMIT, window_s=_IP_WINDOW_S,
+    )
+    if not email_hit.allowed or not ip_hit.allowed:
+        retry = max(email_hit.retry_after_s, ip_hit.retry_after_s)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many magic-link requests. Try again shortly.",
+            headers={"Retry-After": str(retry)},
+        )
+
     svc = AuthService(db)
     user = await svc.get_or_create_human(body.email)
     issued = await svc.issue_magic_link(user)

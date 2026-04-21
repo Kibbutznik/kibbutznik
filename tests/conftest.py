@@ -9,8 +9,19 @@ from kbz.config import settings
 from kbz.database import get_db
 from kbz.main import app
 from kbz.models import Base
+from kbz.services.rate_limit import magic_link_limiter
 
 TEST_DB_URL = settings.test_database_url
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Rate-limit buckets are a process-wide singleton. If we don't wipe
+    between tests, the per-IP bucket (everything comes from 127.0.0.1
+    under httpx's ASGITransport) fills up and later tests start getting
+    429s. Wipe before each test."""
+    magic_link_limiter._buckets.clear()
+    yield
 
 
 @pytest_asyncio.fixture
