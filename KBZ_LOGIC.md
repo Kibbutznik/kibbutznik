@@ -393,7 +393,7 @@ Communities can delegate membership approval to a designated action to make the 
    - If support >= proposal type threshold → assign to next pulse (OnTheAir)
    - If age > MaxAge → cancel
 6. When active pulse executes:
-   - If (support / member_count * 100) > threshold → accept and execute
+   - If (support / member_count * 100) >= threshold → accept and execute
    - Otherwise → reject
 7. Execution performs the action (add member, change variable, etc.)
 
@@ -461,7 +461,7 @@ This prevents spam while ensuring only widely-supported proposals execute.
 ### 10.6 Support vs Opposition
 - Current implementation tracks support count
 - For agreement decisions: compare support_count to threshold
-- Formula: `(support_count / member_count * 100) > threshold`
+- Formula: `(support_count / member_count * 100) >= threshold`
 - No explicit opposition tracking - lack of support = opposition
 
 ---

@@ -47,6 +47,323 @@ const api = {
     patch(p, body){ return this._fetch(p, { method: "PATCH",  body: JSON.stringify(body || {}) }); },
 };
 
+// ── Toast notifications ────────────────────────────────
+// Slide-in, auto-dismiss. One host at the root level; emit via
+// `toast(msg, kind?)` from anywhere. Kinds: "success" | "error" |
+// "info". Replaces every alert() in the app — alerts hijack focus
+// and feel like 1999.
+const _toastListeners = new Set();
+let _toastCounter = 0;
+
+function toast(message, kind = "info", timeoutMs = 4000) {
+    const id = ++_toastCounter;
+    const item = { id, message, kind, timeoutMs };
+    _toastListeners.forEach(fn => fn({ type: "push", item }));
+    return id;
+}
+
+function ToastHost() {
+    const [items, setItems] = useState([]);
+    useEffect(() => {
+        const handler = (evt) => {
+            if (evt.type === "push") {
+                setItems(xs => [...xs, evt.item]);
+                if (evt.item.timeoutMs > 0) {
+                    setTimeout(
+                        () => setItems(xs => xs.filter(t => t.id !== evt.item.id)),
+                        evt.item.timeoutMs,
+                    );
+                }
+            }
+        };
+        _toastListeners.add(handler);
+        return () => _toastListeners.delete(handler);
+    }, []);
+    const dismiss = (id) => setItems(xs => xs.filter(t => t.id !== id));
+
+    return (
+        <div style={{
+            position: "fixed", bottom: "1rem", right: "1rem",
+            zIndex: 1000, display: "flex", flexDirection: "column",
+            gap: "0.5rem", maxWidth: 380, pointerEvents: "none",
+        }}>
+            {items.map(t => {
+                const palette = {
+                    success: { bg: "#e6f7ef", border: "#4ecca3", fg: "#0c6047" },
+                    error:   { bg: "#ffe5e9", border: "#c14b57", fg: "#7a1a24" },
+                    info:    { bg: "#eef2ff", border: "#6b7fd7", fg: "#2a3566" },
+                }[t.kind] || {};
+                return (
+                    <div key={t.id}
+                         onClick={() => dismiss(t.id)}
+                         className="toast-slide-in"
+                         style={{
+                             pointerEvents: "auto", cursor: "pointer",
+                             background: palette.bg, color: palette.fg,
+                             border: `1px solid ${palette.border}`,
+                             padding: "0.6rem 0.9rem", borderRadius: 8,
+                             boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+                             fontSize: "0.88rem", lineHeight: 1.35,
+                         }}>
+                        {t.message}
+                    </div>
+                );
+            })}
+            <style>{`
+                @keyframes toast-slide-in-kf {
+                    from { transform: translateX(120%); opacity: 0; }
+                    to   { transform: translateX(0);     opacity: 1; }
+                }
+                .toast-slide-in { animation: toast-slide-in-kf 0.25s ease-out; }
+            `}</style>
+        </div>
+    );
+}
+
+
+// ── WebSocket live-events hook ──────────────────────────
+// Mirrors the simulation viewer's pattern — single connection, feeds
+// news ticker + triggers debounced refetches on state-change events.
+// Scoped by optional community_id filter so tabs only show their own
+// events.
+function useLiveEvents({ communityId, onRefresh } = {}) {
+    const [events, setEvents] = useState([]);     // rolling buffer, newest first
+    const [connected, setConnected] = useState(false);
+    const wsRef = useRef(null);
+    const refreshTimer = useRef(null);
+
+    useEffect(() => {
+        function connect() {
+            const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const base = API_BASE || "";
+            const url = `${proto}//${window.location.host}${base}/ws/events`;
+            const ws = new WebSocket(url);
+            ws.onopen = () => setConnected(true);
+            ws.onclose = () => {
+                setConnected(false);
+                setTimeout(connect, 3000);  // auto-reconnect
+            };
+            ws.onerror = () => ws.close();
+            ws.onmessage = (e) => {
+                try {
+                    const evt = JSON.parse(e.data);
+                    // Scope by community_id if the caller asked
+                    if (communityId && evt.community_id && evt.community_id !== communityId) {
+                        return;
+                    }
+                    setEvents(xs => [evt, ...xs].slice(0, 50));  // keep last 50
+                    // Debounced refresh on state-change events
+                    const stateChange = new Set([
+                        "proposal.created", "proposal.accepted", "proposal.rejected",
+                        "support.cast", "support.withdrawn", "pulse.executed",
+                        "round.end", "comment.posted",
+                    ]);
+                    if (onRefresh && stateChange.has(evt.event_type)) {
+                        if (refreshTimer.current) clearTimeout(refreshTimer.current);
+                        refreshTimer.current = setTimeout(onRefresh, 600);
+                    }
+                } catch {}
+            };
+            wsRef.current = ws;
+        }
+        connect();
+        return () => {
+            if (refreshTimer.current) clearTimeout(refreshTimer.current);
+            if (wsRef.current) wsRef.current.close();
+        };
+    }, [communityId, onRefresh]);
+
+    return { events, connected };
+}
+
+// ── Pulse progress bar + support button ─────────────────
+function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
+    const nextPulse = pulses.find(p => p.status === 0);   // 0 = NEXT per enum
+    const activePulse = pulses.find(p => p.status === 1); // 1 = ACTIVE
+    const [busy, setBusy] = useState(false);
+    const [supporters, setSupporters] = useState([]);
+    const [showSupporters, setShowSupporters] = useState(false);
+
+    const p = nextPulse || activePulse;
+    const pulseId = p?.id;
+
+    // Fetch current supporters so we can toggle support/withdraw instead
+    // of letting the user click a second time and get a 409.
+    useEffect(() => {
+        if (!pulseId) { setSupporters([]); return; }
+        let cancelled = false;
+        api.get(`/pulses/${pulseId}/supporters`)
+            .then(list => { if (!cancelled) setSupporters(list || []); })
+            .catch(() => { if (!cancelled) setSupporters([]); });
+        return () => { cancelled = true; };
+    }, [pulseId, p?.support_count]);
+
+    const alreadySupported = user && supporters.some(
+        s => (s.user_id || s) === user.user_id,
+    );
+
+    const support = async () => {
+        if (!imMember || !user) return;
+        setBusy(true);
+        try {
+            const r = await api.post(`/communities/${communityId}/pulses/support`, {
+                user_id: user.user_id,
+            });
+            if (r?.pulse_triggered) {
+                toast("⚡ Pulse fired — proposals are being decided.", "success");
+            } else {
+                toast("Support recorded.", "success");
+            }
+            onChanged?.();
+        } catch (e) { toast(e.message, "error"); }
+        finally { setBusy(false); }
+    };
+
+    const withdraw = async () => {
+        if (!imMember || !user) return;
+        setBusy(true);
+        try {
+            await api._fetch(
+                `/communities/${communityId}/pulses/support/${user.user_id}`,
+                { method: "DELETE" },
+            );
+            toast("Support withdrawn.", "info");
+            onChanged?.();
+        } catch (e) { toast(e.message, "error"); }
+        finally { setBusy(false); }
+    };
+
+    if (!p) return null;
+
+    const pct = Math.min(100, (p.support_count / Math.max(1, p.threshold)) * 100);
+    const ready = p.support_count >= p.threshold;
+
+    return (
+        <div className="card" style={{
+            padding: "0.6rem 0.9rem", marginBottom: "1rem",
+            background: ready ? "rgba(78,204,163,0.1)" : "var(--bg-card)",
+        }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ flex: 1 }}>
+                    <div className="row" style={{ gap: "0.6rem", alignItems: "baseline" }}>
+                        <strong>⚡ Next pulse</strong>
+                        <span className="muted" style={{ fontSize: "0.85rem" }}>
+                            {p.support_count} / {p.threshold} supporters
+                            {ready && " — ready to fire"}
+                        </span>
+                    </div>
+                    <div style={{
+                        height: 6, background: "rgba(0,0,0,0.08)",
+                        borderRadius: 3, marginTop: 6, overflow: "hidden",
+                    }}>
+                        <div style={{
+                            width: `${pct}%`, height: "100%",
+                            background: ready ? "var(--accent)" : "var(--warn)",
+                            transition: "width .3s",
+                        }} />
+                    </div>
+                </div>
+                {imMember && (
+                    alreadySupported ? (
+                        <button className="btn" style={{ marginLeft: "0.8rem" }}
+                                disabled={busy} onClick={withdraw}
+                                title="You've already supported — click to withdraw">
+                            {busy ? "…" : "✓ Supported"}
+                        </button>
+                    ) : (
+                        <button className="btn primary" style={{ marginLeft: "0.8rem" }}
+                                disabled={busy} onClick={support}>
+                            {busy ? "…" : "⚡ Support pulse"}
+                        </button>
+                    )
+                )}
+            </div>
+            {supporters.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                    <button className="btn ghost"
+                            onClick={() => setShowSupporters(s => !s)}
+                            style={{ fontSize: "0.75rem", padding: "2px 6px" }}>
+                        {showSupporters ? "▾" : "▸"} {supporters.length} supporter{supporters.length === 1 ? "" : "s"}
+                    </button>
+                    {showSupporters && (
+                        <div className="row" style={{
+                            gap: "0.3rem", flexWrap: "wrap", marginTop: 4,
+                        }}>
+                            {supporters.map((s, i) => {
+                                const uid = s.user_id || s;
+                                const m = members.find(mm => mm.user_id === uid);
+                                const label = m?.user_name || String(uid).slice(0, 8);
+                                return (
+                                    <span key={i} className="pill" style={{
+                                        background: "var(--accent-soft)", color: "var(--accent)",
+                                        fontSize: "0.75rem",
+                                    }}>{label}</span>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── News ticker — live event feed (like the sim viewer) ─
+function NewsTicker({ events, communityId }) {
+    const [open, setOpen] = useState(false);
+    if (events.length === 0) return null;
+
+    const formatEvent = (e) => {
+        const t = e.event_type;
+        if (t === "pulse.executed") return "⚡ Pulse fired";
+        if (t === "proposal.created") return `📝 New ${e.data?.proposal_type || "proposal"}`;
+        if (t === "proposal.accepted") return `✅ Proposal accepted`;
+        if (t === "proposal.rejected") return `❌ Proposal rejected`;
+        if (t === "support.cast") return `👍 Support cast`;
+        if (t === "comment.posted") return `💬 New comment`;
+        if (t === "round.end") return `🔄 Round ended`;
+        return t;
+    };
+
+    const latest = events[0];
+    return (
+        <div style={{
+            position: "sticky", top: 0, zIndex: 50,
+            background: "var(--bg-card)", borderBottom: "1px solid var(--border)",
+            padding: "0.4rem 0.9rem", fontSize: "0.82rem",
+        }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div className="row" style={{ gap: "0.5rem", overflow: "hidden" }}>
+                    <span style={{
+                        background: "var(--accent)", color: "white",
+                        fontSize: "0.65rem", padding: "1px 6px", borderRadius: 3,
+                        fontWeight: 700, letterSpacing: "0.05em",
+                    }}>LIVE</span>
+                    <span className="muted" style={{
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}>{formatEvent(latest)} · {new Date(latest.timestamp).toLocaleTimeString()}</span>
+                </div>
+                <button className="btn ghost" onClick={() => setOpen(!open)}
+                        style={{ fontSize: "0.78rem", padding: "0.2rem 0.5rem" }}>
+                    {open ? "▲" : `▼ ${events.length} recent`}
+                </button>
+            </div>
+            {open && (
+                <div style={{
+                    maxHeight: 240, overflow: "auto", marginTop: "0.5rem",
+                    fontSize: "0.8rem", fontFamily: "ui-monospace, Menlo, monospace",
+                }}>
+                    {events.slice(0, 30).map((e, i) => (
+                        <div key={i} className="muted" style={{ padding: "0.15rem 0" }}>
+                            {new Date(e.timestamp).toLocaleTimeString()} · {formatEvent(e)}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Tiny hash router ────────────────────────────────────
 function useHashRoute() {
     const parse = () => {
@@ -174,6 +491,10 @@ function LandingPage({ user }) {
 // ── Login ───────────────────────────────────────────────
 function LoginPage({ onLoggedIn }) {
     const [email, setEmail] = useState("");
+    const [remember, setRemember] = useState(() => {
+        try { return localStorage.getItem("kbz-remember") !== "false"; }
+        catch { return true; }
+    });
     const [sending, setSending] = useState(false);
     const [devLink, setDevLink] = useState(null);
     const [sent, setSent] = useState(false);
@@ -182,8 +503,10 @@ function LoginPage({ onLoggedIn }) {
     const submit = async (e) => {
         e.preventDefault();
         setSending(true); setError(null); setDevLink(null); setSent(false);
+        try { localStorage.setItem("kbz-remember", remember ? "true" : "false"); }
+        catch {}
         try {
-            const r = await api.post("/auth/request-magic-link", { email });
+            const r = await api.post("/auth/request-magic-link", { email, remember });
             if (r.link) setDevLink(r.link);
             else setSent(true);
         } catch (err) { setError(err.message); }
@@ -212,6 +535,11 @@ function LoginPage({ onLoggedIn }) {
                         <input className="input" type="email" required
                             placeholder="you@example.com"
                             value={email} onChange={(e) => setEmail(e.target.value)} />
+                        <label className="row" style={{ gap: "0.5rem", fontSize: "0.88rem", cursor: "pointer" }}>
+                            <input type="checkbox" checked={remember}
+                                   onChange={(e) => setRemember(e.target.checked)} />
+                            <span>Remember me on this device (30 days)</span>
+                        </label>
                         <button className="btn primary" disabled={sending || !email}>
                             {sending ? "Sending…" : "Send magic link"}
                         </button>
@@ -225,7 +553,8 @@ function LoginPage({ onLoggedIn }) {
                 )}
                 {sent && (
                     <p className="muted">
-                        Check your inbox — the link signs you in for 7 days.
+                        Check your inbox — the link signs you in
+                        for {remember ? "30 days" : "1 day"}.
                     </p>
                 )}
                 <ErrorBanner error={error} />
@@ -240,30 +569,66 @@ function DashboardPage({ user }) {
     const [pendingApps, setPendingApps] = useState([]);
     const [sentInvites, setSentInvites] = useState([]);
     const [bots, setBots] = useState([]);
+    const [wallet, setWallet] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            try {
-                const [m, a, s, b] = await Promise.all([
-                    api.get("/users/me/memberships"),
-                    api.get("/users/me/pending-applications"),
-                    api.get("/users/me/sent-invites"),
-                    api.get("/users/me/bots"),
-                ]);
-                if (cancelled) return;
-                setMemberships(m);
-                setPendingApps(a);
-                setSentInvites(s);
-                setBots(b);
-            } catch (e) { setError(e.message); }
-            finally { if (!cancelled) setLoading(false); }
-        })();
-        return () => { cancelled = true; };
+    // Per-kibbutz live stats: { community_id: { pulses, proposals, mySupportedIds } }
+    const [stats, setStats] = useState({});
+
+    const reload = useCallback(async () => {
+        try {
+            const [m, a, s, b, w] = await Promise.all([
+                api.get("/users/me/memberships"),
+                api.get("/users/me/pending-applications"),
+                api.get("/users/me/sent-invites"),
+                api.get("/users/me/bots"),
+                api.get("/users/me/wallet").catch(() => null),
+            ]);
+            setMemberships(m);
+            setPendingApps(a);
+            setSentInvites(s);
+            setBots(b);
+            setWallet(w);
+            // Fan out per-kibbutz fetches for live state
+            const nextStats = {};
+            await Promise.all((m || []).map(async mm => {
+                try {
+                    const [pulses, proposals] = await Promise.all([
+                        api.get(`/communities/${mm.community_id}/pulses`),
+                        api.get(`/communities/${mm.community_id}/proposals`),
+                    ]);
+                    nextStats[mm.community_id] = { pulses, proposals };
+                } catch {
+                    nextStats[mm.community_id] = { pulses: [], proposals: [] };
+                }
+            }));
+            setStats(nextStats);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
     }, []);
+
+    useEffect(() => { reload(); }, [reload]);
+
+    // Subscribe to ALL events (no community filter) so any activity in
+    // any of the user's kibbutzim triggers a silent refresh.
+    useLiveEvents({ onRefresh: reload });
+
+    // Aggregate "needs your attention"
+    const attention = useMemo(() => {
+        let unsupportedCount = 0;
+        let readyPulses = 0;
+        const activeStatuses = new Set(["OutThere", "OnTheAir"]);
+        for (const mm of memberships) {
+            const s = stats[mm.community_id];
+            if (!s) continue;
+            const activeProps = (s.proposals || []).filter(p => activeStatuses.has(p.proposal_status));
+            unsupportedCount += activeProps.length;  // conservative: we don't fetch per-proposal supporter lists
+            const nextPulse = (s.pulses || []).find(p => p.status === 0);
+            if (nextPulse && nextPulse.support_count >= nextPulse.threshold) readyPulses++;
+        }
+        return { unsupportedCount, readyPulses };
+    }, [memberships, stats]);
 
     return (
         <div className="container">
@@ -279,6 +644,47 @@ function DashboardPage({ user }) {
             </div>
             <ErrorBanner error={error} />
 
+            {wallet && parseFloat(wallet.balance) > 0 && (
+                <section style={{ marginBottom: "1.5rem" }}>
+                    <div className="card" style={{
+                        background: "var(--accent-soft)",
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                    }}>
+                        <div>
+                            <div className="muted" style={{ fontSize: "0.85rem" }}>💰 My credits</div>
+                            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--accent)" }}>
+                                {parseFloat(wallet.balance).toFixed(2)}
+                            </div>
+                        </div>
+                        <div className="muted" style={{ fontSize: "0.82rem", textAlign: "right", maxWidth: 300 }}>
+                            Used to pay membership fees when applying to financial kibbutzim.
+                            Grows via welcome gift, dividends, and webhook-backed deposits.
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {(attention.unsupportedCount > 0 || attention.readyPulses > 0) && (
+                <section style={{ marginBottom: "1.5rem" }}>
+                    <div className="card" style={{
+                        background: "rgba(240, 192, 64, 0.12)",
+                        borderLeft: "3px solid var(--warn)",
+                    }}>
+                        <div className="bold" style={{ marginBottom: "0.3rem" }}>
+                            🔔 Needs your attention
+                        </div>
+                        <div className="muted" style={{ fontSize: "0.9rem" }}>
+                            {attention.readyPulses > 0 && (
+                                <div>⚡ {attention.readyPulses} pulse{attention.readyPulses > 1 ? "s" : ""} ready to fire — your support would lock in the pending decisions.</div>
+                            )}
+                            {attention.unsupportedCount > 0 && (
+                                <div>📝 {attention.unsupportedCount} active proposal{attention.unsupportedCount > 1 ? "s" : ""} across your kibbutzim — visit each to vote.</div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+            )}
+
             <section style={{ marginBottom: "1.5rem" }}>
                 <h3>Your kibbutzim</h3>
                 {loading ? <div className="muted">Loading…</div>
@@ -288,18 +694,64 @@ function DashboardPage({ user }) {
                     </Empty>
                 ) : (
                     <div className="stack">
-                        {memberships.map(m => (
-                            <a key={m.community_id} href={`#/kibbutz/${m.community_id}`}
-                                className="card" style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-                                <div className="row" style={{ justifyContent: "space-between" }}>
-                                    <div>
-                                        <div className="bold">{m.community_name}</div>
-                                        <div className="muted">Joined {new Date(m.joined_at).toLocaleDateString()} · seniority {m.seniority}</div>
+                        {memberships.map(m => {
+                            const s = stats[m.community_id] || { pulses: [], proposals: [] };
+                            const nextPulse = s.pulses.find(p => p.status === 0);
+                            const active = s.proposals.filter(
+                                p => p.proposal_status === "OutThere" || p.proposal_status === "OnTheAir",
+                            );
+                            const landed24h = s.proposals.filter(p => {
+                                if (p.proposal_status !== "Accepted") return false;
+                                try {
+                                    return (Date.now() - new Date(p.created_at).getTime()) < 86400000;
+                                } catch { return false; }
+                            }).length;
+                            const pulsePct = nextPulse
+                                ? Math.min(100, (nextPulse.support_count / Math.max(1, nextPulse.threshold)) * 100)
+                                : 0;
+                            const pulseReady = nextPulse && nextPulse.support_count >= nextPulse.threshold;
+                            return (
+                                <a key={m.community_id} href={`#/kibbutz/${m.community_id}`}
+                                    className="card"
+                                    style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                                    <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div className="row" style={{ gap: "0.5rem" }}>
+                                                <strong>{m.community_name}</strong>
+                                                <span className="pill">member</span>
+                                                {pulseReady && (
+                                                    <span className="pill" style={{ background: "rgba(240,192,64,0.2)", color: "var(--warn)" }}>
+                                                        ⚡ ready
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="muted" style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                                                {active.length} active proposal{active.length === 1 ? "" : "s"}
+                                                {landed24h > 0 && ` · ${landed24h} accepted today`}
+                                                {" · seniority "}{m.seniority}
+                                            </div>
+                                            {nextPulse && (
+                                                <div style={{ marginTop: 8 }}>
+                                                    <div className="muted" style={{ fontSize: "0.75rem", marginBottom: 2 }}>
+                                                        Next pulse: {nextPulse.support_count}/{nextPulse.threshold}
+                                                    </div>
+                                                    <div style={{
+                                                        height: 4, background: "rgba(0,0,0,0.08)",
+                                                        borderRadius: 2, overflow: "hidden",
+                                                    }}>
+                                                        <div style={{
+                                                            width: `${pulsePct}%`, height: "100%",
+                                                            background: pulseReady ? "var(--accent)" : "var(--warn)",
+                                                        }} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <span className="muted" style={{ marginLeft: "0.5rem" }}>→</span>
                                     </div>
-                                    <span className="pill">member</span>
-                                </div>
-                            </a>
-                        ))}
+                                </a>
+                            );
+                        })}
                     </div>
                 )}
             </section>
@@ -396,7 +848,7 @@ function WithdrawBtn({ proposalId, userId, onDone }) {
         try {
             await api.post(`/proposals/${proposalId}/withdraw`, { user_id: userId });
             onDone?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
         finally { setBusy(false); }
     };
     return <button className="btn ghost" disabled={busy} onClick={withdraw}>{busy ? "…" : "Withdraw"}</button>;
@@ -459,6 +911,7 @@ function BrowsePage({ user }) {
 function CreateKibbutzPage({ user }) {
     const [name, setName] = useState("");
     const [mission, setMission] = useState("");
+    const [enableFinancial, setEnableFinancial] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
 
@@ -470,6 +923,7 @@ function CreateKibbutzPage({ user }) {
                 name: name.trim(),
                 founder_user_id: user.user_id,
                 initial_artifact_mission: mission.trim() || null,
+                enable_financial: enableFinancial,
             });
             navigate(`#/kibbutz/${community.id}`);
         } catch (err) { setError(err.message); }
@@ -495,6 +949,19 @@ function CreateKibbutzPage({ user }) {
                     <textarea className="input" rows={4}
                               placeholder="What will this kibbutz work on together? (This becomes the briefing for any artifact work.)"
                               value={mission} onChange={(e) => setMission(e.target.value)} />
+                </label>
+                <label className="row" style={{ alignItems: "flex-start", gap: "0.5rem", padding: "0.5rem", background: "rgba(78,204,163,0.08)", borderRadius: 6 }}>
+                    <input type="checkbox" checked={enableFinancial}
+                           onChange={(e) => setEnableFinancial(e.target.checked)}
+                           style={{ marginTop: 2 }} />
+                    <div>
+                        <div className="bold">💰 Enable finance module</div>
+                        <div className="muted" style={{ fontSize: "0.82rem" }}>
+                            Adds a community wallet, funding requests from child actions,
+                            payment proposals, dividends, and escrow-based membership fees.
+                            You can enable this later via a ChangeVariable proposal too.
+                        </div>
+                    </div>
                 </label>
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                     <a href="#/dashboard" className="btn ghost">Cancel</a>
@@ -522,6 +989,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const [members, setMembers] = useState([]);
     const [proposals, setProposals] = useState([]);
     const [statements, setStatements] = useState([]);
+    const [pulses, setPulses] = useState([]);
     const [tab, setTab] = useState("proposals");
     const [error, setError] = useState(null);
     const [inviteUrl, setInviteUrl] = useState(null);
@@ -532,25 +1000,67 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
         [user, members],
     );
 
+    const [variables, setVariables] = useState({});
+
+    // When ProposePage just navigated back, it stashes the new
+    // proposal's id in sessionStorage so we can scroll to + highlight
+    // that card. Read it once on mount; clear so the next view
+    // doesn't re-animate it.
+    const [newProposalId, setNewProposalId] = useState(() => {
+        try {
+            const id = sessionStorage.getItem("kbz-new-proposal-id");
+            if (id) sessionStorage.removeItem("kbz-new-proposal-id");
+            return id;
+        } catch { return null; }
+    });
+    useEffect(() => {
+        if (!newProposalId) return;
+        // Let the card animate for ~3s then drop the highlight
+        const t = setTimeout(() => setNewProposalId(null), 3500);
+        return () => clearTimeout(t);
+    }, [newProposalId]);
+
     const reload = useCallback(async () => {
         setError(null);
         try {
-            const [c, m, p, s] = await Promise.all([
+            const [c, m, p, s, v, pl] = await Promise.all([
                 api.get(`/communities/${communityId}`),
                 api.get(`/communities/${communityId}/members`),
                 api.get(`/communities/${communityId}/proposals`),
                 api.get(`/communities/${communityId}/statements`),
+                api.get(`/communities/${communityId}/variables`),
+                api.get(`/communities/${communityId}/pulses`),
             ]);
             setCommunity(c);
             setMembers(m);
             setProposals(p);
             setStatements(s);
+            setVariables(v.variables || {});
+            setPulses(pl || []);
         } catch (e) { setError(e.message); }
     }, [communityId]);
     useEffect(() => { reload(); }, [reload]);
 
+    // Live event stream scoped to this community; auto-refreshes on
+    // state-change events.
+    const { events: liveEvents } = useLiveEvents({
+        communityId, onRefresh: reload,
+    });
+
+    const isFinancial = (variables?.Financial || "false") !== "false"
+                     && (variables?.Financial || "") !== "";
+    const membershipFee = parseFloat(variables?.membershipFee || "0") || 0;
+
     const apply = async () => {
         if (!user) { navigate("#/login"); return; }
+        if (isFinancial && membershipFee > 0) {
+            const ok = confirm(
+                `This kibbutz charges a ${membershipFee} credit membership fee. ` +
+                `Applying will escrow ${membershipFee} credits until the community votes. ` +
+                `If accepted, the fee is kept by the community. If rejected or expired, you get it back.\n\nProceed?`,
+            );
+            if (!ok) return;
+        }
         setApplyBusy(true);
         try {
             await api.post(`/communities/${communityId}/proposals`, {
@@ -559,9 +1069,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 proposal_text: `${user.user_name} applied to join`,
                 val_uuid: user.user_id,
             });
-            alert("Application filed. Check your dashboard for progress.");
+            toast("Application filed. Check your dashboard for progress.", "success");
             onRefreshMembership?.();
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
         finally { setApplyBusy(false); }
     };
 
@@ -569,7 +1079,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
         try {
             const r = await api.post(`/communities/${communityId}/invites`, {});
             setInviteUrl(window.location.origin + "/app/#/invite/" + r.code);
-        } catch (e) { alert(e.message); }
+        } catch (e) { toast(e.message, "error"); }
     };
 
     if (!community) {
@@ -582,7 +1092,12 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     });
 
     return (
-        <div className="container">
+        <div>
+            <NewsTicker events={liveEvents} communityId={communityId} />
+            <div className="container">
+            <PulseBar communityId={communityId} user={user}
+                      imMember={imMember} pulses={pulses} members={members}
+                      onChanged={reload} />
             <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
                 <div>
                     <h2 style={{ margin: 0 }}>{community.name}</h2>
@@ -617,14 +1132,29 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             )}
             <ErrorBanner error={error} />
             <div className="row" style={{ margin: "1rem 0", borderBottom: "1px solid var(--border)" }}>
-                {(imMember ? ["proposals", "members", "statements", "bot"] : ["proposals", "members", "statements"]).map(t => (
+                {(() => {
+                    const base = [
+                        "proposals", "chat", "members",
+                        "statements", "variables", "actions",
+                    ];
+                    if (isFinancial) base.push("treasury");
+                    if (imMember) base.push("bot");
+                    return base;
+                })().map(t => (
                     <button key={t} className={"btn ghost" + (tab === t ? " bold" : "")}
                         onClick={() => setTab(t)}
                         style={{
                             borderRadius: 0,
                             borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
                         }}>
-                        {t === "bot" ? "🤖 My bot" : t[0].toUpperCase() + t.slice(1)}
+                        {
+                            t === "bot" ? "🤖 My bot" :
+                            t === "treasury" ? "💰 Treasury" :
+                            t === "chat" ? "💬 Chat" :
+                            t === "variables" ? "⚙️ Variables" :
+                            t === "actions" ? "🌳 Actions" :
+                            t[0].toUpperCase() + t.slice(1)
+                        }
                     </button>
                 ))}
             </div>
@@ -632,7 +1162,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 sortedProposals.length === 0 ? <Empty title="No proposals yet">Be the first to propose something.</Empty> :
                 <div className="stack">
                     {sortedProposals.map(p => (
-                        <ProposalCard key={p.id} proposal={p} imMember={imMember} user={user} onChanged={reload} />
+                        <ProposalCard key={p.id} proposal={p} imMember={imMember}
+                            user={user} onChanged={reload}
+                            highlightNew={p.id === newProposalId} />
                     ))}
                 </div>
             )}
@@ -656,60 +1188,505 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                     ))}
                 </div>
             )}
+            {tab === "chat" && (
+                <ChatPanel communityId={communityId} user={user}
+                           imMember={imMember} members={members}
+                           liveEvents={liveEvents} />
+            )}
+            {tab === "variables" && (
+                <VariablesPanel communityId={communityId} variables={variables}
+                                imMember={imMember} user={user} onChanged={reload} />
+            )}
+            {tab === "actions" && (
+                <ActionsPanel communityId={communityId} />
+            )}
             {tab === "bot" && imMember && (
                 <BotConfigPanel communityId={communityId} user={user} />
+            )}
+            {tab === "treasury" && isFinancial && (
+                <TreasuryPanel communityId={communityId} imMember={imMember} user={user} />
+            )}
+            </div>
+        </div>
+    );
+}
+
+function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
+    const [supporting, setSupporting] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
+    const cardRef = useRef(null);
+
+    // Scroll the card into view when it's freshly created by this
+    // user — makes "I just clicked File proposal" feel tangible.
+    useEffect(() => {
+        if (highlightNew && cardRef.current) {
+            cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }, [highlightNew]);
+    const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
+    const canAct = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
+
+    const support = async (e) => {
+        e?.stopPropagation?.();
+        setSupporting(true);
+        try {
+            await api.post(`/proposals/${proposal.id}/support`, { user_id: user.user_id });
+            onChanged?.();
+        } catch (e) { toast(e.message, "error"); }
+        finally { setSupporting(false); }
+    };
+    return (
+        <>
+            <div className={"card" + (highlightNew ? " proposal-new-pulse" : "")}
+                 ref={cardRef}
+                 onClick={() => setDetailOpen(true)}
+                 style={{ cursor: "pointer" }}
+                 title="Click for details, supporters, and comments">
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                        <div className="row" style={{ marginBottom: 4 }}>
+                            <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
+                            <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }}>
+                                {proposal.proposal_status}
+                            </span>
+                            <span className="muted" style={{ fontSize: "0.75rem" }}>age {proposal.age} · support {proposal.support_count}</span>
+                        </div>
+                        <div>{proposal.val_text || proposal.proposal_text || <span className="muted">(untitled)</span>}</div>
+                        {proposal.val_text && proposal.proposal_text && proposal.val_text !== proposal.proposal_text && (
+                            <div className="muted" style={{ marginTop: 4, fontSize: "0.88rem" }}>{proposal.proposal_text}</div>
+                        )}
+                    </div>
+                    {canAct && (
+                        <button className="btn" disabled={supporting} onClick={support}>
+                            {supporting ? "…" : "👍 Support"}
+                        </button>
+                    )}
+                </div>
+            </div>
+            {detailOpen && (
+                <ProposalDetailModal proposal={proposal} user={user} imMember={imMember}
+                    onClose={() => setDetailOpen(false)} onChanged={onChanged} />
+            )}
+        </>
+    );
+}
+
+// ── Comment thread — nested replies + up/down votes ─────
+// The agent can reply_comment and vote_comment; humans get the same
+// surface here. Replies render one level deep (indented); deeper
+// replies render as flat siblings under their closest ancestor to
+// keep the modal readable.
+function CommentThread({ comments, user, canReply, onReload }) {
+    const byParent = useMemo(() => {
+        const m = new Map();
+        for (const c of comments) {
+            const key = c.parent_comment_id || null;
+            if (!m.has(key)) m.set(key, []);
+            m.get(key).push(c);
+        }
+        return m;
+    }, [comments]);
+
+    const roots = byParent.get(null) || [];
+    return (
+        <div className="stack" style={{ gap: "0.5rem" }}>
+            {roots.map(c => (
+                <CommentNode key={c.id} c={c} byParent={byParent}
+                    user={user} canReply={canReply} onReload={onReload}
+                    depth={0} />
+            ))}
+        </div>
+    );
+}
+
+function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
+    const [replying, setReplying] = useState(false);
+    const [replyDraft, setReplyDraft] = useState("");
+    const [voteBusy, setVoteBusy] = useState(false);
+    const [replyBusy, setReplyBusy] = useState(false);
+    const children = byParent.get(c.id) || [];
+
+    const vote = async (delta) => {
+        if (!user || voteBusy) return;
+        setVoteBusy(true);
+        try {
+            await api.post(`/comments/${c.id}/score`, { delta });
+            await onReload?.();
+        } catch (e) { toast(e.message, "error"); }
+        finally { setVoteBusy(false); }
+    };
+
+    const submitReply = async (e) => {
+        e?.preventDefault?.();
+        const text = replyDraft.trim();
+        if (!text || !user) return;
+        setReplyBusy(true);
+        try {
+            await api.post(
+                `/entities/${c.entity_type}/${c.entity_id}/comments`,
+                {
+                    user_id: user.user_id,
+                    comment_text: text,
+                    parent_comment_id: c.id,
+                },
+            );
+            setReplyDraft("");
+            setReplying(false);
+            await onReload?.();
+        } catch (err) { toast(err.message, "error"); }
+        finally { setReplyBusy(false); }
+    };
+
+    return (
+        <div style={{ marginLeft: depth > 0 ? 14 : 0 }}>
+            <div style={{
+                padding: "0.5rem 0.7rem",
+                background: "rgba(0,0,0,0.04)",
+                borderRadius: 6,
+                borderLeft: depth > 0 ? "2px solid var(--border)" : "none",
+            }}>
+                <div className="muted" style={{ fontSize: "0.72rem" }}>
+                    {(c.user_name || c.user_id || "").slice(0, 16)}
+                    {" · "}
+                    {new Date(c.created_at).toLocaleTimeString()}
+                </div>
+                <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>
+                    {c.comment_text}
+                </div>
+                <div className="row" style={{
+                    gap: "0.6rem", marginTop: 4, fontSize: "0.75rem",
+                }}>
+                    {user && (
+                        <>
+                            <button className="btn ghost" disabled={voteBusy}
+                                    onClick={() => vote(1)}
+                                    style={{ padding: "0 6px", fontSize: "0.8rem" }}
+                                    title="Upvote">▲</button>
+                            <span className="muted" style={{ minWidth: 16, textAlign: "center" }}>
+                                {c.score || 0}
+                            </span>
+                            <button className="btn ghost" disabled={voteBusy}
+                                    onClick={() => vote(-1)}
+                                    style={{ padding: "0 6px", fontSize: "0.8rem" }}
+                                    title="Downvote">▼</button>
+                        </>
+                    )}
+                    {canReply && !replying && depth < 3 && (
+                        <button className="btn ghost"
+                                onClick={() => setReplying(true)}
+                                style={{ padding: "0 6px", fontSize: "0.75rem" }}>
+                            ↩ Reply
+                        </button>
+                    )}
+                </div>
+                {replying && (
+                    <form onSubmit={submitReply} style={{ marginTop: 6 }}>
+                        <textarea className="input" rows={2} maxLength={300}
+                                  autoFocus
+                                  placeholder="Reply…" value={replyDraft}
+                                  onChange={(e) => setReplyDraft(e.target.value)} />
+                        <div className="row" style={{ justifyContent: "flex-end", gap: "0.4rem", marginTop: 4 }}>
+                            <button type="button" className="btn ghost"
+                                    onClick={() => { setReplying(false); setReplyDraft(""); }}>
+                                Cancel
+                            </button>
+                            <button className="btn primary"
+                                    disabled={replyBusy || !replyDraft.trim()}>
+                                {replyBusy ? "…" : "Reply"}
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
+            {children.length > 0 && (
+                <div className="stack" style={{ gap: "0.35rem", marginTop: "0.35rem" }}>
+                    {children.map(ch => (
+                        <CommentNode key={ch.id} c={ch} byParent={byParent}
+                            user={user} canReply={canReply} onReload={onReload}
+                            depth={depth + 1} />
+                    ))}
+                </div>
             )}
         </div>
     );
 }
 
-function ProposalCard({ proposal, imMember, user, onChanged }) {
-    const [supporting, setSupporting] = useState(false);
-    const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
-    const canAct = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
+// ── Proposal detail modal — supporters + comments + inline actions ─
+function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
+    const [supporters, setSupporters] = useState([]);
+    const [comments, setComments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [draft, setDraft] = useState("");
+    const [busy, setBusy] = useState(null);  // "support" | "comment" | "withdraw"
+    const [error, setError] = useState(null);
 
-    const support = async () => {
-        setSupporting(true);
+    const reload = useCallback(async () => {
+        setLoading(true); setError(null);
         try {
-            await api.post(`/proposals/${proposal.id}/support`, { user_id: user.user_id });
+            const [sup, cmts] = await Promise.all([
+                api.get(`/proposals/${proposal.id}/supporters`).catch(() => []),
+                api.get(`/entities/proposal/${proposal.id}/comments?limit=100`)
+                    .catch(() => []),
+            ]);
+            setSupporters(sup || []);
+            setComments(cmts || []);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [proposal.id]);
+    useEffect(() => { reload(); }, [reload]);
+
+    const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
+    const canSupport = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
+    const canComment = imMember && canSupport;
+    const isAuthor = user && proposal.user_id === user.user_id;
+    const canWithdraw = isAuthor && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "Draft");
+    const alreadySupported = user && supporters.some(s => (s.user_id || s) === user.user_id);
+
+    const doSupport = async () => {
+        if (!user) return;
+        setBusy("support"); setError(null);
+        try {
+            await api.post(`/proposals/${proposal.id}/support`,
+                { user_id: user.user_id });
+            await reload();
             onChanged?.();
-        } catch (e) { alert(e.message); }
-        finally { setSupporting(false); }
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
     };
+
+    const doComment = async (e) => {
+        e?.preventDefault?.();
+        if (!user) return;
+        const text = draft.trim();
+        if (!text) return;
+        setBusy("comment"); setError(null);
+        try {
+            await api.post(`/entities/proposal/${proposal.id}/comments`, {
+                user_id: user.user_id, comment_text: text,
+            });
+            setDraft("");
+            await reload();
+            onChanged?.();
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
+    };
+
+    const doWithdraw = async () => {
+        if (!confirm("Withdraw this proposal? Status becomes Canceled.")) return;
+        setBusy("withdraw"); setError(null);
+        try {
+            await api.post(`/proposals/${proposal.id}/withdraw`,
+                { user_id: user.user_id });
+            onChanged?.();
+            onClose();
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
+    };
+
     return (
-        <div className="card">
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                    <div className="row" style={{ marginBottom: 4 }}>
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem",
+        }} onClick={onClose}>
+            <div className="card" style={{
+                maxWidth: 640, width: "100%", maxHeight: "92vh",
+                overflow: "auto", padding: "1.4rem",
+            }} onClick={(e) => e.stopPropagation()}>
+                <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.6rem" }}>
+                    <div className="row">
                         <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
                         <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }}>
                             {proposal.proposal_status}
                         </span>
-                        <span className="muted" style={{ fontSize: "0.75rem" }}>age {proposal.age} · support {proposal.support_count}</span>
                     </div>
-                    <div>{proposal.val_text || proposal.proposal_text || <span className="muted">(untitled)</span>}</div>
-                    {proposal.val_text && proposal.proposal_text && proposal.val_text !== proposal.proposal_text && (
-                        <div className="muted" style={{ marginTop: 4, fontSize: "0.88rem" }}>{proposal.proposal_text}</div>
+                    <button className="btn ghost" onClick={onClose}
+                            style={{ fontSize: "1.2rem", padding: "0 0.5rem" }}>×</button>
+                </div>
+                <h3 style={{ marginTop: 0 }}>
+                    {proposal.val_text || proposal.proposal_text || "(untitled)"}
+                </h3>
+                {proposal.val_text && proposal.proposal_text
+                    && proposal.val_text !== proposal.proposal_text && (
+                    <div className="muted" style={{
+                        whiteSpace: "pre-wrap", marginBottom: "0.6rem",
+                    }}>{proposal.proposal_text}</div>
+                )}
+                <div className="muted" style={{ fontSize: "0.82rem" }}>
+                    age {proposal.age} · support {proposal.support_count} · created{" "}
+                    {new Date(proposal.created_at).toLocaleString()}
+                </div>
+
+                <div className="row" style={{ margin: "1rem 0", flexWrap: "wrap", gap: "0.5rem" }}>
+                    {canSupport && (
+                        <button className="btn primary" onClick={doSupport}
+                                disabled={busy === "support" || alreadySupported}>
+                            {alreadySupported ? "✓ Supported" :
+                             busy === "support" ? "…" : "👍 Support"}
+                        </button>
+                    )}
+                    {canWithdraw && (
+                        <button className="btn ghost" onClick={doWithdraw}
+                                disabled={busy === "withdraw"}>
+                            {busy === "withdraw" ? "…" : "↩ Withdraw"}
+                        </button>
                     )}
                 </div>
-                {canAct && (
-                    <button className="btn" disabled={supporting} onClick={support}>
-                        {supporting ? "…" : "👍 Support"}
-                    </button>
-                )}
+
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.8rem" }}>
+                    <div className="bold" style={{ marginBottom: "0.4rem" }}>
+                        👥 Supporters ({supporters.length})
+                    </div>
+                    {loading ? (
+                        <div className="muted">Loading…</div>
+                    ) : supporters.length === 0 ? (
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>No supporters yet.</div>
+                    ) : (
+                        <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
+                            {supporters.map((s, i) => (
+                                <span key={i} className="pill" style={{
+                                    background: "var(--accent-soft)", color: "var(--accent)",
+                                }}>{(s.user_name || s.user_id || "").slice(0, 16)}</span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.8rem", paddingTop: "0.8rem" }}>
+                    <div className="bold" style={{ marginBottom: "0.4rem" }}>
+                        💬 Comments ({comments.length})
+                    </div>
+                    {loading ? <div className="muted">Loading…</div>
+                     : comments.length === 0 ? (
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>
+                            No comments yet.{canComment && " Leave the first."}
+                        </div>
+                    ) : (
+                        <CommentThread comments={comments} user={user}
+                            canReply={canComment} onReload={reload} />
+                    )}
+                    {canComment && (
+                        <form className="stack" onSubmit={doComment} style={{ marginTop: "0.8rem" }}>
+                            <textarea className="input" rows={2} maxLength={300}
+                                      placeholder="Add a comment (300 char max, be punchy)…"
+                                      value={draft}
+                                      onChange={(e) => setDraft(e.target.value)} />
+                            <div className="row" style={{ justifyContent: "space-between" }}>
+                                <span className="muted" style={{ fontSize: "0.75rem" }}>
+                                    {draft.length}/300
+                                </span>
+                                <button className="btn primary"
+                                        disabled={busy === "comment" || !draft.trim()}>
+                                    {busy === "comment" ? "…" : "Post comment"}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+                <ErrorBanner error={error} />
             </div>
         </div>
     );
 }
 
 // ── Propose form ────────────────────────────────────────
-const HUMAN_PROPOSAL_TYPES = [
-    { value: "AddStatement",    label: "Add a statement (community rule)" },
-    { value: "RemoveStatement", label: "Remove a statement" },
-    { value: "ReplaceStatement", label: "Replace an existing statement" },
-    { value: "ChangeVariable",  label: "Change a governance variable" },
-    { value: "ThrowOut",        label: "Throw out a member" },
+// Full proposal-type catalog with per-type field specs.
+// `needs` declares which of {text, val_text, val_uuid} are required;
+// `pickFrom` says which existing-entity list the val_uuid dropdown
+// should be populated from (statements | members | actions | artifacts
+// | containers). `financialOnly` hides the type unless the community
+// has the Financial module on.
+const PROPOSAL_CATALOG = [
+    // ── Governance
+    { value: "AddStatement",    group: "Governance",  label: "Add a statement (rule)",
+      help: "Describe the rule. If accepted, it becomes a community statement.",
+      needs: { text: true } },
+    { value: "RemoveStatement", group: "Governance",  label: "Remove a statement",
+      help: "Pick which existing statement to retire, and say why.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "statements", val_uuid_label: "Statement to remove" },
+    { value: "ReplaceStatement", group: "Governance", label: "Replace an existing statement",
+      help: "Pick the statement to replace. Your description is the new text.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "statements", val_uuid_label: "Statement to replace" },
+    { value: "ChangeVariable",  group: "Governance",  label: "Change a governance variable",
+      help: "Variable name in Description, new value below. See the ⚙️ Variables tab for names.",
+      needs: { text: true, val_text: true },
+      text_placeholder: "e.g. PulseSupport", val_text_label: "New value", val_text_placeholder: "e.g. 60" },
+    { value: "ThrowOut",        group: "Governance",  label: "Throw out a member",
+      help: "Pick who and say why. Needs community support to pass.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "members", val_uuid_label: "Member to remove" },
+
+    // ── Actions (working groups)
+    { value: "AddAction",       group: "Actions",     label: "Start a new action (working group)",
+      help: "Describe the work. Short name becomes the group's label.",
+      needs: { text: true, val_text: true },
+      val_text_label: "Short name", val_text_placeholder: "e.g. Onboarding Writers" },
+    { value: "EndAction",       group: "Actions",     label: "Close an action",
+      help: "Pick a sub-action to close. Its wallet (if any) sweeps back to parent.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Action to close" },
+    { value: "JoinAction",      group: "Actions",     label: "Join an action",
+      help: "Pick an action to join. You become a member of its sub-community.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Action to join" },
+
+    // ── Artifacts (collaborative documents)
+    { value: "CreateArtifact",  group: "Artifacts",   label: "Add a section (empty slot)",
+      help: "Creates an EMPTY artifact with a title in the chosen container. Filling comes via EditArtifact.",
+      needs: { val_text: true, val_uuid: true },
+      pickFrom: "containers", val_uuid_label: "Container",
+      val_text_label: "Section title", val_text_placeholder: "e.g. Conflict Resolution Steps" },
+    { value: "EditArtifact",    group: "Artifacts",   label: "Edit an artifact",
+      help: "Description is the NEW body. Current content is replaced verbatim on accept.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "artifacts", val_uuid_label: "Artifact to edit",
+      text_placeholder: "Full new content…", text_rows: 8 },
+    { value: "DelegateArtifact", group: "Artifacts",  label: "Delegate an artifact to an action",
+      help: "Hand an artifact to a sub-action to fill in. val_text = target action community id.",
+      needs: { text: true, val_uuid: true, val_text: true },
+      pickFrom: "artifacts", val_uuid_label: "Artifact",
+      val_text_label: "Target action community id" },
+    { value: "RemoveArtifact",  group: "Artifacts",   label: "Remove an artifact",
+      help: "Retire an artifact. Usually for placeholders or duplicates.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "artifacts", val_uuid_label: "Artifact to remove" },
+    { value: "CommitArtifact",  group: "Artifacts",   label: "Commit a container",
+      help: "Lock in all ACTIVE artifacts in the container as its final output.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "containers", val_uuid_label: "Container to commit" },
+
+    // ── Finance (only visible on financial kibbutzim)
+    { value: "Funding",         group: "Finance",     label: "Funding (parent → child action)",
+      help: "Transfer credits from this community to a child action.",
+      needs: { text: true, val_uuid: true, val_text: true },
+      financialOnly: true, pickFrom: "actions", val_uuid_label: "Target action",
+      val_text_label: "Amount (credits)", val_text_placeholder: "e.g. 50" },
+    { value: "Payment",         group: "Finance",     label: "Payment (out of community)",
+      help: "Burn credits from this community (leaf only — no active sub-actions). Phase 1 is log-only.",
+      needs: { text: true, val_text: true },
+      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 20",
+      text_placeholder: "Who's being paid and why?" },
+    { value: "payBack",         group: "Finance",     label: "PayBack (external inbound refund)",
+      help: "Mint credits back into the community wallet (e.g., a refund or return).",
+      needs: { text: true, val_text: true },
+      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 15" },
+    { value: "Dividend",        group: "Finance",     label: "Dividend (split to members)",
+      help: "Split an amount equally across active members' user wallets.",
+      needs: { text: true, val_text: true },
+      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 100" },
+
+    // ── Advanced / rare
+    { value: "SetMembershipHandler", group: "Advanced", label: "Set membership-handler action",
+      help: "Delegate admission decisions to a specific action. Usually not needed.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Handler action" },
 ];
+
+// Groups in display order
+const PROPOSAL_GROUPS = ["Governance", "Actions", "Artifacts", "Finance", "Advanced"];
 
 // ── Bot delegation (per-kibbutz) ────────────────────────
 const BOT_ORIENTATIONS = [
@@ -733,6 +1710,351 @@ function Slider({ label, value, onChange, hint }) {
                    style={{ width: "100%" }} />
             {hint && <div className="muted" style={{ fontSize: "0.8rem" }}>{hint}</div>}
         </label>
+    );
+}
+
+// ── Treasury panel ──────────────────────────────────────
+// ── Chat tab — community-level comments as live chat ────
+function ChatPanel({ communityId, user, imMember, members, liveEvents }) {
+    const [messages, setMessages] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [draft, setDraft] = useState("");
+    const [sending, setSending] = useState(false);
+    const [error, setError] = useState(null);
+    const bottomRef = useRef(null);
+
+    const load = useCallback(async () => {
+        setLoading(true); setError(null);
+        try {
+            const msgs = await api.get(
+                `/entities/community/${communityId}/comments?limit=50`,
+            );
+            // API returns newest-first; reverse for natural chat order
+            setMessages([...msgs].reverse());
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [communityId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    // Refresh on any comment.posted event for this community
+    useEffect(() => {
+        if (!liveEvents || liveEvents.length === 0) return;
+        const latest = liveEvents[0];
+        if (latest.event_type === "comment.posted") load();
+    }, [liveEvents, load]);
+
+    // Auto-scroll to bottom when new message arrives
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, [messages]);
+
+    const send = async (e) => {
+        e?.preventDefault?.();
+        const text = draft.trim();
+        if (!text || !user) return;
+        setSending(true); setError(null);
+        try {
+            await api.post(`/entities/community/${communityId}/comments`, {
+                user_id: user.user_id,
+                comment_text: text,
+            });
+            setDraft("");
+            await load();
+        } catch (err) { setError(err.message); }
+        finally { setSending(false); }
+    };
+
+    const nameFor = (uid) => {
+        const m = members.find(m => m.user_id === uid);
+        return m?.user_name || uid.slice(0, 8);
+    };
+
+    return (
+        <div className="stack">
+            <div className="card" style={{
+                maxHeight: 500, overflow: "auto",
+                display: "flex", flexDirection: "column", gap: "0.5rem",
+            }}>
+                {loading && <div className="muted">Loading chat…</div>}
+                {!loading && messages.length === 0 && (
+                    <div className="muted" style={{ textAlign: "center", padding: "1rem" }}>
+                        No messages yet. Say hi.
+                    </div>
+                )}
+                {messages.map(m => {
+                    const mine = m.user_id === user?.user_id;
+                    return (
+                        <div key={m.id} style={{
+                            alignSelf: mine ? "flex-end" : "flex-start",
+                            maxWidth: "80%",
+                            background: mine ? "var(--accent-soft)" : "rgba(0,0,0,0.04)",
+                            borderRadius: 10,
+                            padding: "0.5rem 0.8rem",
+                        }}>
+                            <div className="muted" style={{ fontSize: "0.72rem", marginBottom: 2 }}>
+                                {nameFor(m.user_id)} · {new Date(m.created_at).toLocaleTimeString()}
+                            </div>
+                            <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>
+                                {m.comment_text}
+                            </div>
+                        </div>
+                    );
+                })}
+                <div ref={bottomRef} />
+            </div>
+            {imMember ? (
+                <form className="row" onSubmit={send} style={{ gap: "0.5rem" }}>
+                    <input className="input" placeholder="Message the community…"
+                           value={draft}
+                           onChange={(e) => setDraft(e.target.value)}
+                           maxLength={300}
+                           style={{ flex: 1 }} />
+                    <button className="btn primary" disabled={sending || !draft.trim()}>
+                        {sending ? "…" : "Send"}
+                    </button>
+                </form>
+            ) : (
+                <div className="muted" style={{ textAlign: "center", padding: "0.5rem" }}>
+                    Only members can post. Apply to join above.
+                </div>
+            )}
+            <ErrorBanner error={error} />
+        </div>
+    );
+}
+
+// ── Variables tab — view + propose a ChangeVariable ────
+function VariablesPanel({ communityId, variables, imMember, user, onChanged }) {
+    const [editing, setEditing] = useState(null);  // variable name being edited
+
+    const propose = async (name, newValue) => {
+        if (!user) return;
+        try {
+            const resp = await api.post(`/communities/${communityId}/proposals`, {
+                user_id: user.user_id,
+                proposal_type: "ChangeVariable",
+                proposal_text: name,
+                val_text: newValue,
+            });
+            try { await api._fetch(`/proposals/${resp.id}/submit`, { method: "PATCH" }); } catch {}
+            toast(`ChangeVariable proposal filed: ${name} → ${newValue}`, "success");
+            setEditing(null);
+            onChanged?.();
+        } catch (e) { toast(e.message, "error"); }
+    };
+
+    // Group for readability
+    const groups = {
+        "Governance thresholds (% of members)": [
+            "PulseSupport", "ProposalSupport", "Membership", "ThrowOut",
+            "AddStatement", "RemoveStatement", "ReplaceStatement",
+            "AddAction", "EndAction", "JoinAction", "ChangeVariable",
+            "Funding", "Payment", "payBack", "Dividend",
+        ],
+        "Community settings": [
+            "Name", "MaxAge", "MinCommittee", "seniorityWeight",
+            "membershipFee", "dividendBySeniority", "proposalCooldown",
+            "quorumThreshold", "Financial", "membershipHandler",
+        ],
+        "Artifact governance (% of members)": [
+            "CreateArtifact", "EditArtifact", "RemoveArtifact",
+            "DelegateArtifact", "CommitArtifact",
+        ],
+    };
+    // Bucket unknown vars into "Other"
+    const known = new Set([].concat(...Object.values(groups)));
+    const other = Object.keys(variables).filter(k => !known.has(k));
+    if (other.length) groups["Other"] = other;
+
+    return (
+        <div className="stack">
+            {Object.entries(groups).map(([label, names]) => {
+                const rows = names.filter(n => n in variables);
+                if (rows.length === 0) return null;
+                return (
+                    <div key={label} className="card">
+                        <div className="bold" style={{ marginBottom: "0.5rem" }}>{label}</div>
+                        <div className="stack" style={{ gap: "0.3rem" }}>
+                            {rows.map(n => (
+                                <div key={n} className="row" style={{
+                                    justifyContent: "space-between",
+                                    padding: "0.35rem 0",
+                                    borderBottom: "1px solid var(--border)",
+                                }}>
+                                    <div>
+                                        <div className="bold" style={{ fontSize: "0.9rem" }}>{n}</div>
+                                        {editing === n ? (
+                                            <input className="input" autoFocus
+                                                   defaultValue={variables[n]}
+                                                   onKeyDown={(e) => {
+                                                       if (e.key === "Enter") propose(n, e.target.value);
+                                                       if (e.key === "Escape") setEditing(null);
+                                                   }}
+                                                   style={{ maxWidth: 200, marginTop: 4 }} />
+                                        ) : (
+                                            <code style={{
+                                                background: "rgba(0,0,0,0.04)",
+                                                padding: "1px 6px", borderRadius: 3,
+                                                fontSize: "0.82rem",
+                                            }}>{variables[n] || "(empty)"}</code>
+                                        )}
+                                    </div>
+                                    {imMember && editing !== n && (
+                                        <button className="btn ghost" style={{ fontSize: "0.8rem" }}
+                                                onClick={() => setEditing(n)}>
+                                            Propose change
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
+            {imMember && (
+                <div className="muted" style={{ fontSize: "0.8rem", padding: "0 0.5rem" }}>
+                    Editing a variable files a <code>ChangeVariable</code> proposal —
+                    the community votes like any other decision. Enter-to-submit,
+                    Esc to cancel.
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Action tree tab — navigate child action-communities ─
+function ActionsPanel({ communityId }) {
+    const [actions, setActions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        setLoading(true); setError(null);
+        api.get(`/communities/${communityId}/children`)
+            .then(setActions)
+            .catch((e) => setError(e.message))
+            .finally(() => setLoading(false));
+    }, [communityId]);
+
+    if (loading) return <div className="muted">Loading actions…</div>;
+    if (error) return <ErrorBanner error={error} />;
+    if (actions.length === 0) {
+        return (
+            <Empty title="No sub-actions yet">
+                Actions are focused working groups. File an <code>AddAction</code>{" "}
+                proposal via <strong>+ New proposal</strong> above to create one.
+            </Empty>
+        );
+    }
+
+    return (
+        <div className="stack">
+            {actions.map(a => (
+                <a key={a.id} href={`#/kibbutz/${a.id}`}
+                   className="card" style={{
+                       textDecoration: "none", color: "inherit", display: "block",
+                   }}>
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                        <div>
+                            <div className="bold">🌳 {a.name}</div>
+                            <div className="muted" style={{ fontSize: "0.82rem" }}>
+                                {a.member_count} member{a.member_count === 1 ? "" : "s"}
+                                {a.status !== 1 && " · ended"}
+                            </div>
+                        </div>
+                        <span className="muted">→</span>
+                    </div>
+                </a>
+            ))}
+        </div>
+    );
+}
+
+function TreasuryPanel({ communityId, imMember, user }) {
+    const [wallet, setWallet] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const reload = useCallback(async () => {
+        setLoading(true); setError(null);
+        try {
+            const w = await api.get(`/communities/${communityId}/wallet`);
+            setWallet(w);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [communityId]);
+    useEffect(() => { reload(); }, [reload]);
+
+    if (loading) return <div className="muted">Loading treasury…</div>;
+    if (error) return <ErrorBanner error={error} />;
+    if (!wallet) return null;
+
+    return (
+        <div className="stack">
+            <div className="card">
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                    <div>
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>Community balance</div>
+                        <div style={{ fontSize: "1.8rem", fontWeight: 700, color: "var(--accent)" }}>
+                            {parseFloat(wallet.balance).toFixed(2)} <span style={{ fontSize: "0.9rem", color: "var(--text-dim)" }}>credits</span>
+                        </div>
+                    </div>
+                    {imMember && (
+                        <button className="btn primary" onClick={() => {
+                            const amount = prompt("Propose payment — amount?", "10");
+                            if (!amount) return;
+                            const pitch = prompt("Pitch / memo for the proposal:", "Pay external vendor");
+                            api.post(`/communities/${communityId}/payment-request`,
+                                { amount, pitch })
+                                .then(() => toast("Payment proposal filed. Community votes next pulse.", "success"))
+                                .catch((e) => toast(e.message, "error"));
+                        }}>
+                            ↗ Propose payment
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="bold" style={{ marginBottom: "0.5rem" }}>Recent ledger</div>
+                {wallet.recent_entries.length === 0 ? (
+                    <div className="muted">No movements yet. Deposits come via webhook; payments and funding flow through proposals.</div>
+                ) : (
+                    <div className="stack">
+                        {wallet.recent_entries.map(e => {
+                            const inbound = e.to_wallet === wallet.id;
+                            return (
+                                <div key={e.id} className="row" style={{ justifyContent: "space-between", padding: "0.4rem 0", borderBottom: "1px solid var(--border)" }}>
+                                    <div>
+                                        <span style={{ color: inbound ? "var(--accent)" : "var(--danger)", fontWeight: 600 }}>
+                                            {inbound ? "↓" : "↑"} {parseFloat(e.amount).toFixed(2)}
+                                        </span>
+                                        <span className="muted" style={{ fontSize: "0.82rem", marginLeft: 10 }}>
+                                            {e.memo || (e.webhook_event ? `webhook: ${e.webhook_event}` : "transfer")}
+                                        </span>
+                                    </div>
+                                    <span className="muted" style={{ fontSize: "0.8rem" }}>
+                                        {new Date(e.created_at).toLocaleString()}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {imMember && (
+                <div className="card" style={{ background: "var(--accent-soft)" }}>
+                    <div className="muted" style={{ fontSize: "0.9rem" }}>
+                        <strong>Money flow</strong>: deposits enter only via authenticated webhook
+                        (not a proposal). Parent → child action grants go through <code>Funding</code>
+                        proposals. Leaf actions propose <code>Payment</code> to move credits out.
+                        Dividends split the wallet across active members.
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -918,11 +2240,122 @@ function BotConfigPanel({ communityId, user }) {
 }
 
 function ProposePage({ communityId, user }) {
-    const [ptype, setPtype]     = useState("AddStatement");
-    const [text, setText]       = useState("");
-    const [valText, setValText] = useState("");
+    const [ptype, setPtype]       = useState("AddStatement");
+    const [text, setText]         = useState("");
+    const [valText, setValText]   = useState("");
+    const [valUuid, setValUuid]   = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
+
+    // Community context — drives which types are shown + dropdown data
+    const [isFinancial, setIsFinancial] = useState(false);
+    const [statements, setStatements]   = useState([]);
+    const [members, setMembers]         = useState([]);
+    const [actions, setActions]         = useState([]);
+    const [containers, setContainers]   = useState([]);
+    const [artifacts, setArtifacts]     = useState([]);
+    const [ctxLoaded, setCtxLoaded]     = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const [v, s, m, a] = await Promise.all([
+                    api.get(`/communities/${communityId}/variables`),
+                    api.get(`/communities/${communityId}/statements`),
+                    api.get(`/communities/${communityId}/members`),
+                    api.get(`/communities/${communityId}/children`),
+                ]);
+                const fin = (v?.variables?.Financial || "false");
+                setIsFinancial(fin !== "false" && fin !== "");
+                setStatements(s || []);
+                setMembers(m || []);
+                setActions(a || []);
+                // Containers + artifacts best-effort (may not exist)
+                try {
+                    const tree = await api.get(`/artifacts/communities/${communityId}/work_tree`);
+                    const conts = Array.isArray(tree) ? tree : [];
+                    setContainers(conts);
+                    const arts = [];
+                    const walk = (c) => {
+                        (c.artifacts || []).forEach(a => {
+                            arts.push(a);
+                            (a.delegated_to || []).forEach(walk);
+                        });
+                    };
+                    conts.forEach(walk);
+                    setArtifacts(arts);
+                } catch {}
+            } catch (e) { setError(e.message); }
+            finally { setCtxLoaded(true); }
+        })();
+    }, [communityId]);
+
+    // Only show types allowed for this community
+    const availableTypes = useMemo(
+        () => PROPOSAL_CATALOG.filter(t => !t.financialOnly || isFinancial),
+        [isFinancial],
+    );
+
+    // Group by category for the dropdown
+    const groupedTypes = useMemo(() => {
+        const by = {};
+        for (const t of availableTypes) {
+            (by[t.group] = by[t.group] || []).push(t);
+        }
+        return by;
+    }, [availableTypes]);
+
+    const spec = PROPOSAL_CATALOG.find(t => t.value === ptype);
+
+    // Reset the type-specific fields when the type changes
+    useEffect(() => {
+        setValText("");
+        setValUuid("");
+    }, [ptype]);
+
+    // Resolve the dropdown items for the chosen type's `pickFrom`
+    const pickItems = useMemo(() => {
+        if (!spec?.pickFrom) return [];
+        switch (spec.pickFrom) {
+            case "statements":
+                return statements.map(s => ({
+                    id: s.id,
+                    label: (s.statement_text || "").slice(0, 80) + (s.statement_text?.length > 80 ? "…" : ""),
+                }));
+            case "members":
+                return members
+                    .filter(m => m.status === 1)
+                    .map(m => ({
+                        id: m.user_id,
+                        label: m.user_name || m.user_id.slice(0, 8),
+                    }));
+            case "actions":
+                return actions.map(a => ({
+                    id: a.id,
+                    label: `${a.name}${a.status !== 1 ? " (ended)" : ""}`,
+                }));
+            case "containers":
+                return containers.map(c => ({
+                    id: c.id,
+                    label: `${c.title || c.id.slice(0, 8)} — ${c.artifacts?.length || 0} artifacts`,
+                }));
+            case "artifacts":
+                return artifacts.map(a => ({
+                    id: a.id,
+                    label: (a.title || a.id.slice(0, 8)).slice(0, 80),
+                }));
+            default:
+                return [];
+        }
+    }, [spec, statements, members, actions, containers, artifacts]);
+
+    const canSubmit = (() => {
+        if (!spec) return false;
+        if (spec.needs?.text && !text.trim()) return false;
+        if (spec.needs?.val_text && !valText.trim()) return false;
+        if (spec.needs?.val_uuid && !valUuid.trim()) return false;
+        return true;
+    })();
 
     const submit = async (e) => {
         e.preventDefault();
@@ -934,13 +2367,20 @@ function ProposePage({ communityId, user }) {
                 proposal_text: text.trim(),
             };
             if (valText.trim()) body.val_text = valText.trim();
+            if (valUuid.trim()) body.val_uuid = valUuid.trim();
             const p = await api.post(`/communities/${communityId}/proposals`, body);
-            // Submit it so it reaches OutThere
+            // Auto-submit so it reaches OutThere
             try { await api._fetch(`/proposals/${p.id}/submit`, { method: "PATCH" }); } catch {}
+            // Mark the newly-created proposal so the Kibbutz view can
+            // animate it in. Cleared after one render by the consumer.
+            try { sessionStorage.setItem("kbz-new-proposal-id", p.id); } catch {}
+            toast(`${spec?.label || ptype} filed — scroll down to see it in OutThere`, "success");
             navigate(`#/kibbutz/${communityId}`);
         } catch (err) { setError(err.message); }
         finally { setSubmitting(false); }
     };
+
+    if (!ctxLoaded) return <div className="container">Loading…</div>;
 
     return (
         <div className="container" style={{ maxWidth: 640 }}>
@@ -949,26 +2389,74 @@ function ProposePage({ communityId, user }) {
             <form className="stack card" onSubmit={submit}>
                 <label>
                     <div className="bold" style={{ marginBottom: 4 }}>Type</div>
-                    <select className="input" value={ptype} onChange={(e) => setPtype(e.target.value)}>
-                        {HUMAN_PROPOSAL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    <select className="input" value={ptype}
+                            onChange={(e) => setPtype(e.target.value)}>
+                        {PROPOSAL_GROUPS.map(g => (
+                            (groupedTypes[g] || []).length > 0 && (
+                                <optgroup key={g} label={g}>
+                                    {groupedTypes[g].map(t => (
+                                        <option key={t.value} value={t.value}>{t.label}</option>
+                                    ))}
+                                </optgroup>
+                            )
+                        ))}
                     </select>
+                    {spec?.help && (
+                        <div className="muted" style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                            {spec.help}
+                        </div>
+                    )}
                 </label>
-                <label>
-                    <div className="bold" style={{ marginBottom: 4 }}>Description</div>
-                    <textarea className="input" rows={4} required
-                              placeholder="What are you proposing, and why?"
-                              value={text} onChange={(e) => setText(e.target.value)} />
-                </label>
-                {ptype === "ChangeVariable" && (
+
+                {spec?.pickFrom && (
                     <label>
-                        <div className="bold" style={{ marginBottom: 4 }}>New value</div>
-                        <input className="input" placeholder="e.g. 60"
-                               value={valText} onChange={(e) => setValText(e.target.value)} />
+                        <div className="bold" style={{ marginBottom: 4 }}>
+                            {spec.val_uuid_label || "Target"}
+                        </div>
+                        {pickItems.length === 0 ? (
+                            <div className="muted" style={{ fontSize: "0.85rem" }}>
+                                No {spec.pickFrom} available. You may need one to exist first.
+                            </div>
+                        ) : (
+                            <select className="input" required value={valUuid}
+                                    onChange={(e) => setValUuid(e.target.value)}>
+                                <option value="">— choose —</option>
+                                {pickItems.map(it => (
+                                    <option key={it.id} value={it.id}>{it.label}</option>
+                                ))}
+                            </select>
+                        )}
                     </label>
                 )}
+
+                {spec?.needs?.text !== false && (
+                    <label>
+                        <div className="bold" style={{ marginBottom: 4 }}>
+                            {spec?.text_label || "Description"}
+                        </div>
+                        <textarea className="input"
+                                  rows={spec?.text_rows || 4}
+                                  required={!!spec?.needs?.text}
+                                  placeholder={spec?.text_placeholder || "What are you proposing, and why?"}
+                                  value={text} onChange={(e) => setText(e.target.value)} />
+                    </label>
+                )}
+
+                {spec?.needs?.val_text && (
+                    <label>
+                        <div className="bold" style={{ marginBottom: 4 }}>
+                            {spec.val_text_label || "Value"}
+                        </div>
+                        <input className="input" required
+                               placeholder={spec.val_text_placeholder || ""}
+                               value={valText}
+                               onChange={(e) => setValText(e.target.value)} />
+                    </label>
+                )}
+
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                     <a href={`#/kibbutz/${communityId}`} className="btn ghost">Cancel</a>
-                    <button className="btn primary" disabled={submitting || !text.trim()}>
+                    <button className="btn primary" disabled={submitting || !canSubmit}>
                         {submitting ? "Filing…" : "File proposal"}
                     </button>
                 </div>
@@ -1314,6 +2802,7 @@ function App() {
             <footer className="app-footer">
                 Kibbutznik · <a href="/kbz/viewer/">AI simulation</a> · <a href="/">landing</a>
             </footer>
+            <ToastHost />
         </>
     );
 }

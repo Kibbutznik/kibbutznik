@@ -51,6 +51,9 @@ def _safe_next_path(candidate: str | None) -> str:
 
 class MagicLinkRequest(BaseModel):
     email: EmailStr
+    # "Remember me on this device" — long-lived session cookie. False
+    # (default) gives a 1-day session suitable for shared machines.
+    remember: bool = False
 
 
 class MagicLinkResponse(BaseModel):
@@ -66,12 +69,15 @@ class MeResponse(BaseModel):
     is_human: bool
 
 
-def _set_session_cookie(resp: Response, raw_token: str) -> None:
+def _set_session_cookie(
+    resp: Response, raw_token: str, ttl_minutes: int | None = None,
+) -> None:
     """Same flags on set + clear so browsers actually drop the cookie."""
+    minutes = ttl_minutes if ttl_minutes is not None else settings.auth_session_ttl_minutes
     resp.set_cookie(
         key=settings.auth_session_cookie,
         value=raw_token,
-        max_age=settings.auth_session_ttl_minutes * 60,
+        max_age=minutes * 60,
         httponly=True,
         samesite="lax",
         # secure=True should be set in prod via reverse proxy / TLS; we
@@ -109,7 +115,8 @@ async def request_magic_link(
     issued = await svc.issue_magic_link(user)
     await db.commit()
 
-    verify_path = f"/auth/verify?token={issued.raw}"
+    remember_qs = "&remember=1" if body.remember else ""
+    verify_path = f"/auth/verify?token={issued.raw}{remember_qs}"
     # Email body NEEDS (a) an absolute URL — email clients can't resolve
     # a relative href and render it as "http:///auth/verify?..." which
     # fails; and (b) a `next=` param — so clicking the link lands on
@@ -139,6 +146,7 @@ async def verify_magic_link(
     token: str,
     response: Response,
     next: str | None = None,
+    remember: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
     """Consume a magic-link token, issue a session, set the cookie.
@@ -169,15 +177,19 @@ async def verify_magic_link(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid or expired magic link",
         )
-    session = await svc.issue_session(user)
+    ttl = (
+        settings.auth_session_ttl_minutes if remember
+        else settings.auth_session_short_ttl_minutes
+    )
+    session = await svc.issue_session(user, ttl_minutes=ttl)
     await db.commit()
 
     if next is not None:
         redirect = RedirectResponse(url=_safe_next_path(next), status_code=303)
-        _set_session_cookie(redirect, session.raw)
+        _set_session_cookie(redirect, session.raw, ttl_minutes=ttl)
         return redirect
 
-    _set_session_cookie(response, session.raw)
+    _set_session_cookie(response, session.raw, ttl_minutes=ttl)
     return {
         "user": {
             "user_id": str(user.id),
@@ -204,10 +216,28 @@ async def logout(
 
 
 @router.get("/me")
-async def me(user: User | None = Depends(get_current_user)) -> dict:
-    """Return the currently authenticated user, or null. Never errors."""
+async def me(
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the currently authenticated user, or null. Never errors.
+
+    Side effect: on the FIRST /auth/me call for a fresh human user
+    (no `user` wallet yet and `welcome_credits` > 0 in config), mints
+    a welcome-credits gift into a new user wallet. Makes the escrow-
+    based membership-fee flow tractable for brand-new accounts.
+    """
     if user is None:
         return {"user": None}
+    if user.is_human:
+        try:
+            await _provision_welcome_credits(db, user)
+            await db.commit()
+        except Exception:
+            # Never fail /auth/me on a provisioning hiccup — the user
+            # just doesn't get credits this round; next /auth/me
+            # retries.
+            await db.rollback()
     return {
         "user": {
             "user_id": str(user.id),
@@ -216,3 +246,46 @@ async def me(user: User | None = Depends(get_current_user)) -> dict:
             "is_human": user.is_human,
         }
     }
+
+
+async def _provision_welcome_credits(db: AsyncSession, user: User) -> None:
+    """Mint `welcome_credits` into the user's wallet IF (a) they don't
+    have one yet and (b) the amount is > 0.
+
+    Idempotent by the "don't have a wallet yet" check — once the
+    wallet exists we never top it up here again. Explicit bonuses
+    beyond the initial gift should go through admin-only tooling.
+    """
+    from decimal import Decimal
+    from kbz.services.wallet_service import WalletService, OWNER_USER
+
+    try:
+        amount = Decimal(settings.welcome_credits)
+    except Exception:
+        return
+    if amount <= 0:
+        return
+
+    svc = WalletService(db)
+    # Check wallet existence WITHOUT the financial gate (user wallets
+    # are platform-wide, not community-scoped).
+    from sqlalchemy import select
+    from kbz.models.wallet import Wallet
+    existing = (
+        await db.execute(
+            select(Wallet).where(
+                Wallet.owner_kind == OWNER_USER,
+                Wallet.owner_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return  # already provisioned
+
+    wallet = await svc.get_or_create(OWNER_USER, user.id, gate=False)
+    await svc.mint(
+        wallet, amount,
+        webhook_event="welcome.signup",
+        external_ref=f"welcome:{user.id}",
+        memo="Welcome to Kibbutznik — starter credits",
+    )

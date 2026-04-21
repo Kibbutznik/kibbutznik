@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>KBZ · TODO</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f0a1e;--bg2:#160d2e;--card:#1e1440;
+  --accent:#e94560;--green:#4ecca3;--gold:#f0c040;
+  --violet:#a37bff;--blue:#79c6ff;--pink:#ff72b6;
+  --text:#e8e2ff;--white:#fff;--dim:#9a92b8;
+}
+html,body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55;min-height:100%}
+body{padding:1rem;max-width:980px;margin:0 auto}
+a{color:var(--blue);text-decoration:none}
+a:hover{color:var(--pink)}
+
+.bg-glow{
+  position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(163,123,255,.15) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 30%, rgba(78,204,163,.12) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 85%, rgba(255,114,182,.12) 0%, transparent 55%);
+}
+
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.9rem 0 1.2rem;border-bottom:1px solid rgba(163,123,255,.15);
+  margin-bottom:1.5rem;
+}
+.topbar .logo{display:flex;align-items:center;gap:.6rem;font-weight:700;letter-spacing:.15em;color:var(--white)}
+.topbar .logo img{width:28px;height:28px}
+.topbar a.back{
+  padding:.35rem .8rem;border-radius:4px;
+  background:transparent;border:1px solid var(--violet);color:var(--violet);
+  font-size:.8rem;
+}
+.topbar a.back:hover{background:rgba(163,123,255,.15);color:var(--pink);border-color:var(--pink)}
+
+/* ── Gate ── */
+.gate{
+  max-width:460px;margin:5rem auto 0;padding:2rem;
+  background:linear-gradient(135deg,rgba(30,20,64,.7),rgba(22,13,46,.9));
+  border:1px solid rgba(163,123,255,.3);border-radius:14px;
+  text-align:center;
+}
+.gate h1{font-size:1.4rem;margin-bottom:.5rem;color:var(--white)}
+.gate p{color:var(--dim);font-size:.92rem;margin-bottom:1.5rem}
+.gate input[type=password]{
+  width:100%;padding:.7rem .9rem;border-radius:8px;
+  background:rgba(0,0,0,.35);border:1px solid rgba(163,123,255,.3);
+  color:var(--text);font-size:.95rem;margin-bottom:.8rem;
+}
+.gate input[type=password]:focus{outline:none;border-color:var(--pink)}
+.gate button{
+  width:100%;padding:.7rem 1rem;border-radius:8px;cursor:pointer;
+  background:linear-gradient(135deg,var(--violet),var(--pink));
+  color:var(--white);border:0;font-weight:700;font-size:.95rem;
+  transition:transform .15s, box-shadow .2s;
+}
+.gate button:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(163,123,255,.35)}
+.gate .err{color:var(--accent);font-size:.85rem;min-height:1.2em;margin-top:.4rem}
+
+/* ── Content ── */
+.hidden{display:none!important}
+h1.title{
+  font-size:clamp(1.8rem,4vw,2.4rem);color:var(--white);
+  background:linear-gradient(90deg,#a37bff,#ff72b6,#4ecca3);
+  background-size:200% 100%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  font-weight:800;margin-bottom:.4rem;
+}
+.intro{color:var(--dim);font-size:.95rem;margin-bottom:1.2rem}
+.progress-wrap{
+  background:rgba(0,0,0,.3);border:1px solid rgba(163,123,255,.2);
+  border-radius:100px;height:10px;overflow:hidden;margin-bottom:1.8rem;
+  position:relative;
+}
+.progress-fill{
+  height:100%;background:linear-gradient(90deg,var(--violet),var(--green));
+  width:0%;transition:width .4s;
+  box-shadow:0 0 15px rgba(78,204,163,.4);
+}
+.progress-text{
+  font-size:.78rem;color:var(--dim);text-align:right;margin-top:.3rem;
+  font-family:"SF Mono",Consolas,monospace;
+}
+
+.phase{margin-bottom:2.2rem}
+.phase-title{
+  font-size:1.15rem;color:var(--white);font-weight:700;
+  margin-bottom:.3rem;display:flex;align-items:center;gap:.6rem;
+}
+.phase-note{color:var(--dim);font-size:.85rem;margin-bottom:1rem;font-style:italic}
+
+.task{
+  display:flex;align-items:flex-start;gap:.8rem;padding:.7rem .9rem;
+  background:linear-gradient(135deg,rgba(30,20,64,.5),rgba(22,13,46,.7));
+  border:1px solid rgba(163,123,255,.15);border-radius:10px;
+  margin-bottom:.6rem;transition:border-color .25s, opacity .3s;
+  position:relative;cursor:pointer;
+}
+.task:hover{border-color:rgba(163,123,255,.45)}
+.task.done{opacity:.5}
+.task.done .task-title{text-decoration:line-through;color:var(--dim)}
+
+.task input[type=checkbox]{
+  appearance:none;-webkit-appearance:none;flex-shrink:0;
+  width:22px;height:22px;border-radius:6px;cursor:pointer;
+  border:2px solid rgba(163,123,255,.5);
+  background:rgba(0,0,0,.3);
+  margin-top:.1rem;
+  transition:all .2s;
+  position:relative;
+}
+.task input[type=checkbox]:hover{border-color:var(--pink)}
+.task input[type=checkbox]:checked{
+  background:linear-gradient(135deg,var(--green),var(--violet));
+  border-color:transparent;
+}
+.task input[type=checkbox]:checked::after{
+  content:"✓";position:absolute;
+  top:50%;left:50%;transform:translate(-50%,-50%);
+  color:var(--white);font-weight:800;font-size:.9rem;
+}
+
+.task-body{flex:1;min-width:0}
+.task-title{color:var(--white);font-weight:600;font-size:.95rem;line-height:1.35}
+.task-hint{color:var(--dim);font-size:.78rem;margin-top:.1rem}
+
+/* Tooltip */
+.tooltip{
+  position:fixed;z-index:9999;max-width:460px;
+  padding:1rem 1.2rem;border-radius:10px;
+  background:#0a0718;border:1px solid rgba(163,123,255,.45);
+  box-shadow:0 10px 40px rgba(0,0,0,.7);
+  font-size:.82rem;line-height:1.55;color:var(--text);
+  white-space:pre-wrap;pointer-events:none;
+  opacity:0;transition:opacity .15s;
+}
+.tooltip.visible{opacity:1}
+
+/* reset */
+.reset-btn{
+  margin-top:2rem;font-size:.78rem;color:var(--dim);
+  background:transparent;border:1px solid rgba(163,123,255,.2);
+  padding:.4rem .8rem;border-radius:6px;cursor:pointer;
+}
+.reset-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+.legend{
+  margin-top:.5rem;font-size:.75rem;color:var(--dim);
+  display:flex;flex-wrap:wrap;gap:.8rem;
+}
+.legend span{background:rgba(0,0,0,.25);padding:.15rem .55rem;border-radius:100px;border:1px solid rgba(163,123,255,.2)}
+</style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+
+<nav class="topbar">
+  <div class="logo"><img src="logo.svg" alt=""><span>KBZ · TODO</span></div>
+  <a href="index.html" class="back">&larr; Landing</a>
+</nav>
+
+<!-- ═══ Password gate ═══ -->
+<section id="gate" class="gate">
+  <h1>🔒 Private</h1>
+  <p>This is your personal launch checklist. Enter the password to decrypt.</p>
+  <form id="gate-form">
+    <input type="password" id="pw" autocomplete="off" placeholder="Password" autofocus>
+    <button type="submit">Unlock</button>
+    <div class="err" id="gate-err"></div>
+  </form>
+</section>
+
+<!-- ═══ Todo content ═══ -->
+<main id="content" class="hidden">
+  <h1 class="title" id="doc-title"></h1>
+  <p class="intro" id="doc-intro"></p>
+  <div class="legend">
+    <span>🔐 needs credentials you hold</span>
+    <span>🎬 needs a physical / human action</span>
+    <span>💰 might cost money</span>
+  </div>
+  <div style="margin:1.4rem 0 .2rem">
+    <div class="progress-wrap"><div class="progress-fill" id="progress"></div></div>
+    <div class="progress-text" id="progress-text">0 / 0</div>
+  </div>
+
+  <div id="phases"></div>
+
+  <button class="reset-btn" id="reset">↻ Reset all checkmarks on this device</button>
+</main>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ── Decrypt the TODO payload with Web Crypto API ──────────────
+const LS_KEY = "kbz-todo-state-v1";
+
+async function decryptBlob(password) {
+  const blob = await (await fetch("todo.dat?t=" + Date.now())).json();
+  const toBuf = (b64) => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const salt = toBuf(blob.salt);
+  const iv   = toBuf(blob.iv);
+  const ct   = toBuf(blob.ct);
+  const enc  = new TextEncoder();
+  const material = await crypto.subtle.importKey(
+    "raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name:"PBKDF2", salt, iterations: blob.iters, hash:"SHA-256" },
+    material,
+    { name:"AES-GCM", length:256 },
+    false,
+    ["decrypt"]
+  );
+  const pt = await crypto.subtle.decrypt({ name:"AES-GCM", iv }, key, ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveState(s) { localStorage.setItem(LS_KEY, JSON.stringify(s)); }
+
+function render(doc) {
+  document.getElementById("doc-title").textContent = doc.title;
+  document.getElementById("doc-intro").textContent = doc.intro;
+
+  const state = loadState();
+  const phasesEl = document.getElementById("phases");
+  phasesEl.innerHTML = "";
+  let total = 0, done = 0;
+
+  doc.sections.forEach(section => {
+    const ph = document.createElement("div");
+    ph.className = "phase";
+    const title = document.createElement("div");
+    title.className = "phase-title";
+    title.textContent = section.phase;
+    ph.appendChild(title);
+    if (section.note) {
+      const note = document.createElement("div");
+      note.className = "phase-note";
+      note.textContent = section.note;
+      ph.appendChild(note);
+    }
+    section.items.forEach(item => {
+      total++;
+      const isDone = !!state[item.id];
+      if (isDone) done++;
+      const row = document.createElement("label");
+      row.className = "task" + (isDone ? " done" : "");
+      row.setAttribute("data-id", item.id);
+      row.setAttribute("data-tooltip", item.tooltip);
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = isDone;
+      cb.addEventListener("change", () => {
+        const s = loadState();
+        if (cb.checked) s[item.id] = Date.now();
+        else delete s[item.id];
+        saveState(s);
+        row.classList.toggle("done", cb.checked);
+        updateProgress(doc);
+      });
+
+      const body = document.createElement("div");
+      body.className = "task-body";
+      const ttl = document.createElement("div");
+      ttl.className = "task-title";
+      ttl.textContent = item.title;
+      const hint = document.createElement("div");
+      hint.className = "task-hint";
+      hint.textContent = "Hover for step-by-step instructions";
+      body.append(ttl, hint);
+
+      row.append(cb, body);
+      ph.appendChild(row);
+    });
+    phasesEl.appendChild(ph);
+  });
+
+  updateProgress(doc);
+}
+
+function updateProgress(doc) {
+  const state = loadState();
+  let total = 0, done = 0;
+  doc.sections.forEach(s => s.items.forEach(i => {
+    total++;
+    if (state[i.id]) done++;
+  }));
+  const pct = total ? Math.round(done / total * 100) : 0;
+  document.getElementById("progress").style.width = pct + "%";
+  document.getElementById("progress-text").textContent = `${done} / ${total} · ${pct}%`;
+}
+
+// ── Tooltip handling ──────────────
+const tip = document.getElementById("tooltip");
+document.addEventListener("mousemove", (e) => {
+  const row = e.target.closest(".task");
+  if (!row) { tip.classList.remove("visible"); return; }
+  const text = row.getAttribute("data-tooltip");
+  if (!text) { tip.classList.remove("visible"); return; }
+  tip.textContent = text;
+  tip.classList.add("visible");
+  // Position: prefer right-of-cursor, clamp into viewport
+  const pad = 14;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  const tw = Math.min(460, window.innerWidth - 40);
+  tip.style.maxWidth = tw + "px";
+  const r = tip.getBoundingClientRect();
+  if (x + r.width > window.innerWidth - 10) x = e.clientX - r.width - pad;
+  if (y + r.height > window.innerHeight - 10) y = window.innerHeight - r.height - 10;
+  if (y < 10) y = 10;
+  tip.style.left = x + "px";
+  tip.style.top  = y + "px";
+});
+
+// ── Gate ──────────────
+const gateForm = document.getElementById("gate-form");
+gateForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const pw = document.getElementById("pw").value;
+  const err = document.getElementById("gate-err");
+  err.textContent = "decrypting…";
+  try {
+    const doc = await decryptBlob(pw);
+    document.getElementById("gate").classList.add("hidden");
+    document.getElementById("content").classList.remove("hidden");
+    render(doc);
+    // Cache the doc for tooltip positioning after renders
+    window.__kbzDoc = doc;
+  } catch (ex) {
+    err.textContent = "Wrong password.";
+    console.debug(ex);
+  }
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  if (!confirm("Clear all checkmarks on this device?")) return;
+  localStorage.removeItem(LS_KEY);
+  if (window.__kbzDoc) render(window.__kbzDoc);
+});
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kbz.enums import ProposalStatus, ProposalType
 from kbz.models.proposal import Proposal
 from kbz.models.support import Support
+from kbz.models.variable import Variable
 from kbz.schemas.proposal import ProposalCreate
 from kbz.services.event_bus import event_bus
 from kbz.services.member_service import MemberService
@@ -152,6 +153,50 @@ class ProposalService:
             support_count=0,
         )
         self.db.add(proposal)
+        await self.db.flush()
+
+        # Membership escrow: if the target community has the Financial
+        # module on AND a positive `membershipFee` variable, debit the
+        # fee from the applicant's user wallet into an escrow tied to
+        # this proposal. On accept the Membership handler releases;
+        # on reject/cancel ProposalService.set_status refunds.
+        if data.proposal_type == ProposalType.MEMBERSHIP:
+            from decimal import Decimal, InvalidOperation
+            from kbz.services.wallet_service import (
+                WalletService, InsufficientFundsError, OWNER_USER,
+            )
+            wallet_svc = WalletService(self.db)
+            if await wallet_svc.is_financial(community_id):
+                fee_row = (
+                    await self.db.execute(
+                        select(Variable.value).where(
+                            Variable.community_id == community_id,
+                            Variable.name == "membershipFee",
+                        )
+                    )
+                ).scalar_one_or_none()
+                try:
+                    fee = Decimal(fee_row or "0")
+                except (InvalidOperation, TypeError):
+                    fee = Decimal("0")
+                if fee > 0:
+                    applicant_wallet = await wallet_svc.get_or_create(
+                        OWNER_USER, data.user_id, gate=False,
+                    )
+                    try:
+                        await wallet_svc.escrow_open(
+                            proposal.id, fee, applicant_wallet,
+                            memo=f"Membership escrow for {proposal.id}",
+                        )
+                    except (InsufficientFundsError, ValueError) as e:
+                        # Roll back the proposal creation so the
+                        # applicant doesn't leave a ghost row behind.
+                        await self.db.rollback()
+                        raise HTTPException(
+                            status_code=402,
+                            detail=f"Insufficient credits for {fee} membership fee: {e}",
+                        )
+
         await self.db.commit()
         await self.db.refresh(proposal)
         # Emit so the TKG ingestor can record AUTHORED and embed the text.

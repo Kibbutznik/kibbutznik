@@ -108,6 +108,11 @@ async def withdraw_proposal(
         .where(Proposal.id == proposal_id)
         .values(proposal_status=ProposalStatus.CANCELED)
     )
+    # Refund any Membership escrow before committing
+    from kbz.enums import ProposalType as _PT
+    if proposal.proposal_type == _PT.MEMBERSHIP:
+        from kbz.services.wallet_service import WalletService
+        await WalletService(db).escrow_refund(proposal.id)
     await db.commit()
     proposal = (
         await db.execute(select(Proposal).where(Proposal.id == proposal_id))

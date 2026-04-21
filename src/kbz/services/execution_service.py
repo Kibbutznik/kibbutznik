@@ -29,9 +29,23 @@ class ExecutionService:
             await handler(self, proposal)
 
     async def _exec_membership(self, proposal: Proposal) -> None:
+        from kbz.services.wallet_service import (
+            WalletService, OWNER_COMMUNITY,
+        )
         member_svc = MemberService(self.db)
         target_user_id = proposal.val_uuid or proposal.user_id
         await member_svc.create(proposal.community_id, target_user_id)
+
+        # If the community is financial AND the applicant opened an
+        # escrow at proposal-create time, release it into the
+        # community wallet. Safe for the non-financial case — the
+        # escrow lookup just returns None.
+        svc = WalletService(self.db)
+        if await svc.is_financial(proposal.community_id):
+            community_wallet = await svc.get_or_create(
+                OWNER_COMMUNITY, proposal.community_id,
+            )
+            await svc.escrow_release(proposal.id, community_wallet)
 
     async def _exec_throw_out(self, proposal: Proposal) -> None:
         member_svc = MemberService(self.db)
@@ -122,6 +136,14 @@ class ExecutionService:
             return
         ended_action_id = str(proposal.val_uuid)
 
+        # Sweep the ending action's wallet balance up to its parent
+        # community BEFORE marking the action inactive. WalletService
+        # no-ops if the parent community isn't financial.
+        from kbz.services.wallet_service import WalletService
+        await WalletService(self.db).sweep_action_to_parent(
+            proposal.val_uuid, proposal_id=proposal.id,
+        )
+
         # Mark the action and its sub-community as inactive
         await self.db.execute(
             update(Action)
@@ -179,21 +201,155 @@ class ExecutionService:
             )
             await self.db.flush()
 
+    # ---------- Finance module handlers (opt-in via `Financial` var) ------
+    #
+    # Every handler short-circuits (log + no-op) when the proposal's
+    # community isn't financial, so a misfiled proposal can't corrupt
+    # ledger state. Real work funnels through WalletService, which
+    # enforces FOR-UPDATE locks + balance invariants at each step.
+
     async def _exec_funding(self, proposal: Proposal) -> None:
-        # Placeholder for funding logic
-        pass
+        """Parent community → child action. `val_uuid` = target action,
+        `val_text` = amount (stringified decimal)."""
+        from kbz.services.wallet_service import (
+            WalletService, FinancialModuleDisabledError, InsufficientFundsError,
+            OWNER_ACTION, OWNER_COMMUNITY,
+        )
+
+        if not proposal.val_uuid or not (proposal.val_text or "").strip():
+            logger.warning("Funding %s missing val_uuid or val_text", proposal.id)
+            return
+        svc = WalletService(self.db)
+        if not await svc.is_financial(proposal.community_id):
+            logger.info(
+                "Funding %s short-circuited — community %s not financial",
+                proposal.id, proposal.community_id,
+            )
+            return
+        try:
+            src = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
+            dst = await svc.get_or_create(OWNER_ACTION, proposal.val_uuid)
+            await svc.transfer(
+                src, dst, proposal.val_text,
+                proposal_id=proposal.id,
+                memo=f"Funding: {(proposal.proposal_text or '')[:120]}",
+            )
+        except (FinancialModuleDisabledError, InsufficientFundsError, ValueError) as e:
+            logger.warning("Funding %s failed: %s", proposal.id, e)
 
     async def _exec_payment(self, proposal: Proposal) -> None:
-        # Placeholder for payment logic
-        pass
+        """Leaf action → external world. `val_text` = amount. The leaf
+        constraint is also enforced at proposal-creation time in
+        ProposalService so this is a defense in depth."""
+        from kbz.services.wallet_service import (
+            WalletService, FinancialModuleDisabledError, InsufficientFundsError,
+            OWNER_ACTION, OWNER_COMMUNITY,
+        )
+
+        if not (proposal.val_text or "").strip():
+            logger.warning("Payment %s missing amount (val_text)", proposal.id)
+            return
+        svc = WalletService(self.db)
+        if not await svc.is_financial(proposal.community_id):
+            logger.info(
+                "Payment %s short-circuited — community %s not financial",
+                proposal.id, proposal.community_id,
+            )
+            return
+        # `community_id` on a sub-action's proposal IS the action's own
+        # community. But if this proposal was filed against the root
+        # community (not inside an action tree), Payment is still
+        # allowed — we burn from the root wallet.
+        has_children = (
+            await self.db.execute(
+                select(Action).where(Action.parent_community_id == proposal.community_id)
+            )
+        ).first() is not None
+        if has_children:
+            logger.warning(
+                "Payment %s refused — community %s has active sub-actions "
+                "(leaf-only rule)", proposal.id, proposal.community_id,
+            )
+            return
+        try:
+            src = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
+            await svc.burn(
+                src, proposal.val_text,
+                proposal_id=proposal.id,
+                memo=f"Payment: {(proposal.proposal_text or '')[:160]}",
+            )
+        except (FinancialModuleDisabledError, InsufficientFundsError, ValueError) as e:
+            logger.warning("Payment %s failed: %s", proposal.id, e)
 
     async def _exec_pay_back(self, proposal: Proposal) -> None:
-        # Placeholder for payback logic
-        pass
+        """Inverse of Payment — accepted PayBack proposal mints credits
+        into the community wallet (e.g. a refund, a reversal). In
+        Phase 1 we model this as a mint authorized by proposal id
+        (via `webhook_event='proposal.payback'` placeholder, since
+        the schema CHECK requires external_ref OR proposal_id)."""
+        from kbz.services.wallet_service import (
+            WalletService, FinancialModuleDisabledError, OWNER_COMMUNITY,
+        )
+
+        if not (proposal.val_text or "").strip():
+            return
+        svc = WalletService(self.db)
+        if not await svc.is_financial(proposal.community_id):
+            return
+        try:
+            dst = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
+            await svc.mint(
+                dst, proposal.val_text,
+                webhook_event="proposal.payback",
+                external_ref=str(proposal.id),
+                memo=f"PayBack: {(proposal.proposal_text or '')[:120]}",
+            )
+        except (FinancialModuleDisabledError, ValueError) as e:
+            logger.warning("PayBack %s failed: %s", proposal.id, e)
 
     async def _exec_dividend(self, proposal: Proposal) -> None:
-        # Placeholder for dividend logic
-        pass
+        """Split `val_text` amount equally among active members."""
+        from decimal import Decimal
+        from kbz.services.wallet_service import (
+            WalletService, FinancialModuleDisabledError, InsufficientFundsError,
+            OWNER_COMMUNITY, OWNER_USER,
+        )
+
+        if not (proposal.val_text or "").strip():
+            return
+        svc = WalletService(self.db)
+        if not await svc.is_financial(proposal.community_id):
+            return
+        try:
+            amount = Decimal(proposal.val_text)
+        except Exception:
+            logger.warning("Dividend %s: bad amount %r", proposal.id, proposal.val_text)
+            return
+        member_svc = MemberService(self.db)
+        members = await member_svc.list_by_community(proposal.community_id)
+        if not members:
+            return
+        share = (amount / Decimal(len(members))).quantize(Decimal("0.000001"))
+        if share <= 0:
+            return
+        try:
+            src = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
+        except FinancialModuleDisabledError:
+            return
+        for m in members:
+            dst = await svc.get_or_create(OWNER_USER, m.user_id, gate=False)
+            try:
+                await svc.transfer(
+                    src, dst, share,
+                    proposal_id=proposal.id,
+                    memo=f"Dividend {proposal.id}",
+                )
+            except InsufficientFundsError:
+                logger.warning(
+                    "Dividend %s: ran out of funds mid-distribution at member %s",
+                    proposal.id, m.user_id,
+                )
+                break
 
     # ---------- Artifact / ArtifactContainer handlers ----------
 

@@ -30,8 +30,17 @@ class CommunityService:
         self.db.add(community)
 
         # 2. Copy all default variables
+        # `enable_financial=True` on the create payload sets the
+        # Financial variable to 'internal' eagerly, skipping the
+        # ChangeVariable proposal dance (founder is sole member at
+        # t=0 — a vote would be theater).
         for var_name, var_value in DEFAULT_VARIABLES.items():
-            value = data.name if var_name == "Name" else var_value
+            if var_name == "Name":
+                value = data.name
+            elif var_name == "Financial" and getattr(data, "enable_financial", False):
+                value = "internal"
+            else:
+                value = var_value
             self.db.add(Variable(community_id=community_id, name=var_name, value=value))
 
         # 3. Add founding user as member

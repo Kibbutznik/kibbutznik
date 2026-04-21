@@ -339,39 +339,40 @@ footer{
 
 <!-- ═══ Hero ═══ -->
 <section class="hero">
-  <span class="badge">◈ Temporal Knowledge Graph</span>
+  <span class="badge">◈ Living memory</span>
   <h1>How Agents Remember</h1>
   <p class="lead">
-    Every KBZ agent carries a living memory of who it trusts, what it wants, and what just happened.
-    Under the hood it's a bitemporal knowledge graph, a vector store, and a 300 ms budget —
-    all stitched into a 600-token prompt block. Here's the map.
+    Kibbutznik's simulated members don't start every round with a blank page.
+    They remember who they trust, what they've supported, and what just happened —
+    and they use that memory to decide what to do next. Here's how that works,
+    without the plumbing.
   </p>
 </section>
 
 <!-- ═══ 1. The Problem ═══ -->
 <section>
-  <h2><span class="num">1</span> The problem with flat text memory</h2>
-  <p class="dim">Early KBZ agents dumped everything into a single <code>agent_memories</code> table &mdash; free text, an importance score, and a "related_id" soft pointer. That works until you ask a structured question.</p>
+  <h2><span class="num">1</span> Why plain notes aren't enough</h2>
+  <p class="dim">The simplest thing you can do for an AI agent is hand it a diary: one long paragraph that grows every round. That works for a while, but it can't answer real questions about a community.</p>
 
   <div class="compare">
     <div class="card before">
-      <span class="tag">Before</span>
-      <h3>Flat text blob</h3>
+      <span class="tag">Just a diary</span>
+      <h3>Notes in a notebook</h3>
       <ul>
-        <li>Everything is a string — no types, no time</li>
-        <li>No way to ask "who supported me last 3 rounds?"</li>
-        <li>String-match only; no semantic similarity</li>
-        <li>Bounded by string matching and heuristic importance</li>
+        <li>Everything is free-form text — no structure</li>
+        <li>"Who backed me in the last three rounds?" → scan every page</li>
+        <li>Finds exact words only; paraphrasing breaks it</li>
+        <li>Old notes crowd out new ones as the log grows</li>
       </ul>
     </div>
     <div class="card after">
-      <span class="tag">After</span>
-      <h3>Temporal knowledge graph</h3>
+      <span class="tag">Living memory</span>
+      <h3>A map of relationships</h3>
       <ul>
-        <li>Typed nodes: user, proposal, pulse, artifact, &hellip;</li>
-        <li>Bitemporal edges with <code>valid_from</code>/<code>valid_to</code> rounds</li>
-        <li>768-dim embeddings from Ollama <code>nomic-embed-text</code></li>
-        <li>pgvector KNN + graph joins in one Postgres</li>
+        <li>People, proposals, and events are connected as a graph</li>
+        <li>Every link is time-stamped: "this alliance started at round 3"</li>
+        <li>Meaning-based search finds "grazing" when you ask about "pasture"</li>
+        <li>Old threads get gracefully archived, not forgotten</li>
       </ul>
     </div>
   </div>
@@ -379,42 +380,42 @@ footer{
 
 <!-- ═══ 2. Pipeline ═══ -->
 <section>
-  <h2><span class="num">2</span> Write path &mdash; from event to edge</h2>
-  <p>When anything happens in the community, a domain service emits an event on the in-process <code>event_bus</code>. A single long-lived task &mdash; the <code>TKGIngestor</code> &mdash; consumes those events and writes graph structure. Embedding work is pushed onto a second queue so the hot path never waits on the LLM.</p>
+  <h2><span class="num">2</span> What gets remembered, and when</h2>
+  <p>Every time something meaningful happens in a community — someone proposes a rule, backs a pulse, replies to a comment — the platform quietly turns that into two things: a <strong>who-did-what-when</strong> fact, and a small numerical "fingerprint" of the text. The fact goes into the memory map; the fingerprint lets future searches match meaning, not just keywords.</p>
 
   <div class="pipeline">
     <div class="stage">
       <div class="stage-icon">⚡</div>
-      <div class="stage-title">Event</div>
-      <div class="stage-desc"><code>support.cast</code>, <code>proposal.created</code>, <code>comment.posted</code>&hellip;</div>
+      <div class="stage-title">Something happens</div>
+      <div class="stage-desc">A proposal is filed, a comment posted, a pulse fires</div>
     </div>
     <div class="stage">
       <div class="stage-icon">📡</div>
-      <div class="stage-title">Event&nbsp;Bus</div>
-      <div class="stage-desc">In-memory fan-out, queue per subscriber</div>
+      <div class="stage-title">The platform notices</div>
+      <div class="stage-desc">A lightweight notifier broadcasts the event to anyone listening</div>
     </div>
     <div class="stage">
       <div class="stage-icon">🧩</div>
-      <div class="stage-title">Ingestor</div>
-      <div class="stage-desc">Dispatch table: event &rarr; node + edge</div>
+      <div class="stage-title">It becomes a fact</div>
+      <div class="stage-desc">"Alice supported proposal X at round 7" — typed, linked, dated</div>
     </div>
     <div class="stage">
       <div class="stage-icon">🔷</div>
-      <div class="stage-title">TKG Tables</div>
-      <div class="stage-desc"><code>tkg_nodes</code>, <code>tkg_edges</code>, <code>tkg_embeddings</code></div>
+      <div class="stage-title">Stored in the map</div>
+      <div class="stage-desc">People, proposals, and events become connected nodes</div>
     </div>
     <div class="stage">
       <div class="stage-icon">🧠</div>
-      <div class="stage-title">Ollama</div>
-      <div class="stage-desc">Offloaded embeddings, never blocks ingest</div>
+      <div class="stage-title">Meaning captured</div>
+      <div class="stage-desc">The text gets a "fingerprint" for later fuzzy search</div>
     </div>
   </div>
 </section>
 
 <!-- ═══ 3. Live graph ═══ -->
 <section>
-  <h2><span class="num">3</span> The graph, visible</h2>
-  <p>Here's a tiny slice: Alice authored a proposal, Bob and Carol supported it, and they formed transient alliances with Alice. Solid lines are open edges, dashed gray lines are closed (historical) edges.</p>
+  <h2><span class="num">3</span> What the map looks like</h2>
+  <p>Here's a tiny slice of a community's memory. Alice wrote a proposal. Bob and Carol backed it, and while it was hot they each formed a temporary alliance with Alice. The bright lines are relationships still in effect; the faded gray line is one that has since ended — still remembered, just no longer current.</p>
 
   <div class="graph-demo">
     <svg viewBox="0 0 700 340" xmlns="http://www.w3.org/2000/svg">
@@ -484,30 +485,30 @@ footer{
       </g>
     </svg>
   </div>
-  <p class="dim">Each node has a matching row in <code>tkg_nodes</code>, each line is a row in <code>tkg_edges</code>. Proposals additionally carry a <code>tkg_embeddings</code> row so semantic search can find them by meaning, not keyword.</p>
+  <p class="dim">Every dot is a person, a proposal, or an event. Every line is a relationship with a label ("authored", "supported", "allied with") and a pair of dates telling us when that relationship started and — if it has ended — when it ended.</p>
 </section>
 
 <!-- ═══ 4. Bitemporal ═══ -->
 <section>
-  <h2><span class="num">4</span> Edges know when they were true</h2>
-  <p>Every edge carries <code>valid_from_round</code> and <code>valid_to_round</code>. An edge with <code>valid_to_round = NULL</code> is open &mdash; still in effect. When an alliance dissolves or a proposal fails, we don't delete the row, we close it. That's how agents can ask "what did things look like at round <strong>N</strong>?" without rewriting history.</p>
+  <h2><span class="num">4</span> Memories that know when they were true</h2>
+  <p>Most apps update a row and forget what it used to say. We don't. When an alliance ends or a proposal gets rejected, the old fact doesn't get overwritten — it gets <em>closed</em>, with a date. That means anyone, at any time, can ask "what did things look like three rounds ago?" and the answer is still there, intact. History is a feature, not a liability.</p>
 
   <div class="timeline">
-    <div style="font-family:monospace;font-size:.85rem;color:var(--dim);margin-bottom:.4rem">tkg_edges.ALLIED_WITH(Bob&nbsp;&rarr;&nbsp;Alice)</div>
+    <div style="font-family:monospace;font-size:.85rem;color:var(--dim);margin-bottom:.4rem">Bob &rarr; Alice · still allied</div>
     <div class="timeline-track">
       <div class="timeline-edge" style="left:15%;width:55%">
-        <span class="timeline-edge-label" style="left:0">open at r3</span>
+        <span class="timeline-edge-label" style="left:0">started r3</span>
       </div>
       <div class="timeline-tick" style="left:0%"><span class="timeline-label">r0</span></div>
       <div class="timeline-tick" style="left:15%"><span class="timeline-label">r3</span></div>
       <div class="timeline-tick" style="left:70%"><span class="timeline-label">r10</span></div>
       <div class="timeline-tick" style="left:100%"><span class="timeline-label">now</span></div>
     </div>
-    <div style="font-family:monospace;font-size:.85rem;color:var(--dim);margin:1.5rem 0 .4rem">tkg_edges.ALLIED_WITH(Carol&nbsp;&rarr;&nbsp;Alice)</div>
+    <div style="font-family:monospace;font-size:.85rem;color:var(--dim);margin:1.5rem 0 .4rem">Carol &rarr; Alice · was allied, now isn't</div>
     <div class="timeline-track">
       <div class="timeline-edge closed" style="left:15%;width:40%">
-        <span class="timeline-edge-label" style="left:0">open r3</span>
-        <span class="timeline-edge-label" style="right:0;left:auto">closed r10</span>
+        <span class="timeline-edge-label" style="left:0">started r3</span>
+        <span class="timeline-edge-label" style="right:0;left:auto">ended r10</span>
       </div>
       <div class="timeline-tick" style="left:0%"></div>
       <div class="timeline-tick" style="left:15%"></div>
@@ -516,49 +517,45 @@ footer{
     </div>
   </div>
 
-<pre><code><span class="c">-- &quot;Who was allied with Alice at round 7?&quot; — one indexed scan.</span>
-<span class="k">SELECT</span> src_id <span class="k">FROM</span> tkg_edges
-<span class="k">WHERE</span>  dst_id = <span class="s">:alice</span> <span class="k">AND</span> relation = <span class="s">'ALLIED_WITH'</span>
-  <span class="k">AND</span>  valid_from_round &lt;= <span class="n">7</span>
-  <span class="k">AND</span>  (valid_to_round <span class="k">IS NULL</span> <span class="k">OR</span> valid_to_round &gt; <span class="n">7</span>);</code></pre>
+  <p class="dim">Because every relationship is stamped with a start and an optional end, a question like <em>"Who was in Alice's coalition at round 7?"</em> becomes a normal lookup: show me every alliance that had already started, and hadn't yet ended, at that moment. No guessing. No rewriting the past.</p>
 </section>
 
 <!-- ═══ 5. Four layers of memory ═══ -->
 <section>
-  <h2><span class="num">5</span> Four layers in every prompt</h2>
-  <p>When an agent wakes up for a turn, <code>MemoryFormatter.build_memory_context()</code> assembles a <code>=== YOUR MEMORY ===</code> block capped at ~600 tokens. It pulls from four different sources:</p>
+  <h2><span class="num">5</span> Four flavors of memory, every turn</h2>
+  <p>Before an agent acts, it gets a short briefing — a few hundred words of "here's where you stand." That briefing is built fresh each turn from four different kinds of memory, the same way a person in a meeting might lean on four different things at once:</p>
 
   <div class="grid grid-2 layers">
     <div class="card">
       <div class="layer-icon">💭</div>
       <div class="layer-body">
-        <h3>Reflection</h3>
-        <p class="dim">The agent's own summary of the last few rounds &mdash; "what did I learn, what will I try next." Stored as free text because it's narrative, not relational.</p>
-        <span class="meta">agent_memories · legacy</span>
+        <h3>How I'm feeling about things</h3>
+        <p class="dim">A short, written reflection: what went well, what didn't, what I'd like to try differently. The agent's own inner monologue, in plain language.</p>
+        <span class="meta">reflection</span>
       </div>
     </div>
     <div class="card">
       <div class="layer-icon">🎯</div>
       <div class="layer-body">
-        <h3>Active goals</h3>
-        <p class="dim">Up to three things the agent is currently pursuing, each stamped with the round it was set. Short, textual, also in the legacy store.</p>
-        <span class="meta">agent_memories · legacy</span>
+        <h3>What I'm trying to do</h3>
+        <p class="dim">Up to three active goals the agent is working toward, each with the moment it was set. Keeps behavior coherent across rounds instead of lurching turn to turn.</p>
+        <span class="meta">goals</span>
       </div>
     </div>
     <div class="card">
       <div class="layer-icon">🤝</div>
       <div class="layer-body">
-        <h3>Key relationships</h3>
-        <p class="dim">Top 5 current allies, pulled from the TKG via <code>/tkg/neighbors</code> with <code>relation=ALLIED_WITH&amp;at_round=N</code>. Graph query, not string match.</p>
-        <span class="meta">TKG · neighbors</span>
+        <h3>Who I'm close to right now</h3>
+        <p class="dim">My current allies, pulled live from the relationship map. Not "who I've ever talked to" — <em>who I'm actually aligned with this round.</em></p>
+        <span class="meta">relationships</span>
       </div>
     </div>
     <div class="card">
       <div class="layer-icon">✨</div>
       <div class="layer-body">
-        <h3>Recent notable events</h3>
-        <p class="dim">Semantic search over <code>tkg_embeddings</code> with the current turn's context as the query. Finds events the agent <em>would</em> have remembered even if worded differently.</p>
-        <span class="meta">TKG · semantic_search</span>
+        <h3>What's been in the air</h3>
+        <p class="dim">The handful of recent events most relevant to what's happening now — found by meaning, not by keyword. If the room is talking about pastures, a debate about grazing surfaces even if nobody used the same word.</p>
+        <span class="meta">recent events</span>
       </div>
     </div>
   </div>
@@ -566,91 +563,83 @@ footer{
 
 <!-- ═══ 6. 300ms budget ═══ -->
 <section>
-  <h2><span class="num">6</span> The 300&nbsp;ms budget</h2>
-  <p>Reading from a knowledge graph is only useful if it's <em>fast</em>. Every TKG call inside the formatter is wrapped in <code>asyncio.wait_for(&hellip;, timeout=0.3)</code>. On timeout or error, the formatter silently falls back to the legacy path &mdash; the agent still gets a memory block, just the old-school one.</p>
+  <h2><span class="num">6</span> Memory never gets in the way</h2>
+  <p>A clever memory system is worthless if it makes the agent slow. So there's a hard rule: looking things up gets a brief window, and if the lookup takes too long, the agent falls back to a simpler, faster kind of memory and keeps going. Nobody waits for their own brain.</p>
 
   <div class="budget">
     <span class="icon">⏱️</span>
     <div>
-      <h3>No agent turn ever stalls on memory</h3>
-      <p class="dim" style="margin-bottom:0">If pgvector's KNN or the Ollama embedder takes longer than 300 ms, we log a debug line and use <code>MemoryStore.get_relationships()</code> / <code>get_recent()</code> instead. The agent keeps thinking.</p>
+      <h3>No turn ever stalls on memory</h3>
+      <p class="dim" style="margin-bottom:0">If the full lookup can't finish in a blink, the agent quietly uses a simpler summary instead. The conversation keeps moving. Richer memory is an upgrade, not a dependency.</p>
     </div>
   </div>
-
-<pre><code><span class="k">try</span>:
-    hits = <span class="k">await</span> asyncio.wait_for(
-        self.tkg.semantic_search(query=query_hint, limit=<span class="n">4</span>),
-        timeout=_TKG_TIMEOUT_S,  <span class="c"># 0.3</span>
-    )
-<span class="k">except</span> (asyncio.TimeoutError, <span class="t">Exception</span>):
-    <span class="k">return await</span> self.store.get_recent(user_id, memory_type=<span class="s">&quot;episodic&quot;</span>)</code></pre>
 </section>
 
 <!-- ═══ 7. Stack ═══ -->
 <section>
-  <h2><span class="num">7</span> The stack &mdash; all free, all local</h2>
-  <p>Zero new containers, zero new auth. Everything rides the existing Postgres and the same Ollama install the decision engine already uses.</p>
+  <h2><span class="num">7</span> Built from plain, open pieces</h2>
+  <p>No exotic services. No paid APIs. The whole memory system runs on free, well-understood software that can sit on one modest server — the same box that already runs the rest of the platform.</p>
 
   <div class="stack-grid">
     <div class="stack-card">
       <span class="ico">🐘</span>
-      <div class="name">Postgres 14</div>
-      <div class="role">Already running — we just added the <code>vector</code> extension</div>
+      <div class="name">A normal database</div>
+      <div class="role">Postgres — the same boring, reliable database thousands of apps already use</div>
     </div>
     <div class="stack-card">
       <span class="ico">📐</span>
-      <div class="name">pgvector</div>
-      <div class="role">ivfflat cosine index · 768-dim · native KNN</div>
+      <div class="name">Meaning-based search</div>
+      <div class="role">An open-source extension that lets the database find things by meaning, not just exact words</div>
     </div>
     <div class="stack-card">
       <span class="ico">🦙</span>
-      <div class="name">Ollama</div>
-      <div class="role"><code>nomic-embed-text</code> · ~80&nbsp;MB · &lt;100&nbsp;ms local</div>
+      <div class="name">Local AI, no cloud bills</div>
+      <div class="role">A tiny on-device model turns text into those "fingerprints" — private, fast, free</div>
     </div>
     <div class="stack-card">
       <span class="ico">⚡</span>
-      <div class="name">FastAPI</div>
-      <div class="role"><code>/tkg/neighbors</code>, <code>/tkg/timeline</code>, <code>/tkg/semantic_search</code></div>
-    </div>
-    <div class="stack-card">
-      <span class="ico">🧵</span>
-      <div class="name">asyncio</div>
-      <div class="role">One ingest task, one embed task, one queue each</div>
+      <div class="name">A small web service</div>
+      <div class="role">A thin layer that lets agents ask the memory map questions over HTTP</div>
     </div>
     <div class="stack-card">
       <span class="ico">🔮</span>
-      <div class="name">Mistral Small</div>
-      <div class="role">The LLM that actually reads the memory block</div>
+      <div class="name">The thinking model</div>
+      <div class="role">An open LLM reads the memory briefing and decides what the agent does next</div>
+    </div>
+    <div class="stack-card">
+      <span class="ico">🔓</span>
+      <div class="name">All of it, yours</div>
+      <div class="role">No vendor lock-in. A community can run its own instance top to bottom</div>
     </div>
   </div>
 </section>
 
 <!-- ═══ 8. Why this matters ═══ -->
 <section>
-  <h2><span class="num">8</span> Why this matters</h2>
-  <p>With a TKG in place, agents can answer questions that used to be impossible:</p>
+  <h2><span class="num">8</span> Why it matters</h2>
+  <p>With this kind of memory, simulated members can answer questions that are impossible on a flat pile of notes — the same kinds of questions a thoughtful human would actually ask:</p>
   <div class="grid grid-3">
     <div class="card">
-      <h3>🔗 Relational</h3>
-      <p class="dim">"Who supported my proposal and which of them are still my allies right now?" &mdash; one graph join.</p>
+      <h3>🔗 Who's with me?</h3>
+      <p class="dim">"Who's backed my ideas before, and which of them are still on my side right now?"</p>
     </div>
     <div class="card">
-      <h3>⏳ Temporal</h3>
-      <p class="dim">"What was the coalition at round 12, before the pulse fired?" &mdash; bitemporal point-in-time query.</p>
+      <h3>⏳ What happened then?</h3>
+      <p class="dim">"What did the coalition look like three rounds ago, just before things shifted?"</p>
     </div>
     <div class="card">
-      <h3>🎨 Semantic</h3>
-      <p class="dim">"Find events about grazing rights" &mdash; KNN over embeddings, returns proposals mentioning <em>pasture access</em> too.</p>
+      <h3>🎨 What's this reminding me of?</h3>
+      <p class="dim">"Anything like this happened before?" — and the answer includes past debates even when they used different words.</p>
     </div>
   </div>
   <p class="dim" style="margin-top:1.5rem;text-align:center">
-    All of it streams into the prompt inside a 600-token budget, with a 300&nbsp;ms safety net and a legacy fallback. Boring from the agent's point of view &mdash; which is exactly how memory should feel.
+    Put together, these give the agents something close to a social memory: not just a log of what was said, but a sense of who was there, who stood with whom, and how the community's mood has moved. From the agent's point of view it should feel obvious — which is exactly how memory should feel.
   </p>
 </section>
 
 <footer>
-  <p>KBZ · Temporal Knowledge Graph · <a href="index.html">back to landing</a> · <a href="/kbz/viewer/">watch live</a></p>
-  <p style="margin-top:.5rem;opacity:.6">Built on Postgres + pgvector + Ollama. Source in <code>src/kbz/services/tkg_*</code>, <code>agents/memory_formatter.py</code>.</p>
+  <p>KBZ · Living memory · <a href="index.html">back to landing</a> · <a href="/kbz/viewer/">watch live</a></p>
+  <p style="margin-top:.5rem;opacity:.6">Open source. Free to self-host. Runs on one server.</p>
 </footer>
 
 <script>

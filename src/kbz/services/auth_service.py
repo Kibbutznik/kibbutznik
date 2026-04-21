@@ -132,9 +132,10 @@ class AuthService:
         await self.db.flush()
         return IssuedToken(raw=raw, token_id=token.id, expires_at=expires)
 
-    async def issue_session(self, user: User) -> IssuedToken:
+    async def issue_session(self, user: User, ttl_minutes: int | None = None) -> IssuedToken:
         raw = _random_token()
-        expires = _now() + timedelta(minutes=settings.auth_session_ttl_minutes)
+        minutes = ttl_minutes if ttl_minutes is not None else settings.auth_session_ttl_minutes
+        expires = _now() + timedelta(minutes=minutes)
         token = AuthToken(
             id=uuid.uuid4(),
             user_id=user.id,

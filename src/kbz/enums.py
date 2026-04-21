@@ -120,4 +120,11 @@ DEFAULT_VARIABLES: dict[str, str] = {
     "proposalCooldown": "0",
     "quorumThreshold": "0",
     "membershipHandler": "",
+    # --- Finance module (opt-in per kibbutz) ------------------------
+    # Empty / "false" → module off, no wallets, no Treasury tab.
+    # "internal" → Phase 1 credit ledger active.
+    # Future: "safe:0x..." / "stripe:acct_..." encode both on/off
+    # AND which WalletBacking to dispatch to, so we can grow without
+    # another migration.
+    "Financial": "false",
 }

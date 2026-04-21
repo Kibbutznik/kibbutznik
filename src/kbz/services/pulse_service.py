@@ -91,6 +91,13 @@ class PulseService:
                     await execution_svc.execute_proposal(proposal)
                 else:
                     proposal.proposal_status = ProposalStatus.REJECTED
+                    # If this rejected Membership proposal had an
+                    # escrow, return the fee to the applicant. No-op
+                    # when no escrow exists (non-financial community
+                    # or fee=0).
+                    if proposal.proposal_type == ProposalType.MEMBERSHIP:
+                        from kbz.services.wallet_service import WalletService
+                        await WalletService(self.db).escrow_refund(proposal.id)
                 await closeness_svc.apply_proposal_outcome(community_id, proposal.id)
                 await self.db.flush()
 
@@ -119,6 +126,10 @@ class PulseService:
             # Cancel if too old
             if proposal.age > max_age:
                 proposal.proposal_status = ProposalStatus.CANCELED
+                # Refund Membership escrow if one exists
+                if proposal.proposal_type == ProposalType.MEMBERSHIP:
+                    from kbz.services.wallet_service import WalletService
+                    await WalletService(self.db).escrow_refund(proposal.id)
                 await self.db.flush()
                 continue
 

@@ -154,3 +154,27 @@ footer.app-footer {
   color: var(--text-dim);
   font-size: 0.85rem;
 }
+
+/* Highlight flash for a freshly-created proposal.
+ * Pulses the accent color as a ring + soft background tint for
+ * ~3 seconds, then settles back to a plain card. */
+@keyframes proposal-new-kf {
+    0% {
+        background: var(--accent-soft);
+        box-shadow: 0 0 0 0 rgba(59, 128, 112, 0.45);
+        transform: translateY(-4px);
+    }
+    40% {
+        background: var(--accent-soft);
+        box-shadow: 0 0 0 12px rgba(59, 128, 112, 0);
+        transform: translateY(0);
+    }
+    100% {
+        background: var(--bg-card);
+        box-shadow: none;
+        transform: translateY(0);
+    }
+}
+.proposal-new-pulse {
+    animation: proposal-new-kf 3s ease-out forwards;
+}
