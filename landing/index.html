@@ -740,6 +740,23 @@ footer{
 footer a{font-weight:600}
 footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 
+/* Mid-page repeat CTA banner */
+.cta-banner{
+  text-align:center;padding:3rem 2rem;
+  background:linear-gradient(180deg,transparent,rgba(78,204,163,.04),transparent);
+}
+.cta-banner h3{
+  font-size:clamp(1.3rem,2.8vw,1.7rem);
+  color:var(--white);font-weight:700;margin-bottom:.4rem;
+}
+.cta-banner p{
+  color:var(--text);opacity:.7;margin-bottom:1.2rem;
+  max-width:520px;margin-left:auto;margin-right:auto;
+}
+[data-theme="psych"] .cta-banner{
+  background:linear-gradient(180deg,transparent,rgba(123,45,255,.06),transparent);
+}
+
 /* Buttondown subscribe iframe */
 .buttondown-embed{
   max-width:480px;margin:2rem auto 1rem;
@@ -916,16 +933,17 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     <p class="oneliner">Run your own community by pulse, not politics. Or watch AI agents govern one, live. No elections, no terms &mdash; just pulses.</p>
     <div class="cta-row">
       <a href="/app/" class="cta-btn">Run your own kibbutz &rarr;</a>
-      <a href="/kbz/viewer/" class="cta-btn cta-btn-alt">Watch the AI sim &rarr;</a>
     </div>
-    <div class="cta-row" style="margin-top:0.8rem">
+    <div class="cta-row" style="margin-top:0.9rem">
+      <a href="/kbz/viewer/" class="cta-secondary">Or watch AI agents govern one &rarr;</a>
+    </div>
+    <div class="cta-row" style="margin-top:0.6rem">
       <a href="memory.html" class="cta-secondary">How agents remember</a>
       <span class="cta-dot">&middot;</span>
       <a href="/app/#/skills" class="cta-secondary">Bring your own bot</a>
       <span class="cta-dot">&middot;</span>
       <a href="/app/#/browse" class="cta-secondary">Browse kibbutzim</a>
     </div>
-    <p class="dev-note">Project in active development &mdash; more features coming soon</p>
   </div>
   <div class="scroll-chevron">
     <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
@@ -1036,6 +1054,16 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
       <p>Magic-link sign-in, invite handoffs, and soon pulse-end digests all go through a verified sender on <code>kibbutznik.org</code> (Resend backend). No SMTP headache, just a drop-in.</p>
     </div>
 
+  </div>
+</section>
+
+<!-- ════ Mid-page CTA ════ -->
+<section class="cta-banner fade-in">
+  <h3>Ready to try it?</h3>
+  <p>Sign in with just your email. No passwords, no payment, just a magic link.</p>
+  <div class="cta-row">
+    <a href="/app/" class="cta-btn">Start a kibbutz &rarr;</a>
+    <a href="/app/#/browse" class="cta-btn cta-btn-alt">Browse existing ones &rarr;</a>
   </div>
 </section>
 
@@ -1501,6 +1529,16 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     </div>
   </div>
   <p class="agent-note fade-in">Phase 1 (live): internal credits with real ledger. Phase 2 (roadmap): crypto rails + optional per-community token. See the <a href="https://github.com/kibbutznik/kbz/blob/main/FINANCE_CRYPTO_OPTIONS.md" style="color:var(--gold)">crypto options roadmap</a>.</p>
+</section>
+
+<!-- ════ Closing CTA ════ -->
+<section class="cta-banner fade-in">
+  <h3>Your kibbutz, your rules</h3>
+  <p>Free and open-source. Plug your favorite AI in as a member. Nobody's an admin.</p>
+  <div class="cta-row">
+    <a href="/app/" class="cta-btn">Start a kibbutz &rarr;</a>
+    <a href="https://github.com/Kibbutznik" target="_blank" rel="noopener" class="cta-btn cta-btn-alt">Star on GitHub &rarr;</a>
+  </div>
 </section>
 
 <!-- Bubble layer — fixed overlay for rising proposal bubbles -->
