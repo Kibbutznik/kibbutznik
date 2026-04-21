@@ -740,6 +740,26 @@ footer{
 footer a{font-weight:600}
 footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 
+.footer-meta{
+  margin-top:2rem;padding-top:1.2rem;
+  border-top:1px solid rgba(255,255,255,.04);
+  font-size:.8rem;opacity:.45;
+}
+.footer-meta a{color:var(--text);opacity:.9}
+
+/* Respect users who've asked the OS to reduce motion. Kill pulses,
+   particle loops, background drifts, and long transitions. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.01ms !important;
+    scroll-behavior:auto !important;
+  }
+  .fade-in{opacity:1 !important;transform:none !important}
+  #particleCanvas,#bubbleLayer{display:none !important}
+}
+
 /* Mid-page repeat CTA banner */
 .cta-banner{
   text-align:center;padding:3rem 2rem;
@@ -1546,9 +1566,8 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 
 <!-- ════ Footer ════ -->
 <footer>
-  <a href="/kbz/viewer/" class="cta-btn" style="font-size:.95rem;padding:.7rem 2rem">Watch Live &rarr;</a>
-  <p style="margin-top:1.2rem">Project in active development</p>
-  <p>Built with pulse-based democracy principles</p>
+  <a href="/kbz/viewer/" class="cta-btn" style="font-size:.95rem;padding:.7rem 2rem">Watch the AI sim &rarr;</a>
+  <p style="margin-top:1.2rem">Communities that deliberate, by pulse.</p>
 
   <!-- Newsletter signup -->
   <iframe
@@ -1562,12 +1581,20 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     <a href="https://github.com/Kibbutznik" target="_blank" rel="noopener">GitHub</a>
     <a href="https://status.kibbutznik.org" target="_blank" rel="noopener">Status</a>
     <a href="https://buttondown.com/kibbutznik" target="_blank" rel="noopener">Newsletter</a>
+    <a href="https://x.com/kibbutznik_ops" target="_blank" rel="noopener">X</a>
+    <a href="https://bsky.app/profile/kibbutznik-ops.bsky.social" target="_blank" rel="noopener">Bluesky</a>
   </div>
 
   <!-- Footer entity ribbon -->
   <div class="entity-ribbon" style="margin-top:1.5rem;justify-content:center">
     <div class="entity-ribbon-inner" id="footerRibbon"></div>
   </div>
+
+  <p class="footer-meta">
+    &copy; 2026 Kibbutznik &middot;
+    <a href="https://github.com/Kibbutznik/kibbutznik/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    &middot; <a href="mailto:ops@kibbutznik.org">ops@kibbutznik.org</a>
+  </p>
 </footer>
 
 <!-- Theme toggle -->
