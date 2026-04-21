@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KIBBUTZNIK — Pulse-Based Direct Democracy</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-YUj2NGAFEeDownEFrcPPq.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -707,6 +713,19 @@ footer{
 }
 footer a{font-weight:600}
 footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
+
+/* Buttondown subscribe iframe */
+.buttondown-embed{
+  max-width:480px;margin:2rem auto 1rem;
+  width:100%;height:220px;border:0;border-radius:10px;
+  background:var(--card);
+}
+.footer-links{
+  margin-top:1.5rem;display:flex;gap:1.5rem;
+  justify-content:center;flex-wrap:wrap;font-size:.9rem;
+}
+.footer-links a{opacity:.7;transition:opacity .2s}
+.footer-links a:hover{opacity:1}
 
 /* ── Proposal Bubbles ───────────────────────── */
 #bubbleLayer{
@@ -1512,6 +1531,20 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   <a href="/kbz/viewer/" class="cta-btn" style="font-size:.95rem;padding:.7rem 2rem">Watch Live &rarr;</a>
   <p style="margin-top:1.2rem">Project in active development</p>
   <p>Built with pulse-based democracy principles</p>
+
+  <!-- Newsletter signup -->
+  <iframe
+    class="buttondown-embed"
+    scrolling="no"
+    src="https://buttondown.com/kibbutznik?as_embed=true"
+    title="Subscribe to Kibbutznik updates"
+  ></iframe>
+
+  <div class="footer-links">
+    <a href="https://github.com/Kibbutznik" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://status.kibbutznik.org" target="_blank" rel="noopener">Status</a>
+    <a href="https://buttondown.com/kibbutznik" target="_blank" rel="noopener">Newsletter</a>
+  </div>
 
   <!-- Footer entity ribbon -->
   <div class="entity-ribbon" style="margin-top:1.5rem;justify-content:center">
