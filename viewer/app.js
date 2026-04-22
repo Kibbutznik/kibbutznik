@@ -779,21 +779,13 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
 
     useEffect(() => {
         setLoading(true);
-        const NIL_UUID = "00000000-0000-0000-0000-000000000000";
-        // Walk parent_id chain up to the root community id (cached)
-        const findRoot = async (cid) => {
-            let cur = cid;
-            for (let i = 0; i < 12 && cur && cur !== NIL_UUID; i++) {
-                try {
-                    const c = await API.getCached(`/communities/${cur}`);
-                    if (!c || !c.parent_id || c.parent_id === NIL_UUID) return cur;
-                    cur = c.parent_id;
-                } catch {
-                    return cur;
-                }
-            }
-            return cur;
-        };
+        // Server-side filter + enrichment: a single recursive CTE returns
+        // community_name + community_root_id per membership, and (when
+        // communityId is set) only keeps memberships rooted at this tree.
+        // Replaces an N-deep findRoot walk + per-community GET.
+        const membershipsUrl = communityId
+            ? `/users/${id}/communities?root_id=${communityId}`
+            : `/users/${id}/communities`;
 
         const fetches = [
             API.getCached(`/users/${id}`),
@@ -803,8 +795,7 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
             communityId
                 ? API.getCached(`/communities/${communityId}/proposals?val_uuid=${id}&proposal_type=Membership`).catch(() => [])
                 : Promise.resolve([]),
-            API.getCached(`/users/${id}/communities`).catch(() => []),
-            // Memory highlights — top by importance, a handful of each type
+            API.getCached(membershipsUrl).catch(() => []),
             API.getCached(`/memories/${id}?memory_type=goal&limit=5&order_by=importance`).catch(() => []),
             API.getCached(`/memories/${id}?memory_type=reflection&limit=5&order_by=importance`).catch(() => []),
             API.getCached(`/memories/${id}?memory_type=relationship&limit=5&order_by=importance`).catch(() => []),
@@ -820,37 +811,7 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
                 relationship: rels || [],
                 episodic: episodes || [],
             });
-            // Fetch community names + parent_id, then keep only memberships whose
-            // tree root === the current root community we are viewing.
-            const enriched = (comms || []).map(m =>
-                API.getCached(`/communities/${m.community_id}`).then(c => ({
-                    ...m,
-                    community_name: c.name || c.community_name || m.community_id.slice(0, 8),
-                    parent_id: c.parent_id,
-                })).catch(() => ({
-                    ...m,
-                    community_name: m.community_id.slice(0, 8),
-                    parent_id: null,
-                }))
-            );
-            return Promise.all(enriched);
-        }).then(async (commsWithNames) => {
-            if (!communityId) {
-                setCommunities(commsWithNames || []);
-                return;
-            }
-            // Resolve each membership's root in parallel; keep matches.
-            const withRoots = await Promise.all(
-                (commsWithNames || []).map(async (m) => {
-                    if (m.community_id === communityId) return { m, root: communityId };
-                    const root = await findRoot(m.community_id);
-                    return { m, root };
-                })
-            );
-            const filtered = withRoots
-                .filter(x => x.root === communityId)
-                .map(x => x.m);
-            setCommunities(filtered);
+            setCommunities(comms || []);
         }).finally(() => setLoading(false));
     }, [id, communityId]);
 
@@ -2815,8 +2776,21 @@ function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, ope
                 <span className={statusClassName} title={p.proposal_status}>{statusLabel}</span>
             </div>
             <div className="pc-author">
-                <span className="pc-avatar">{initial}</span>
-                <span className="pc-author-name">{authorName}</span>
+                <span
+                    className="pc-avatar clickable"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (p.user_id) openDetail("user", p.user_id, authorName);
+                    }}
+                    title={`Open ${authorName}`}
+                >{initial}</span>
+                <span
+                    className="pc-author-name clickable"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (p.user_id) openDetail("user", p.user_id, authorName);
+                    }}
+                >{authorName}</span>
                 <span className="pc-author-meta">
                     · {formatRelativeTime(p.created_at) || `age ${p.age}`}
                 </span>

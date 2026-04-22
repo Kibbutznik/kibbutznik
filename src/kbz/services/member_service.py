@@ -137,28 +137,92 @@ class MemberService:
             for m, user_name, display_name in rows.all()
         ]
 
-    async def list_by_user(self, user_id: uuid.UUID) -> list[SimpleNamespace]:
-        stmt = (
-            select(Member, User.user_name)
-            .outerjoin(User, User.id == Member.user_id)
-            .where(
-                Member.user_id == user_id,
-                Member.status == MemberStatus.ACTIVE,
+    async def list_by_user(
+        self,
+        user_id: uuid.UUID,
+        root_id: uuid.UUID | None = None,
+    ) -> list[SimpleNamespace]:
+        """List active memberships for a user. Each row is enriched with the
+        member's community_name and the id of the tree-root community the
+        membership ultimately belongs to (a single recursive CTE, so O(1)
+        request regardless of tree depth).
+
+        When ``root_id`` is given, only memberships whose tree-root equals
+        that value are returned — this is what lets the viewer skip its
+        client-side findRoot walk.
+        """
+        from sqlalchemy import text
+
+        sql = text(
+            """
+            WITH RECURSIVE ancestors AS (
+                SELECT
+                    c.id,
+                    c.parent_id,
+                    c.name,
+                    c.id AS origin_id
+                FROM communities c
+                JOIN members m ON m.community_id = c.id
+                WHERE m.user_id = :user_id
+                  AND m.status = :active_status
+                UNION ALL
+                SELECT
+                    p.id,
+                    p.parent_id,
+                    p.name,
+                    a.origin_id
+                FROM communities p
+                JOIN ancestors a
+                  ON p.id = a.parent_id
+                 AND a.parent_id <> '00000000-0000-0000-0000-000000000000'::uuid
+            ),
+            roots AS (
+                -- A "root" is an ancestor whose parent is NIL.
+                SELECT origin_id, id AS root_id
+                FROM ancestors
+                WHERE parent_id = '00000000-0000-0000-0000-000000000000'::uuid
             )
+            SELECT
+                m.community_id,
+                m.user_id,
+                u.user_name,
+                m.status,
+                m.seniority,
+                m.joined_at,
+                c.name                AS community_name,
+                c.parent_id           AS community_parent_id,
+                COALESCE(r.root_id, m.community_id) AS community_root_id
+            FROM members m
+            JOIN communities c ON c.id = m.community_id
+            LEFT JOIN users u   ON u.id = m.user_id
+            LEFT JOIN roots r   ON r.origin_id = m.community_id
+            WHERE m.user_id = :user_id
+              AND m.status  = :active_status
+            """
         )
-        rows = await self.db.execute(stmt)
-        return [
-            SimpleNamespace(
-                community_id=m.community_id,
-                user_id=m.user_id,
-                user_name=user_name,
-                display_name=None,
-                status=m.status,
-                seniority=m.seniority,
-                joined_at=m.joined_at,
+        rows = await self.db.execute(
+            sql,
+            {"user_id": user_id, "active_status": int(MemberStatus.ACTIVE)},
+        )
+        out: list[SimpleNamespace] = []
+        for row in rows.mappings().all():
+            if root_id is not None and row["community_root_id"] != root_id:
+                continue
+            out.append(
+                SimpleNamespace(
+                    community_id=row["community_id"],
+                    user_id=row["user_id"],
+                    user_name=row["user_name"],
+                    display_name=None,
+                    status=row["status"],
+                    seniority=row["seniority"],
+                    joined_at=row["joined_at"],
+                    community_name=row["community_name"],
+                    community_parent_id=row["community_parent_id"],
+                    community_root_id=row["community_root_id"],
+                )
             )
-            for m, user_name in rows.all()
-        ]
+        return out
 
     async def increment_seniority(self, community_id: uuid.UUID) -> None:
         await self.db.execute(

@@ -17,6 +17,10 @@ async def list_members(community_id: uuid.UUID, db: AsyncSession = Depends(get_d
 
 
 @router.get("/users/{user_id}/communities", response_model=list[MemberResponse])
-async def list_user_communities(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def list_user_communities(
+    user_id: uuid.UUID,
+    root_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+):
     svc = MemberService(db)
-    return await svc.list_by_user(user_id)
+    return await svc.list_by_user(user_id, root_id=root_id)
