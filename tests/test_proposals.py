@@ -134,6 +134,15 @@ async def test_support_proposal(client):
     resp = await client.get(f"/proposals/{proposal['id']}")
     assert resp.json()["support_count"] == 1
 
+    # Regression: /supporters must return the row, not 500.
+    # Prior bug: BotProfile outerjoin referenced Proposal.community_id
+    # before Proposal was in the FROM clause, crashing the query.
+    resp = await client.get(f"/proposals/{proposal['id']}/supporters")
+    assert resp.status_code == 200
+    supporters = resp.json()
+    assert len(supporters) == 1
+    assert supporters[0]["user_id"] == user["id"]
+
 
 @pytest.mark.asyncio
 async def test_duplicate_support_rejected(client):

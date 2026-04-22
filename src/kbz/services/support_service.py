@@ -161,15 +161,17 @@ class SupportService:
 
     async def get_proposal_supporters(self, proposal_id: uuid.UUID) -> list[dict]:
         """Return list of {user_id, user_name, display_name, created_at} for all supporters."""
+        # Join Proposal first — BotProfile's ON clause references
+        # Proposal.community_id, so Proposal must already be in the FROM.
         result = await self.db.execute(
             select(Support, User.user_name, BotProfile.display_name)
+            .join(Proposal, Proposal.id == Support.proposal_id)
             .outerjoin(User, User.id == Support.user_id)
             .outerjoin(
                 BotProfile,
                 (BotProfile.user_id == Support.user_id)
                 & (BotProfile.community_id == Proposal.community_id),
             )
-            .join(Proposal, Proposal.id == Support.proposal_id)
             .where(Support.proposal_id == proposal_id)
         )
         return [
@@ -184,15 +186,17 @@ class SupportService:
 
     async def get_pulse_supporters(self, pulse_id: uuid.UUID) -> list[dict]:
         """Return list of {user_id, user_name, display_name, created_at} for all supporters."""
+        # Join Pulse first — BotProfile's ON clause references
+        # Pulse.community_id, so Pulse must already be in the FROM.
         result = await self.db.execute(
             select(PulseSupport, User.user_name, BotProfile.display_name)
+            .join(Pulse, Pulse.id == PulseSupport.pulse_id)
             .outerjoin(User, User.id == PulseSupport.user_id)
             .outerjoin(
                 BotProfile,
                 (BotProfile.user_id == PulseSupport.user_id)
                 & (BotProfile.community_id == Pulse.community_id),
             )
-            .join(Pulse, Pulse.id == PulseSupport.pulse_id)
             .where(PulseSupport.pulse_id == pulse_id)
         )
         return [
