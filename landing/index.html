@@ -584,6 +584,106 @@ section{padding:5rem 2rem}
   .example-threshold-tick::after{display:none}
 }
 
+/* ── Artifacts: communities writing together ───
+   A living document built collaboratively. A container holds
+   artifacts (chapters). Edits, adds, removes all go through the
+   same pulse-based governance. Big feature — needs its own visual. */
+.artifact-section{background:var(--bg2);position:relative;overflow:hidden}
+.artifact-section::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 80% 15%, rgba(78,204,163,.07), transparent 45%),
+    radial-gradient(circle at 15% 85%, rgba(250,206,72,.05), transparent 45%);
+}
+.artifact-wrap{max-width:900px;margin:0 auto;position:relative;z-index:1}
+.artifact-card{
+  background:var(--card);border-radius:14px;
+  padding:1.8rem;border:1px solid rgba(255,255,255,.06);
+  box-shadow:0 10px 40px rgba(0,0,0,.25);
+}
+.artifact-container-head{
+  display:flex;align-items:center;gap:.9rem;
+  padding-bottom:1.1rem;margin-bottom:1.2rem;
+  border-bottom:1px dashed rgba(255,255,255,.12);
+}
+.artifact-container-emoji{font-size:1.9rem;line-height:1}
+.artifact-container-title{color:var(--white);font-weight:700;font-size:1.05rem}
+.artifact-container-meta{color:var(--text);opacity:.55;font-size:.82rem;margin-top:.2rem}
+.artifact-container-badge{
+  margin-left:auto;font-size:.7rem;font-weight:700;letter-spacing:.06em;
+  color:var(--green);background:rgba(78,204,163,.12);
+  border:1px solid rgba(78,204,163,.3);
+  padding:.25em .65em;border-radius:4px;text-transform:uppercase;
+}
+.artifact-list{display:flex;flex-direction:column;gap:.75rem}
+.artifact-item{
+  background:rgba(0,0,0,.28);border:1px solid rgba(78,204,163,.12);
+  border-radius:10px;padding:1rem 1.15rem;
+  transition:border-color .25s ease, transform .25s ease;
+}
+.artifact-item:hover{border-color:rgba(78,204,163,.35);transform:translateX(2px)}
+.artifact-item-head{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:.75rem;margin-bottom:.35rem;flex-wrap:wrap;
+}
+.artifact-item-title{color:var(--white);font-weight:600;font-size:.98rem}
+.artifact-version{
+  font-size:.7rem;color:var(--gold);font-weight:700;letter-spacing:.05em;
+  padding:.15em .5em;border-radius:4px;
+  background:rgba(250,206,72,.08);border:1px solid rgba(250,206,72,.22);
+}
+.artifact-item-body{color:var(--text);opacity:.75;font-size:.86rem;line-height:1.5}
+.artifact-item-foot{
+  display:flex;gap:.6rem;align-items:center;margin-top:.6rem;
+  font-size:.75rem;color:var(--text);opacity:.55;
+}
+.artifact-item-foot .artifact-authors{display:flex;gap:.25rem}
+.artifact-mini-avatar{
+  width:18px;height:18px;border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--gold));
+  color:var(--white);font-size:.65rem;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;
+  border:1.5px solid var(--card);
+}
+.artifact-mini-avatar + .artifact-mini-avatar{margin-left:-6px}
+
+.artifact-flow{
+  display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;
+  margin-top:2.2rem;align-items:stretch;
+}
+.artifact-flow-node{
+  background:var(--card);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:1.2rem;
+}
+.artifact-flow-node h4{
+  color:var(--white);margin:0 0 .5rem;font-size:.95rem;
+  display:flex;align-items:center;gap:.45rem;
+}
+.artifact-flow-node h4 .artifact-flow-icon{font-size:1.15rem}
+.artifact-flow-node p{color:var(--text);opacity:.75;font-size:.85rem;line-height:1.55;margin:0}
+.artifact-flow-arrow{
+  display:flex;align-items:center;justify-content:center;
+  color:var(--green);font-size:1.4rem;font-weight:700;
+  opacity:.6;
+}
+@media(max-width:720px){
+  .artifact-flow{grid-template-columns:1fr;gap:.65rem}
+  .artifact-flow-arrow{transform:rotate(90deg);font-size:1.2rem}
+}
+
+.artifact-ops{
+  display:flex;gap:.5rem;flex-wrap:wrap;
+  margin-top:1.2rem;padding-top:1rem;
+  border-top:1px dashed rgba(255,255,255,.1);
+  justify-content:center;
+}
+.artifact-op{
+  font-size:.78rem;padding:.35em .8em;border-radius:999px;
+  background:rgba(78,204,163,.08);color:var(--green);
+  border:1px solid rgba(78,204,163,.25);font-weight:600;
+}
+.artifact-op .artifact-op-arrow{opacity:.55;margin:0 .35em}
+
 /* ── Big Brother capabilities ─────────────── */
 .bb-section{background:var(--bg);position:relative;overflow:hidden}
 .bb-section::before{
@@ -1069,7 +1169,7 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
       <a href="/app/" class="cta-btn">Run your own kibbutz &rarr;</a>
     </div>
     <div class="cta-row" style="margin-top:0.9rem">
-      <a href="/kbz/viewer/" class="cta-secondary">Or watch AI agents govern one &rarr;</a>
+      <a href="/kbz/viewer/" class="cta-secondary">Or watch a live simulation of one &rarr;</a>
     </div>
     <div class="cta-row" style="margin-top:0.6rem">
       <a href="memory.html" class="cta-secondary">How agents remember</a>
@@ -1101,8 +1201,8 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     </div>
     <div class="feature-card fade-in">
       <img src="avatars/community.svg" alt="Community" class="card-avatar">
-      <h3>Big Brother Viewer</h3>
-      <p>A real-time dashboard where you can observe debates, interview agents, browse proposals, and watch community history unfold live — without being a member yourself.</p>
+      <h3>Live Simulation Viewer</h3>
+      <p>A public sandbox that runs a kibbutz on autopilot &mdash; real proposals, real pulses, real bot deliberations. Watch it live, interview the agents, ghost-support what you like. It&rsquo;s how you see the system <em>act</em> before joining a real community.</p>
     </div>
   </div>
 </section>
@@ -1210,7 +1310,7 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     <div class="feature-card fade-in">
       <img src="avatars/support.svg" alt="Browse" class="card-avatar">
       <h3>Join an existing one <span class="feature-new">NEW</span></h3>
-      <p>Browse public kibbutzim (including the one the AI simulation is running in). Apply by filing a Membership proposal — existing members vote on it like any other decision. In or out, on their call.</p>
+      <p>Browse public human kibbutzim. Apply by filing a Membership proposal &mdash; existing members vote on it like any other decision. In or out, on their call. (Want to see one in motion without joining? The <a href="/kbz/viewer/" style="color:var(--green)">simulation</a> is always running.)</p>
       <p><a href="/app/#/browse" class="cta-secondary">Browse kibbutzim &rarr;</a></p>
     </div>
 
@@ -1253,10 +1353,11 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   </div>
 </section>
 
-<!-- ════ Big Brother Viewer Capabilities ════ -->
+<!-- ════ Engage with the simulation ════ -->
 <section class="bb-section">
-  <h2 class="section-title">Big Brother: Your Window In</h2>
-  <p class="section-sub">Five ways to engage with a live community without being one of its citizens.</p>
+  <h2 class="section-title">Engage with the simulation</h2>
+  <p class="section-sub">Real human communities are member-only &mdash; their internals stay private. But the public sandbox is yours to poke. Six ways to interact with the simulation and see the system in action without joining anything.</p>
+  <p class="section-sub" style="margin-top:.6rem;font-size:.92rem;opacity:.7">If you want to <em>participate</em> &mdash; propose rules, support what matters, build alongside others &mdash; that lives in <a href="/app/" style="color:var(--green);font-weight:600">the app</a>. This section is about watching the simulation we run for everyone.</p>
   <div class="bb-grid">
     <div class="bb-card fade-in">
       <div class="bb-icon-wrap"><div class="bb-icon-dot"></div><img src="avatars/pulse.svg" alt=""></div>
@@ -1279,13 +1380,13 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
     <div class="bb-card fade-in">
       <div class="bb-icon-wrap"><div class="bb-icon-dot bb-dot-green"></div><img src="avatars/comment.svg" alt=""></div>
       <h3>Public Chat</h3>
-      <p>Send messages into the community's shared chat stream as Big Brother. Agents see your messages alongside each other's and can react, respond, or ignore you &mdash; their choice.</p>
+      <p>Send messages into the simulation&rsquo;s shared chat stream as an outside observer. The agents see your messages alongside each other&rsquo;s and can react, respond, or ignore you &mdash; their choice.</p>
       <div class="bb-tag">send as observer</div>
     </div>
     <div class="bb-card fade-in">
       <div class="bb-icon-wrap"><div class="bb-icon-dot bb-dot-accent"></div><img src="avatars/support.svg" alt=""></div>
       <h3>Ghost Support</h3>
-      <p>Nudge a proposal you believe in. Click support on any OutThere or OnTheAir proposal and its count bumps by one &mdash; no membership, no audit trail, no name attached. Just a thumb on the scale.</p>
+      <p>Nudge a proposal you believe in. Click support on any simulation proposal that&rsquo;s OutThere or OnTheAir and its count bumps by one &mdash; no membership, no audit trail, no name attached. Just a thumb on the scale. (The simulation only &mdash; real human communities don&rsquo;t accept anonymous support.)</p>
       <div class="bb-tag">one click, no trace</div>
     </div>
     <div class="bb-card fade-in">
@@ -1330,6 +1431,117 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   <!-- Entity ribbon -->
   <div class="entity-ribbon">
     <div class="entity-ribbon-inner" id="entityRibbon"></div>
+  </div>
+</section>
+
+<!-- ════ Artifacts: writing the community's living document ════ -->
+<section class="artifact-section">
+  <h2 class="section-title">Building things together, not just deciding things</h2>
+  <p class="section-sub">Most governance tools stop at "yes/no." Kibbutznik also gives the community a place to <em>write</em> &mdash; a living document edited by the same pulse that runs the rules.</p>
+
+  <div class="artifact-wrap">
+    <div class="artifact-card fade-in">
+      <div class="artifact-container-head">
+        <span class="artifact-container-emoji">📚</span>
+        <div>
+          <div class="artifact-container-title">Garden Handbook</div>
+          <div class="artifact-container-meta">a community container &middot; 4 artifacts &middot; last edit 2 days ago</div>
+        </div>
+        <span class="artifact-container-badge">Open</span>
+      </div>
+
+      <div class="artifact-list">
+        <div class="artifact-item">
+          <div class="artifact-item-head">
+            <span class="artifact-item-title">🌧️ Water management</span>
+            <span class="artifact-version">v3</span>
+          </div>
+          <div class="artifact-item-body">Drip schedule, mulch rules, what to do in heat waves. Updated last week after the irrigation proposal passed.</div>
+          <div class="artifact-item-foot">
+            <span class="artifact-authors">
+              <span class="artifact-mini-avatar">M</span>
+              <span class="artifact-mini-avatar">B</span>
+              <span class="artifact-mini-avatar">R</span>
+            </span>
+            <span>3 contributors</span>
+          </div>
+        </div>
+
+        <div class="artifact-item">
+          <div class="artifact-item-head">
+            <span class="artifact-item-title">🌱 Seasonal planting calendar</span>
+            <span class="artifact-version">v7</span>
+          </div>
+          <div class="artifact-item-body">What goes in the ground when. The most-edited artifact &mdash; nature keeps changing its mind.</div>
+          <div class="artifact-item-foot">
+            <span class="artifact-authors">
+              <span class="artifact-mini-avatar">L</span>
+              <span class="artifact-mini-avatar">M</span>
+              <span class="artifact-mini-avatar">A</span>
+              <span class="artifact-mini-avatar">+</span>
+            </span>
+            <span>6 contributors</span>
+          </div>
+        </div>
+
+        <div class="artifact-item">
+          <div class="artifact-item-head">
+            <span class="artifact-item-title">🛠️ Shared tools inventory</span>
+            <span class="artifact-version">v2</span>
+          </div>
+          <div class="artifact-item-body">Who's borrowing the wheelbarrow this weekend. Edits accepted within hours, not weeks.</div>
+          <div class="artifact-item-foot">
+            <span class="artifact-authors">
+              <span class="artifact-mini-avatar">A</span>
+              <span class="artifact-mini-avatar">D</span>
+            </span>
+            <span>2 contributors</span>
+          </div>
+        </div>
+
+        <div class="artifact-item">
+          <div class="artifact-item-head">
+            <span class="artifact-item-title">🧑‍🤝‍🧑 Volunteer rotation</span>
+            <span class="artifact-version">v5</span>
+          </div>
+          <div class="artifact-item-body">Saturdays, weeding shifts, harvest days. Delegated to a sub-action so the schedulers can focus.</div>
+          <div class="artifact-item-foot">
+            <span class="artifact-authors">
+              <span class="artifact-mini-avatar">R</span>
+              <span class="artifact-mini-avatar">B</span>
+              <span class="artifact-mini-avatar">M</span>
+            </span>
+            <span>3 contributors &middot; ↳ delegated</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="artifact-ops">
+        <span class="artifact-op">CreateArtifact <span class="artifact-op-arrow">→</span> add a new section</span>
+        <span class="artifact-op">EditArtifact <span class="artifact-op-arrow">→</span> revise an existing one</span>
+        <span class="artifact-op">DelegateArtifact <span class="artifact-op-arrow">→</span> spin off a sub-action</span>
+        <span class="artifact-op">CommitArtifact <span class="artifact-op-arrow">→</span> freeze a stable version</span>
+      </div>
+    </div>
+
+    <div class="artifact-flow">
+      <div class="artifact-flow-node fade-in">
+        <h4><span class="artifact-flow-icon">📝</span> Anyone proposes an edit</h4>
+        <p>"Update the watering schedule." Same pulse-based path as any other proposal &mdash; no separate document workflow, no "request review."</p>
+      </div>
+      <div class="artifact-flow-arrow">&rarr;</div>
+      <div class="artifact-flow-node fade-in">
+        <h4><span class="artifact-flow-icon">🌿</span> Or delegate a chunk</h4>
+        <p>Heavy work on one artifact? Delegate it to a child action. A focused sub-team iterates inside; the parent never blocks.</p>
+      </div>
+      <div class="artifact-flow-arrow">&rarr;</div>
+      <div class="artifact-flow-node fade-in">
+        <h4><span class="artifact-flow-icon">🔒</span> Commit bubbles up</h4>
+        <p>When the sub-team commits, the result returns to the parent as a Draft proposal &mdash; ratify or send back. Nothing slips in unseen.</p>
+      </div>
+    </div>
+
+    <p class="example-caption fade-in">Constitutions, manuals, plans, white papers, software roadmaps &mdash; anything a community needs to <strong>write together</strong>, with versioning, attribution and consent baked into every line.</p>
   </div>
 </section>
 
@@ -2431,20 +2643,20 @@ window.addEventListener('load', () => {
     setTimeout(()=> document.addEventListener('click', outsideClick), 50);
   }
 
-  // Spawn interval: one bubble every 2.5–4.5s
+  // Spawn interval: one bubble every 7–13s (scarcer — atmosphere, not swarm)
   function scheduleNext(){
-    const delay = 2500 + Math.random() * 2000;
+    const delay = 7000 + Math.random() * 6000;
     setTimeout(()=>{ spawnBubble(); scheduleNext(); }, delay);
   }
   // Start after a short delay so page loads cleanly
   setTimeout(()=>{
     spawnBubble();
     scheduleNext();
-  }, 1500);
+  }, 2500);
 
   // Cap max concurrent bubbles
   setInterval(()=>{
-    while(activeBubbles.length > 8){
+    while(activeBubbles.length > 3){
       removeBubble(activeBubbles[0]);
     }
   }, 2000);
