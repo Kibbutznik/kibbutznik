@@ -1319,15 +1319,19 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                         onClick={() => setTab(t)}
                         style={{
                             borderRadius: 0,
+                            whiteSpace: "nowrap",
                             borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
                         }}>
                         {
-                            t === "bot" ? "🤖 My bot" :
-                            t === "treasury" ? "💰 Treasury" :
-                            t === "chat" ? "💬 Chat" :
+                            t === "proposals" ? "📋 Proposals" :
+                            t === "chat"      ? "💬 Chat" :
+                            t === "members"   ? "👥 Members" :
+                            t === "statements"? "📜 Statements" :
                             t === "variables" ? "⚙️ Variables" :
-                            t === "actions" ? "🌳 Actions" :
-                            t === "artifacts" ? "📜 Artifacts" :
+                            t === "actions"   ? "🌳 Actions" :
+                            t === "artifacts" ? "📦 Artifacts" :
+                            t === "treasury"  ? "💰 Treasury" :
+                            t === "bot"       ? "🤖 My bot" :
                             t[0].toUpperCase() + t.slice(1)
                         }
                     </button>
