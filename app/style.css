@@ -228,6 +228,14 @@ footer.app-footer {
 .pc-author-name { color: var(--text); font-weight: 600; font-size: 0.9rem; }
 .pc-author-meta { color: var(--text-dim); font-size: 0.78rem; }
 
+/* Clickable avatars / author names open a member profile modal. */
+.pc-avatar.clickable,
+.pc-author-name.clickable { cursor: pointer; }
+.pc-author-name.clickable:hover { text-decoration: underline; color: var(--accent); }
+.pc-avatar.clickable:hover { box-shadow: 0 0 0 2px var(--accent-soft); }
+.card.clickable { cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.card.clickable:hover { border-color: var(--accent); box-shadow: var(--shadow-hover); }
+
 .proposal-card .pc-title {
     color: var(--text); font-size: 1.05rem; font-weight: 700;
     margin: 0.4rem 0 0.5rem; line-height: 1.35;

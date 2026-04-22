@@ -1048,6 +1048,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     );
 
     const [variables, setVariables] = useState({});
+    // Member-detail modal: clicking any member name/avatar in this community
+    // page opens a lightweight profile card.
+    const [memberModal, setMemberModal] = useState(null);  // {user_id, seed?}
 
     // When ProposePage just navigated back, it stashes the new
     // proposal's id in sessionStorage so we can scroll to + highlight
@@ -1211,18 +1214,24 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                     {sortedProposals.map(p => (
                         <ProposalCard key={p.id} proposal={p} imMember={imMember}
                             user={user} onChanged={reload}
+                            onOpenMember={(uid, seed) => setMemberModal({ user_id: uid, seed })}
                             highlightNew={p.id === newProposalId} />
                     ))}
                 </div>
             )}
             {tab === "members" && (
                 <div className="stack">
-                    {members.map(m => (
-                        <div key={m.user_id} className="card">
-                            <div className="bold">{m.display_name || m.user_name || m.user_id.slice(0, 8)}</div>
-                            <div className="muted">seniority {m.seniority}</div>
-                        </div>
-                    ))}
+                    {members.map(m => {
+                        const label = m.display_name || m.user_name || m.user_id.slice(0, 8);
+                        return (
+                            <div key={m.user_id} className="card clickable"
+                                 onClick={() => setMemberModal({ user_id: m.user_id, seed: m })}
+                                 title={`Open ${label}'s profile`}>
+                                <div className="bold">{label}</div>
+                                <div className="muted">seniority {m.seniority}</div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
             {tab === "statements" && (
@@ -1254,11 +1263,20 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 <TreasuryPanel communityId={communityId} imMember={imMember} user={user} />
             )}
             </div>
+            {memberModal && (
+                <MemberDetailModal
+                    userId={memberModal.user_id}
+                    seed={memberModal.seed}
+                    communityId={communityId}
+                    members={members}
+                    onClose={() => setMemberModal(null)}
+                />
+            )}
         </div>
     );
 }
 
-function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
+function ProposalCard({ proposal, imMember, user, onChanged, onOpenMember, highlightNew }) {
     const [supporting, setSupporting] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
     const cardRef = useRef(null);
@@ -1324,8 +1342,25 @@ function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
                 </div>
 
                 <div className="pc-author">
-                    <span className="pc-avatar">{initial}</span>
-                    <span className="pc-author-name">{authorName}</span>
+                    <span className="pc-avatar clickable"
+                          onClick={(e) => {
+                              e.stopPropagation();
+                              if (proposal.user_id) onOpenMember?.(proposal.user_id, {
+                                  user_id: proposal.user_id,
+                                  user_name: proposal.user_name,
+                                  display_name: proposal.display_name,
+                              });
+                          }}
+                          title={`Open ${authorName}'s profile`}>{initial}</span>
+                    <span className="pc-author-name clickable"
+                          onClick={(e) => {
+                              e.stopPropagation();
+                              if (proposal.user_id) onOpenMember?.(proposal.user_id, {
+                                  user_id: proposal.user_id,
+                                  user_name: proposal.user_name,
+                                  display_name: proposal.display_name,
+                              });
+                          }}>{authorName}</span>
                     <span className="pc-author-meta">
                         &middot; {formatRelativeTime(proposal.created_at) || `age ${proposal.age}`}
                     </span>
@@ -1926,22 +1961,172 @@ function ChatPanel({ communityId, user, imMember, members, liveEvents }) {
     );
 }
 
+// ── Member detail modal — profile card + their proposals in this community
+function MemberDetailModal({ userId, seed, communityId, members, onClose }) {
+    const seedRow = seed || members.find(m => m.user_id === userId) || null;
+    const [user, setUser] = useState(null);
+    const [proposals, setProposals] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        Promise.all([
+            api.get(`/users/${userId}`).catch(() => null),
+            api.get(`/communities/${communityId}/proposals?user_id=${userId}`).catch(() => []),
+        ]).then(([u, props]) => {
+            setUser(u);
+            setProposals(Array.isArray(props) ? props : []);
+        }).finally(() => setLoading(false));
+    }, [userId, communityId]);
+
+    const name = seedRow?.display_name || seedRow?.user_name
+        || user?.user_name || userId.slice(0, 8);
+    const initial = (name || "?").trim().charAt(0).toUpperCase();
+    const seniority = seedRow?.seniority;
+    const joinedAt = seedRow?.joined_at
+        ? new Date(seedRow.joined_at).toLocaleDateString()
+        : null;
+    const isBot = seedRow?.display_name && seedRow?.user_name
+        && seedRow.display_name !== seedRow.user_name;
+
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem",
+        }} onClick={onClose}>
+            <div className="card" style={{
+                maxWidth: 560, width: "100%", maxHeight: "92vh",
+                overflow: "auto", padding: "1.4rem",
+            }} onClick={(e) => e.stopPropagation()}>
+                <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.8rem" }}>
+                    <div className="row" style={{ gap: "0.7rem" }}>
+                        <span className="pc-avatar" style={{ width: 44, height: 44, fontSize: "1.2rem" }}>
+                            {initial}
+                        </span>
+                        <div>
+                            <div className="bold" style={{ fontSize: "1.1rem" }}>{name}</div>
+                            {isBot && <span className="pill">bot</span>}
+                            {seedRow?.user_name && seedRow?.display_name
+                                && seedRow.display_name !== seedRow.user_name && (
+                                <span className="muted" style={{ fontSize: "0.82rem", marginLeft: 6 }}>
+                                    @{seedRow.user_name}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <button className="btn ghost" onClick={onClose}
+                            style={{ fontSize: "1.2rem", padding: "0 0.5rem" }}>×</button>
+                </div>
+
+                <div className="row" style={{ gap: "1.2rem", flexWrap: "wrap", marginBottom: "0.8rem" }}>
+                    {seniority != null && (
+                        <div>
+                            <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase" }}>
+                                Seniority
+                            </div>
+                            <div className="bold">{seniority}</div>
+                        </div>
+                    )}
+                    {joinedAt && (
+                        <div>
+                            <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase" }}>
+                                Joined
+                            </div>
+                            <div className="bold">{joinedAt}</div>
+                        </div>
+                    )}
+                    <div>
+                        <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase" }}>
+                            Proposals filed
+                        </div>
+                        <div className="bold">{proposals.length}</div>
+                    </div>
+                </div>
+
+                {user?.about && (
+                    <div style={{
+                        padding: "0.6rem 0.8rem",
+                        background: "var(--accent-soft)", borderRadius: 8,
+                        marginBottom: "0.8rem", fontSize: "0.9rem",
+                    }}>
+                        {user.about}
+                    </div>
+                )}
+
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.8rem" }}>
+                    <div className="bold" style={{ marginBottom: "0.4rem" }}>
+                        📝 Proposals in this kibbutz ({proposals.length})
+                    </div>
+                    {loading ? (
+                        <div className="muted">Loading…</div>
+                    ) : proposals.length === 0 ? (
+                        <div className="muted" style={{ fontSize: "0.85rem" }}>
+                            Hasn't proposed anything here yet.
+                        </div>
+                    ) : (
+                        <div className="stack" style={{ gap: "0.35rem" }}>
+                            {proposals.slice(0, 20).map(p => {
+                                const title = p.val_text || p.proposal_text || "(untitled)";
+                                return (
+                                    <div key={p.id} style={{
+                                        padding: "0.4rem 0",
+                                        borderBottom: "1px solid var(--border)",
+                                        fontSize: "0.88rem",
+                                    }}>
+                                        <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem" }}>
+                                            <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                <span className="muted" style={{ fontSize: "0.75rem", marginRight: 6 }}>
+                                                    {p.proposal_type}
+                                                </span>
+                                                {title.slice(0, 80)}{title.length > 80 ? "…" : ""}
+                                            </div>
+                                            <span className="muted" style={{ fontSize: "0.75rem" }}>
+                                                {p.proposal_status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ── Variables tab — view + propose a ChangeVariable ────
 function VariablesPanel({ communityId, variables, imMember, user, onChanged }) {
     const [editing, setEditing] = useState(null);  // variable name being edited
+    const [draftValue, setDraftValue] = useState("");
+    const [draftPitch, setDraftPitch] = useState("");
 
-    const propose = async (name, newValue) => {
+    const startEdit = (name) => {
+        setEditing(name);
+        setDraftValue(variables[name] || "");
+        setDraftPitch("");
+    };
+
+    const propose = async (name) => {
         if (!user) return;
+        const newValue = draftValue.trim();
+        if (!newValue) { toast("Value can't be empty", "error"); return; }
         try {
-            const resp = await api.post(`/communities/${communityId}/proposals`, {
+            const body = {
                 user_id: user.user_id,
                 proposal_type: "ChangeVariable",
                 proposal_text: name,
                 val_text: newValue,
-            });
+            };
+            if (draftPitch.trim()) body.pitch = draftPitch.trim();
+            const resp = await api.post(`/communities/${communityId}/proposals`, body);
             try { await api._fetch(`/proposals/${resp.id}/submit`, { method: "PATCH" }); } catch {}
             toast(`ChangeVariable proposal filed: ${name} → ${newValue}`, "success");
             setEditing(null);
+            setDraftValue("");
+            setDraftPitch("");
             onChanged?.();
         } catch (e) { toast(e.message, "error"); }
     };
@@ -1979,34 +2164,58 @@ function VariablesPanel({ communityId, variables, imMember, user, onChanged }) {
                         <div className="bold" style={{ marginBottom: "0.5rem" }}>{label}</div>
                         <div className="stack" style={{ gap: "0.3rem" }}>
                             {rows.map(n => (
-                                <div key={n} className="row" style={{
-                                    justifyContent: "space-between",
-                                    padding: "0.35rem 0",
+                                <div key={n} style={{
+                                    padding: "0.45rem 0",
                                     borderBottom: "1px solid var(--border)",
                                 }}>
-                                    <div>
-                                        <div className="bold" style={{ fontSize: "0.9rem" }}>{n}</div>
-                                        {editing === n ? (
-                                            <input className="input" autoFocus
-                                                   defaultValue={variables[n]}
-                                                   onKeyDown={(e) => {
-                                                       if (e.key === "Enter") propose(n, e.target.value);
-                                                       if (e.key === "Escape") setEditing(null);
-                                                   }}
-                                                   style={{ maxWidth: 200, marginTop: 4 }} />
-                                        ) : (
-                                            <code style={{
-                                                background: "rgba(0,0,0,0.04)",
-                                                padding: "1px 6px", borderRadius: 3,
-                                                fontSize: "0.82rem",
-                                            }}>{variables[n] || "(empty)"}</code>
+                                    <div className="row" style={{ justifyContent: "space-between" }}>
+                                        <div>
+                                            <div className="bold" style={{ fontSize: "0.9rem" }}>{n}</div>
+                                            {editing !== n && (
+                                                <code style={{
+                                                    background: "rgba(0,0,0,0.04)",
+                                                    padding: "1px 6px", borderRadius: 3,
+                                                    fontSize: "0.82rem",
+                                                }}>{variables[n] || "(empty)"}</code>
+                                            )}
+                                        </div>
+                                        {imMember && editing !== n && (
+                                            <button className="btn ghost" style={{ fontSize: "0.8rem" }}
+                                                    onClick={() => startEdit(n)}>
+                                                Propose change
+                                            </button>
                                         )}
                                     </div>
-                                    {imMember && editing !== n && (
-                                        <button className="btn ghost" style={{ fontSize: "0.8rem" }}
-                                                onClick={() => setEditing(n)}>
-                                            Propose change
-                                        </button>
+                                    {editing === n && (
+                                        <div className="stack" style={{ gap: "0.4rem", marginTop: 6 }}>
+                                            <label>
+                                                <div className="muted" style={{ fontSize: "0.78rem", marginBottom: 2 }}>
+                                                    New value
+                                                </div>
+                                                <input className="input" autoFocus
+                                                       value={draftValue}
+                                                       onChange={(e) => setDraftValue(e.target.value)}
+                                                       onKeyDown={(e) => {
+                                                           if (e.key === "Escape") setEditing(null);
+                                                       }}
+                                                       style={{ maxWidth: 260 }} />
+                                            </label>
+                                            <label>
+                                                <div className="muted" style={{ fontSize: "0.78rem", marginBottom: 2 }}>
+                                                    Pitch — why this change? <span style={{ opacity: 0.7 }}>(optional)</span>
+                                                </div>
+                                                <textarea className="input" rows={2}
+                                                          placeholder="A short case. 1–2 sentences."
+                                                          value={draftPitch}
+                                                          onChange={(e) => setDraftPitch(e.target.value)} />
+                                            </label>
+                                            <div className="row" style={{ gap: "0.4rem" }}>
+                                                <button className="btn primary" style={{ fontSize: "0.8rem" }}
+                                                        onClick={() => propose(n)}>File proposal</button>
+                                                <button className="btn ghost" style={{ fontSize: "0.8rem" }}
+                                                        onClick={() => setEditing(null)}>Cancel</button>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
                             ))}
