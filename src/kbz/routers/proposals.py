@@ -23,7 +23,7 @@ async def create_proposal(
     enforce_session_matches_body(data.user_id, session_user)
     svc = ProposalService(db)
     proposal = await svc.create(community_id, data)
-    return proposal
+    return await svc.enrich_one(proposal, community_id)
 
 
 @router.get("/proposals/{proposal_id}", response_model=ProposalResponse)
@@ -32,7 +32,7 @@ async def get_proposal(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db
     proposal = await svc.get(proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    return proposal
+    return await svc.enrich_one(proposal)
 
 
 @router.get("/communities/{community_id}/proposals", response_model=list[ProposalResponse])
@@ -46,20 +46,22 @@ async def list_proposals(
     db: AsyncSession = Depends(get_db),
 ):
     svc = ProposalService(db)
-    return await svc.list_by_community(
+    proposals = await svc.list_by_community(
         community_id, status=status, user_id=user_id, val_uuid=val_uuid,
         proposal_type=proposal_type, pulse_id=pulse_id,
     )
+    return await svc.enrich(proposals, community_id)
 
 
 @router.patch("/proposals/{proposal_id}/edit", response_model=ProposalResponse)
 async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSession = Depends(get_db)):
     """Edit a proposal's text. Resets ALL support — supporters must re-evaluate."""
     svc = ProposalService(db)
-    return await svc.edit_text(
+    proposal = await svc.edit_text(
         proposal_id, data.user_id,
         new_text=data.proposal_text, new_val_text=data.val_text,
     )
+    return await svc.enrich_one(proposal)
 
 
 @router.patch("/proposals/{proposal_id}/submit", response_model=ProposalResponse)
@@ -68,7 +70,7 @@ async def submit_proposal(proposal_id: uuid.UUID, db: AsyncSession = Depends(get
     proposal = await svc.submit(proposal_id)
     if not proposal:
         raise HTTPException(status_code=400, detail="Cannot submit proposal")
-    return proposal
+    return await svc.enrich_one(proposal)
 
 
 @router.post("/proposals/{proposal_id}/withdraw", response_model=ProposalResponse)
@@ -117,7 +119,7 @@ async def withdraw_proposal(
     proposal = (
         await db.execute(select(Proposal).where(Proposal.id == proposal_id))
     ).scalar_one()
-    return proposal
+    return await ProposalService(db).enrich_one(proposal)
 
 
 @router.post("/proposals/{proposal_id}/support", status_code=201)

@@ -1,12 +1,17 @@
+import math
 import uuid
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy import func, select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kbz.enums import ProposalStatus, ProposalType
+from kbz.enums import DEFAULT_VARIABLES, PROPOSAL_TYPE_THRESHOLDS, ProposalStatus, ProposalType
+from kbz.models.bot_profile import BotProfile
+from kbz.models.community import Community
 from kbz.models.proposal import Proposal
 from kbz.models.support import Support
+from kbz.models.user import User
 from kbz.models.variable import Variable
 from kbz.schemas.proposal import ProposalCreate
 from kbz.services.event_bus import event_bus
@@ -213,6 +218,89 @@ class ProposalService:
     async def get(self, proposal_id: uuid.UUID) -> Proposal | None:
         result = await self.db.execute(select(Proposal).where(Proposal.id == proposal_id))
         return result.scalar_one_or_none()
+
+    async def enrich(
+        self, proposals: list[Proposal], community_id: uuid.UUID
+    ) -> list[SimpleNamespace]:
+        """Attach computed thresholds + author metadata for API responses.
+
+        `promote_threshold` is the support count needed to move OutThere →
+        OnTheAir (ProposalSupport %). `decide_threshold` is the per-type
+        threshold for execution when OnTheAir. Both use the CURRENT member
+        count — stale thresholds on the proposal row itself are ignored."""
+        if not proposals:
+            return []
+
+        from kbz.services.community_service import CommunityService
+        csvc = CommunityService(self.db)
+        variables = await csvc.get_variables(community_id)
+        member_count = await csvc.get_member_count(community_id) or 1
+
+        def pct_threshold(var_name: str) -> int:
+            raw = variables.get(var_name) or DEFAULT_VARIABLES.get(var_name, "0")
+            try:
+                pct = int(float(raw))
+            except (TypeError, ValueError):
+                pct = 0
+            return max(1, math.ceil(member_count * pct / 100))
+
+        promote_threshold = pct_threshold("ProposalSupport")
+
+        user_ids = list({p.user_id for p in proposals})
+        user_by_id: dict[uuid.UUID, str] = {}
+        bot_by_id: dict[uuid.UUID, str] = {}
+        if user_ids:
+            user_rows = (
+                await self.db.execute(
+                    select(User.id, User.user_name).where(User.id.in_(user_ids))
+                )
+            ).all()
+            user_by_id = {uid: name for uid, name in user_rows}
+            bot_rows = (
+                await self.db.execute(
+                    select(BotProfile.user_id, BotProfile.display_name).where(
+                        BotProfile.community_id == community_id,
+                        BotProfile.user_id.in_(user_ids),
+                    )
+                )
+            ).all()
+            bot_by_id = {uid: name for uid, name in bot_rows}
+
+        enriched: list[SimpleNamespace] = []
+        for p in proposals:
+            try:
+                ptype = ProposalType(p.proposal_type)
+                decide_var = PROPOSAL_TYPE_THRESHOLDS.get(ptype)
+            except ValueError:
+                decide_var = None
+            decide_threshold = pct_threshold(decide_var) if decide_var else None
+            enriched.append(SimpleNamespace(
+                id=p.id,
+                community_id=p.community_id,
+                user_id=p.user_id,
+                proposal_type=p.proposal_type,
+                proposal_status=p.proposal_status,
+                proposal_text=p.proposal_text,
+                val_uuid=p.val_uuid,
+                val_text=p.val_text,
+                pulse_id=p.pulse_id,
+                age=p.age,
+                support_count=p.support_count,
+                created_at=p.created_at,
+                prev_content=p.prev_content,
+                promote_threshold=promote_threshold,
+                decide_threshold=decide_threshold,
+                user_name=user_by_id.get(p.user_id),
+                display_name=bot_by_id.get(p.user_id),
+            ))
+        return enriched
+
+    async def enrich_one(
+        self, proposal: Proposal, community_id: uuid.UUID | None = None
+    ) -> SimpleNamespace:
+        cid = community_id or proposal.community_id
+        [out] = await self.enrich([proposal], cid)
+        return out
 
     async def submit(self, proposal_id: uuid.UUID) -> Proposal | None:
         proposal = await self.get(proposal_id)

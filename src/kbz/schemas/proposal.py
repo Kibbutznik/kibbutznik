@@ -26,6 +26,15 @@ class ProposalResponse(BaseModel):
     support_count: int
     created_at: datetime
     prev_content: str | None = None
+    # Computed enrichment fields. `promote_threshold` is the member
+    # count needed to move OutThere → OnTheAir (ProposalSupport %).
+    # `decide_threshold` is the per-type threshold for execution
+    # when OnTheAir (e.g. Funding %, Membership %, etc). Both are
+    # None only for brand-new proposals fetched before enrichment.
+    promote_threshold: int | None = None
+    decide_threshold: int | None = None
+    user_name: str | None = None
+    display_name: str | None = None
 
     model_config = {"from_attributes": True}
 
