@@ -471,19 +471,11 @@ class Agent:
                 raw_val_uuid = decision.params.get("val_uuid")
                 val_uuid = self._resolve_val_uuid(raw_val_uuid or "", snapshot) if raw_val_uuid else None
 
-                # Append the agent's reason/pitch to the proposal text so it's
-                # persisted and visible when viewers zoom into the proposal.
-                # BUT: for types where proposal_text is a key/name (ChangeVariable uses
-                # it as the variable name, ReplaceStatement falls back to proposal_text
-                # as the new statement body when val_text is empty), appending the
-                # pitch would corrupt the semantic value. RemoveStatement targets via
-                # val_uuid only and ignores proposal_text, so it's safe.
-                pitch_safe_types = {"AddStatement", "AddAction", "Membership",
-                                    "ThrowOut", "JoinAction", "EndAction",
-                                    "RemoveStatement"}
-                pitch = decision.reason or ""
-                if ptype in pitch_safe_types and pitch and pitch.lower() not in ptext.lower():
-                    ptext = f"{ptext}\n\n{pitch}" if ptext else pitch
+                # The agent's reason becomes the proposal's pitch (the "why").
+                # This used to be smooshed into proposal_text for a subset of
+                # types; now pitch has its own column, so we persist it cleanly
+                # for every proposal type and leave proposal_text untouched.
+                pitch = (decision.reason or "").strip() or None
 
                 # --- EditArtifact pre-flight validation ---
                 if ptype == "EditArtifact":
@@ -561,6 +553,7 @@ class Agent:
                     proposal_text=ptext,
                     val_text=val_text,
                     val_uuid=val_uuid,
+                    pitch=pitch,
                 )
                 # Auto-submit
                 await self.client.submit_proposal(proposal["id"])

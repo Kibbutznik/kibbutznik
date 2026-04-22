@@ -283,3 +283,29 @@ footer.app-footer {
     background: var(--accent-soft); color: var(--accent);
     border-color: var(--accent);
 }
+
+/* Pitch block in the proposal detail modal — the proposer's "why".
+ * Accented left border + soft fill so it reads as editorial copy, not
+ * metadata. Keeps the modal scannable: title on top, then pitch, then
+ * the usual age/support footer. */
+.pitch-block {
+    margin: 0.6rem 0 0.9rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+}
+.pitch-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+}
+.pitch-text {
+    color: var(--text);
+    font-size: 0.94rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}

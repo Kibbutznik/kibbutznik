@@ -60,6 +60,7 @@ async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSes
     proposal = await svc.edit_text(
         proposal_id, data.user_id,
         new_text=data.proposal_text, new_val_text=data.val_text,
+        new_pitch=data.pitch,
     )
     return await svc.enrich_one(proposal)
 

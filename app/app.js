@@ -1289,8 +1289,13 @@ function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
 
     const authorName = proposal.display_name || proposal.user_name || "Member";
     const initial = (authorName || "?").trim().charAt(0).toUpperCase();
-    const body = proposal.proposal_text && proposal.val_text && proposal.proposal_text !== proposal.val_text
+    // Prefer pitch as the card body (proposer's "why"). Fall back to
+    // proposal_text if it differs from the title, so legacy rows still
+    // show something useful until we backfill pitches.
+    const pitch = (proposal.pitch || "").trim();
+    const textBody = proposal.proposal_text && proposal.val_text && proposal.proposal_text !== proposal.val_text
         ? proposal.proposal_text : null;
+    const body = pitch || textBody;
     const title = proposal.val_text || proposal.proposal_text || "(untitled)";
 
     const support = async (e) => {
@@ -1603,6 +1608,12 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
                     <div className="muted" style={{
                         whiteSpace: "pre-wrap", marginBottom: "0.6rem",
                     }}>{proposal.proposal_text}</div>
+                )}
+                {proposal.pitch && proposal.pitch.trim() && (
+                    <div className="pitch-block">
+                        <div className="pitch-label">Pitch — why this should pass</div>
+                        <div className="pitch-text">{proposal.pitch}</div>
+                    </div>
                 )}
                 <div className="muted" style={{ fontSize: "0.82rem" }}>
                     age {proposal.age} · support {proposal.support_count} · created{" "}
@@ -2333,6 +2344,7 @@ function BotConfigPanel({ communityId, user }) {
 function ProposePage({ communityId, user }) {
     const [ptype, setPtype]       = useState("AddStatement");
     const [text, setText]         = useState("");
+    const [pitch, setPitch]       = useState("");
     const [valText, setValText]   = useState("");
     const [valUuid, setValUuid]   = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -2457,6 +2469,7 @@ function ProposePage({ communityId, user }) {
                 proposal_type: ptype,
                 proposal_text: text.trim(),
             };
+            if (pitch.trim()) body.pitch = pitch.trim();
             if (valText.trim()) body.val_text = valText.trim();
             if (valUuid.trim()) body.val_uuid = valUuid.trim();
             const p = await api.post(`/communities/${communityId}/proposals`, body);
@@ -2528,10 +2541,23 @@ function ProposePage({ communityId, user }) {
                         <textarea className="input"
                                   rows={spec?.text_rows || 4}
                                   required={!!spec?.needs?.text}
-                                  placeholder={spec?.text_placeholder || "What are you proposing, and why?"}
+                                  placeholder={spec?.text_placeholder || "What are you proposing?"}
                                   value={text} onChange={(e) => setText(e.target.value)} />
                     </label>
                 )}
+
+                <label>
+                    <div className="bold" style={{ marginBottom: 4 }}>
+                        Pitch
+                        <span className="muted" style={{ fontWeight: 400, marginLeft: 6 }}>
+                            — why should the community accept this?
+                        </span>
+                    </div>
+                    <textarea className="input"
+                              rows={3}
+                              placeholder="A short case for accepting this proposal. 1–3 sentences, in your own words."
+                              value={pitch} onChange={(e) => setPitch(e.target.value)} />
+                </label>
 
                 {spec?.needs?.val_text && (
                     <label>

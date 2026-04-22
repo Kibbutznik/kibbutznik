@@ -94,6 +94,7 @@ class KBZClient:
         proposal_text: str = "",
         val_uuid: str | None = None,
         val_text: str = "",
+        pitch: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {
             "user_id": user_id,
@@ -103,6 +104,8 @@ class KBZClient:
         }
         if val_uuid:
             payload["val_uuid"] = val_uuid
+        if pitch:
+            payload["pitch"] = pitch
         resp = await self._client.post(f"/communities/{community_id}/proposals", json=payload)
         resp.raise_for_status()
         return resp.json()

@@ -17,6 +17,10 @@ class Proposal(Base):
     proposal_type: Mapped[str] = mapped_column(String(50), nullable=False)
     proposal_status: Mapped[str] = mapped_column(String(20), nullable=False, default="Draft")
     proposal_text: Mapped[str] = mapped_column(Text, nullable=True, default="")
+    # The proposer's "why": a short rationale explaining why this should be
+    # accepted. Separate from proposal_text (the *what*). Nullable for legacy
+    # rows; new proposals are expected to include one.
+    pitch: Mapped[str | None] = mapped_column(Text, nullable=True)
     val_uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     val_text: Mapped[str] = mapped_column(Text, nullable=True, default="")
     # For EditArtifact proposals: snapshot of the artifact's content at the

@@ -224,6 +224,7 @@ class Orchestrator:
             proposal_type="Membership",
             proposal_text=f"{agent.persona.name} wants to join the community",
             val_uuid=agent.user_id,
+            pitch=f"{agent.persona.name} wants to join — bootstrap membership so the simulation has enough founding members to make decisions.",
         )
         await self.client.submit_proposal(proposal["id"])
 
@@ -666,9 +667,10 @@ class Orchestrator:
             self.newcomer_users.append({"id": user_id, "name": name, "persona": persona})
             self._newcomer_name_idx += 1  # advance permanently — never reuse a name
 
-            # Build a meaningful pitch from the newcomer's persona
+            # Build a meaningful pitch from the newcomer's persona. The short
+            # proposal_text is the "what" (applicant name / short line) and
+            # pitch carries the "why" (background + communication style).
             pitch = (
-                f"{name} wants to join the community.\n\n"
                 f"{persona.background} "
                 f"{persona.communication_style}"
             )
@@ -677,8 +679,9 @@ class Orchestrator:
                 community_id=self.community_id,
                 user_id=user_id,
                 proposal_type="Membership",
-                proposal_text=pitch,
+                proposal_text=f"{name} wants to join the community",
                 val_uuid=user_id,
+                pitch=pitch,
             )
             await self.client.submit_proposal(proposal["id"])
 

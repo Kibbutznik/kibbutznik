@@ -151,6 +151,7 @@ class ProposalService:
             proposal_type=data.proposal_type,
             proposal_status=ProposalStatus.DRAFT,
             proposal_text=data.proposal_text,
+            pitch=(data.pitch or None),
             val_uuid=data.val_uuid,
             val_text=data.val_text,
             prev_content=prev_content,
@@ -281,6 +282,7 @@ class ProposalService:
                 proposal_type=p.proposal_type,
                 proposal_status=p.proposal_status,
                 proposal_text=p.proposal_text,
+                pitch=p.pitch,
                 val_uuid=p.val_uuid,
                 val_text=p.val_text,
                 pulse_id=p.pulse_id,
@@ -344,6 +346,7 @@ class ProposalService:
     async def edit_text(
         self, proposal_id: uuid.UUID, user_id: uuid.UUID,
         new_text: str | None = None, new_val_text: str | None = None,
+        new_pitch: str | None = None,
     ) -> Proposal:
         """Edit a proposal's text. Resets ALL support (supporters must re-evaluate)."""
         proposal = await self.get(proposal_id)
@@ -362,6 +365,8 @@ class ProposalService:
             proposal.proposal_text = new_text
         if new_val_text is not None:
             proposal.val_text = new_val_text
+        if new_pitch is not None:
+            proposal.pitch = new_pitch or None
 
         # Clear ALL supports — the proposal changed, supporters must re-evaluate
         await self.db.execute(

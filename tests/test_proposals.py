@@ -20,6 +20,50 @@ async def test_create_proposal(client):
 
 
 @pytest.mark.asyncio
+async def test_proposal_pitch_round_trip(client):
+    """A proposal's `pitch` (the proposer's "why") persists and comes
+    back on GET and on the enriched list endpoint — it's a separate
+    column from proposal_text, not a prefix/suffix of it."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "Open governance is a shared value.",
+        "pitch": "We repeatedly argue past each other in pulses. "
+                 "Naming 'open governance' as a shared value gives us a "
+                 "canonical phrase to point to when we disagree on process.",
+    })
+    assert resp.status_code == 201
+    created = resp.json()
+    assert created["pitch"].startswith("We repeatedly argue past each other")
+    assert created["proposal_text"] == "Open governance is a shared value."
+
+    # List endpoint should also carry the pitch through enrich().
+    rlist = await client.get(f"/communities/{community['id']}/proposals")
+    assert rlist.status_code == 200
+    rows = rlist.json()
+    assert any(p["id"] == created["id"] and p["pitch"].startswith("We repeatedly") for p in rows)
+
+
+@pytest.mark.asyncio
+async def test_proposal_pitch_optional(client):
+    """Creating without a pitch is fine — the column is nullable and
+    the response field comes back as None. This keeps old clients
+    (and legacy rows) from breaking."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "No-pitch proposal",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["pitch"] is None
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

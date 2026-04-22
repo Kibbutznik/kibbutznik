@@ -401,6 +401,11 @@ Bad intentions (vague, persona-shaped, not plan-shaped):
 Respond with a JSON ARRAY, no other text:
 [{{"action": "...", "reason": "...", "eagerness": N, "eager_front": "...", ...params}}]
 
+**Important**: for `create_proposal`, your `reason` is PUBLIC — it is stored as
+the proposal's "pitch" and shown to everyone in the community. Write it as a
+1–3-sentence case for accepting the proposal (not a log line to yourself).
+Speak in first-person, make the "why" concrete, and keep it short.
+
 Examples:
 [
   {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "How We Onboard a New Member", "val_uuid": "<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},

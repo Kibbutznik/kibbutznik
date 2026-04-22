@@ -8,6 +8,10 @@ class ProposalCreate(BaseModel):
     user_id: uuid.UUID
     proposal_type: str
     proposal_text: str = ""
+    # `pitch` is the proposer's rationale — why this should be accepted.
+    # Optional on the wire for legacy tooling, but the UI and bots are
+    # expected to populate it. Stored in its own column.
+    pitch: str | None = None
     val_uuid: uuid.UUID | None = None
     val_text: str = ""
 
@@ -19,6 +23,7 @@ class ProposalResponse(BaseModel):
     proposal_type: str
     proposal_status: str
     proposal_text: str
+    pitch: str | None = None
     val_uuid: uuid.UUID | None
     val_text: str | None
     pulse_id: uuid.UUID | None
@@ -42,6 +47,7 @@ class ProposalResponse(BaseModel):
 class ProposalEdit(BaseModel):
     user_id: uuid.UUID
     proposal_text: str | None = None
+    pitch: str | None = None
     val_text: str | None = None
 
 

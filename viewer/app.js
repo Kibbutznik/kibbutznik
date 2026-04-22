@@ -539,23 +539,20 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
                 </div>
             )}
 
-            {/* Pitch — the author's proposal_text. Shown for EVERY proposal
-                type, including EditArtifact, because that is the only free-
-                form body an agent writes when creating a proposal, and it's
-                what other agents quote in their comments. For EditArtifact
-                the pitch IS the new content body (also visible inside the
-                collapsed diff above); showing it here as well means a reader
-                can read the proposed text without expanding the diff.
-                We also show an explicit "(no pitch)" placeholder so it's
-                obvious the author didn't write one, rather than the block
-                being silently omitted. */}
+            {/* Pitch — the proposer's "why". Prefer the dedicated `pitch`
+                column (added once we split the field from proposal_text);
+                fall back to proposal_text for legacy rows, since older bots
+                used to smoosh rationale into the main body. An explicit
+                "(no pitch)" placeholder makes missing rationales obvious. */}
             <div className="detail-section proposal-pitch-section">
                 <div className="detail-section-title">Pitch</div>
-                {proposal.proposal_text ? (
+                {proposal.pitch ? (
+                    <div className="proposal-pitch-text">{proposal.pitch}</div>
+                ) : proposal.proposal_text ? (
                     <div className="proposal-pitch-text">{proposal.proposal_text}</div>
                 ) : (
                     <div className="proposal-pitch-text" style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
-                        (no pitch — author left proposal_text empty)
+                        (no pitch — author didn't write one)
                     </div>
                 )}
             </div>
@@ -2825,6 +2822,9 @@ function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, ope
                 </span>
             </div>
             <div className="pc-title">{cardTitle}</div>
+            {p.pitch && (
+                <div className="pc-body">{truncate(p.pitch, 180)}</div>
+            )}
             <div className="pc-support">
                 <div className="pc-support-labels">
                     <span><strong>{supportCount}</strong> support{supportCount === 1 ? "" : "ers"}</span>
