@@ -1151,6 +1151,13 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const [error, setError] = useState(null);
     const [inviteUrl, setInviteUrl] = useState(null);
     const [applyBusy, setApplyBusy] = useState(false);
+    // Apply-to-join modal: the user must confirm identity + write a pitch
+    // before we file the membership proposal. A raw confirm() was too
+    // quiet — people thought they had already joined, couldn't explain
+    // why they should be let in, and the proposal looked anonymous in
+    // the feed.
+    const [applyOpen, setApplyOpen] = useState(false);
+    const [applyPitch, setApplyPitch] = useState("");
 
     const imMember = useMemo(
         () => user && members.some(m => m.user_id === user.user_id),
@@ -1211,15 +1218,18 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                      && (variables?.Financial || "") !== "";
     const membershipFee = parseFloat(variables?.membershipFee || "0") || 0;
 
-    const apply = async () => {
+    const openApply = () => {
         if (!user) { navigate("#/login"); return; }
-        if (isFinancial && membershipFee > 0) {
-            const ok = confirm(
-                `This kibbutz charges a ${membershipFee} credit membership fee. ` +
-                `Applying will escrow ${membershipFee} credits until the community votes. ` +
-                `If accepted, the fee is kept by the community. If rejected or expired, you get it back.\n\nProceed?`,
-            );
-            if (!ok) return;
+        setApplyPitch("");
+        setApplyOpen(true);
+    };
+
+    const submitApply = async () => {
+        if (!user) return;
+        const pitch = applyPitch.trim();
+        if (!pitch) {
+            toast("Tell them why you want to join.", "error");
+            return;
         }
         setApplyBusy(true);
         try {
@@ -1227,9 +1237,12 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 user_id: user.user_id,
                 proposal_type: "Membership",
                 proposal_text: `${user.user_name} applied to join`,
+                pitch,
                 val_uuid: user.user_id,
             });
             toast("Application filed. Check your dashboard for progress.", "success");
+            setApplyOpen(false);
+            setApplyPitch("");
             onRefreshMembership?.();
         } catch (e) { toast(e.message, "error"); }
         finally { setApplyBusy(false); }
@@ -1271,7 +1284,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                             <button className="btn" onClick={createInvite}>+ Invite</button>
                         </>
                     ) : user ? (
-                        <button className="btn primary" disabled={applyBusy} onClick={apply}>
+                        <button className="btn primary" disabled={applyBusy} onClick={openApply}>
                             {applyBusy ? "Applying…" : "Apply to join"}
                         </button>
                     ) : (
@@ -1296,7 +1309,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 {(() => {
                     const base = [
                         "proposals", "chat", "members",
-                        "statements", "variables", "actions",
+                        "statements", "variables", "actions", "artifacts",
                     ];
                     if (isFinancial) base.push("treasury");
                     if (imMember) base.push("bot");
@@ -1314,6 +1327,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                             t === "chat" ? "💬 Chat" :
                             t === "variables" ? "⚙️ Variables" :
                             t === "actions" ? "🌳 Actions" :
+                            t === "artifacts" ? "📜 Artifacts" :
                             t[0].toUpperCase() + t.slice(1)
                         }
                     </button>
@@ -1367,6 +1381,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             {tab === "actions" && (
                 <ActionsPanel communityId={communityId} />
             )}
+            {tab === "artifacts" && (
+                <ArtifactsPanel communityId={communityId} members={members} />
+            )}
             {tab === "bot" && imMember && (
                 <BotConfigPanel communityId={communityId} user={user} />
             )}
@@ -1383,6 +1400,70 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                     onClose={() => setMemberModal(null)}
                 />
             )}
+            {applyOpen && (
+                <ApplyModal
+                    community={community}
+                    user={user}
+                    pitch={applyPitch} setPitch={setApplyPitch}
+                    isFinancial={isFinancial} membershipFee={membershipFee}
+                    busy={applyBusy}
+                    onSubmit={submitApply}
+                    onClose={() => { if (!applyBusy) setApplyOpen(false); }}
+                />
+            )}
+        </div>
+    );
+}
+
+/* Modal for applying to join a community. Confirms the applicant's identity
+ * (so the user sees it's *their* name, not someone else's) and requires a
+ * pitch explaining why they want to be let in. */
+function ApplyModal({ community, user, pitch, setPitch, isFinancial, membershipFee, busy, onSubmit, onClose }) {
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem",
+        }} onClick={onClose}>
+            <div className="card" onClick={(e) => e.stopPropagation()}
+                 style={{ maxWidth: 520, width: "100%", maxHeight: "92vh", overflow: "auto", padding: "1.4rem" }}>
+                <h3 style={{ marginTop: 0 }}>Apply to join <span style={{ color: "var(--accent)" }}>{community.name}</span></h3>
+                <div className="muted" style={{ marginBottom: "0.8rem", fontSize: "0.88rem" }}>
+                    Filing as <strong style={{ color: "var(--text)" }}>{user.user_name}</strong>
+                    {user.email && <> · {user.email}</>}
+                </div>
+                {isFinancial && membershipFee > 0 && (
+                    <div className="card" style={{
+                        background: "rgba(240,192,64,0.12)",
+                        borderLeft: "3px solid var(--warn)",
+                        marginBottom: "0.8rem", padding: "0.7rem 0.9rem",
+                    }}>
+                        <div className="bold" style={{ marginBottom: 2 }}>💰 Membership fee: {membershipFee} credits</div>
+                        <div className="muted" style={{ fontSize: "0.82rem" }}>
+                            Escrowed until the vote. Kept by the community if accepted, refunded if rejected or expired.
+                        </div>
+                    </div>
+                )}
+                <label className="muted" style={{ fontSize: "0.82rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                    Your pitch — why you'd be a good fit
+                </label>
+                <textarea
+                    className="input"
+                    rows={5}
+                    placeholder="e.g. What you'd bring, what you care about, what drew you here."
+                    value={pitch}
+                    onChange={(e) => setPitch(e.target.value)}
+                    autoFocus
+                    disabled={busy}
+                />
+                <div className="row right" style={{ marginTop: "1rem", gap: "0.5rem" }}>
+                    <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+                    <button className="btn primary" onClick={onSubmit} disabled={busy || !pitch.trim()}>
+                        {busy ? "Filing…" : "File application"}
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
@@ -2389,6 +2470,125 @@ function ActionsPanel({ communityId }) {
                     </div>
                 </a>
             ))}
+        </div>
+    );
+}
+
+/* Artifacts tab — renders /artifacts/communities/{id}/work_tree.
+ *
+ * Shape of each container node returned by the backend:
+ *   { id, title, mission, status, committed_content,
+ *     artifacts: [ { id, title, content, author_user_id,
+ *                    status, delegated_to: [container…] } ] }
+ *
+ * Status on artifacts: 0 Draft, 1 Proposed, 2 Committed, 3 Superseded.
+ * Committed artifacts are the "current" content of the container. */
+function ArtifactsPanel({ communityId, members }) {
+    const [tree, setTree] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true); setError(null);
+        api.get(`/artifacts/communities/${communityId}/work_tree`)
+            .then(t => setTree(Array.isArray(t) ? t : []))
+            .catch(e => setError(e.message))
+            .finally(() => setLoading(false));
+    }, [communityId]);
+
+    const nameFor = (uid) => {
+        if (!uid) return "—";
+        const m = (members || []).find(x => x.user_id === uid);
+        return m?.display_name || m?.user_name || uid.slice(0, 8);
+    };
+
+    if (loading) return <div className="muted">Loading artifacts…</div>;
+    if (error) return <ErrorBanner error={error} />;
+    if (!tree || tree.length === 0) {
+        return (
+            <Empty title="No artifacts yet">
+                Artifacts are the concrete outputs a community produces — specs, contracts,
+                decision docs. File a <code>ProposeArtifact</code> proposal via{" "}
+                <strong>+ New proposal</strong> above to start one.
+            </Empty>
+        );
+    }
+    return (
+        <div className="stack">
+            {tree.map(c => (
+                <ContainerCard key={c.id} container={c} nameFor={nameFor} depth={0} />
+            ))}
+        </div>
+    );
+}
+
+function ContainerCard({ container, nameFor, depth }) {
+    const STATUS = { 0: "draft", 1: "proposed", 2: "committed", 3: "superseded" };
+    return (
+        <div className="card" style={{
+            marginLeft: depth * 16,
+            borderLeft: depth > 0 ? "3px solid var(--accent)" : undefined,
+        }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                <div style={{ flex: 1 }}>
+                    <div className="bold">📦 {container.title}</div>
+                    {container.mission && (
+                        <div className="muted" style={{ fontSize: "0.85rem", marginTop: 2 }}>
+                            {container.mission}
+                        </div>
+                    )}
+                </div>
+                {container.committed_content != null && (
+                    <span className="pill">committed</span>
+                )}
+            </div>
+            {(container.artifacts || []).length === 0 ? (
+                <div className="muted" style={{ fontSize: "0.82rem", marginTop: "0.6rem" }}>
+                    No artifacts yet.
+                </div>
+            ) : (
+                <div className="stack" style={{ marginTop: "0.8rem", gap: "0.6rem" }}>
+                    {container.artifacts.map(a => (
+                        <div key={a.id}>
+                            <div className="card" style={{
+                                padding: "0.7rem 0.9rem",
+                                background: a.status === 2 ? "var(--accent-soft)" : "var(--bg)",
+                            }}>
+                                <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem" }}>
+                                    <div className="bold" style={{ fontSize: "0.95rem" }}>
+                                        {a.title || "Untitled"}
+                                    </div>
+                                    <span className="pill" style={{
+                                        background: a.status === 2 ? "var(--accent)" : "rgba(0,0,0,0.06)",
+                                        color: a.status === 2 ? "white" : "var(--text-dim)",
+                                    }}>
+                                        {STATUS[a.status] || a.status}
+                                    </span>
+                                </div>
+                                <div className="muted" style={{ fontSize: "0.78rem", marginTop: 2 }}>
+                                    by {nameFor(a.author_user_id)}
+                                </div>
+                                {a.content && (
+                                    <div style={{
+                                        marginTop: "0.45rem", fontSize: "0.9rem",
+                                        whiteSpace: "pre-wrap",
+                                    }}>
+                                        {a.content.length > 600 ? a.content.slice(0, 600) + "…" : a.content}
+                                    </div>
+                                )}
+                            </div>
+                            {(a.delegated_to || []).length > 0 && (
+                                <div className="stack" style={{ marginTop: "0.6rem" }}>
+                                    {a.delegated_to.map(cc => (
+                                        <ContainerCard key={cc.id} container={cc}
+                                            nameFor={nameFor} depth={depth + 1} />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
