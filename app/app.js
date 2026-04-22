@@ -566,6 +566,131 @@ function LoginPage({ onLoggedIn }) {
 }
 
 // ── Dashboard ───────────────────────────────────────────
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+/* Render the user's memberships as trees rooted at each kibbutz.
+ * Action-communities (children) render indented under the root they
+ * belong to. Works for arbitrary depth — recurses via MembershipNode. */
+function MembershipTree({ memberships, stats }) {
+    // Group by parent_id → list of children, indexed by id for quick lookup.
+    const { byParent, byId, topLevels } = useMemo(() => {
+        const byParent = new Map();
+        const byId = new Map();
+        for (const m of memberships) {
+            byId.set(m.community_id, m);
+        }
+        for (const m of memberships) {
+            // A node's "effective parent" in our tree is its parent_id if
+            // we are also a member of that parent, otherwise it's a root
+            // in our tree (even if the real community has a parent we
+            // don't belong to).
+            const pid = m.community_parent_id && m.community_parent_id !== NIL_UUID
+                && byId.has(m.community_parent_id)
+                ? m.community_parent_id : null;
+            if (pid) {
+                if (!byParent.has(pid)) byParent.set(pid, []);
+                byParent.get(pid).push(m);
+            }
+        }
+        const topLevels = memberships.filter(m => {
+            const pid = m.community_parent_id;
+            return !pid || pid === NIL_UUID || !byId.has(pid);
+        });
+        // Stable order: newest first (matches API default).
+        topLevels.sort((a, b) => new Date(b.joined_at) - new Date(a.joined_at));
+        return { byParent, byId, topLevels };
+    }, [memberships]);
+
+    return (
+        <div className="stack">
+            {topLevels.map(m => (
+                <MembershipNode key={m.community_id}
+                    membership={m} depth={0}
+                    byParent={byParent} stats={stats} />
+            ))}
+        </div>
+    );
+}
+
+function MembershipNode({ membership: m, depth, byParent, stats }) {
+    const s = stats[m.community_id] || { pulses: [], proposals: [] };
+    const nextPulse = s.pulses.find(p => p.status === 0);
+    const active = s.proposals.filter(
+        p => p.proposal_status === "OutThere" || p.proposal_status === "OnTheAir",
+    );
+    const landed24h = s.proposals.filter(p => {
+        if (p.proposal_status !== "Accepted") return false;
+        try {
+            return (Date.now() - new Date(p.created_at).getTime()) < 86400000;
+        } catch { return false; }
+    }).length;
+    const pulsePct = nextPulse
+        ? Math.min(100, (nextPulse.support_count / Math.max(1, nextPulse.threshold)) * 100)
+        : 0;
+    const pulseReady = nextPulse && nextPulse.support_count >= nextPulse.threshold;
+    const children = (byParent.get(m.community_id) || [])
+        .slice()
+        .sort((a, b) => new Date(b.joined_at) - new Date(a.joined_at));
+    const isAction = depth > 0;
+
+    return (
+        <div style={{ marginLeft: depth * 20 }}>
+            <a href={`#/kibbutz/${m.community_id}`}
+                className="card"
+                style={{
+                    textDecoration: "none", color: "inherit", display: "block",
+                    borderLeft: isAction ? "3px solid var(--accent)" : undefined,
+                    background: isAction ? "var(--accent-soft)" : undefined,
+                }}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                        <div className="row" style={{ gap: "0.5rem" }}>
+                            <strong>{m.community_name}</strong>
+                            <span className="pill">{isAction ? "action" : "member"}</span>
+                            {pulseReady && (
+                                <span className="pill" style={{ background: "rgba(240,192,64,0.2)", color: "var(--warn)" }}>
+                                    ⚡ ready
+                                </span>
+                            )}
+                        </div>
+                        <div className="muted" style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                            {active.length} active proposal{active.length === 1 ? "" : "s"}
+                            {landed24h > 0 && ` · ${landed24h} accepted today`}
+                            {" · seniority "}{m.seniority}
+                        </div>
+                        {nextPulse && (
+                            <div style={{ marginTop: 8 }}>
+                                <div className="muted" style={{ fontSize: "0.75rem", marginBottom: 2 }}>
+                                    Next pulse: {nextPulse.support_count}/{nextPulse.threshold}
+                                </div>
+                                <div style={{
+                                    height: 4, background: "rgba(0,0,0,0.08)",
+                                    borderRadius: 2, overflow: "hidden",
+                                }}>
+                                    <div style={{
+                                        width: `${pulsePct}%`, height: "100%",
+                                        background: pulseReady ? "var(--accent)" : "var(--warn)",
+                                    }} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <span className="muted" style={{ marginLeft: "0.5rem" }}>→</span>
+                </div>
+            </a>
+            {children.length > 0 && (
+                <div className="stack" style={{ marginTop: "0.6rem" }}>
+                    {children.map(c => (
+                        <MembershipNode key={c.community_id}
+                            membership={c} depth={depth + 1}
+                            byParent={byParent} stats={stats} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function DashboardPage({ user }) {
     const [memberships, setMemberships] = useState([]);
     const [pendingApps, setPendingApps] = useState([]);
@@ -695,66 +820,7 @@ function DashboardPage({ user }) {
                         Create one above, or <a href="#/browse">apply to join an existing one</a>.
                     </Empty>
                 ) : (
-                    <div className="stack">
-                        {memberships.map(m => {
-                            const s = stats[m.community_id] || { pulses: [], proposals: [] };
-                            const nextPulse = s.pulses.find(p => p.status === 0);
-                            const active = s.proposals.filter(
-                                p => p.proposal_status === "OutThere" || p.proposal_status === "OnTheAir",
-                            );
-                            const landed24h = s.proposals.filter(p => {
-                                if (p.proposal_status !== "Accepted") return false;
-                                try {
-                                    return (Date.now() - new Date(p.created_at).getTime()) < 86400000;
-                                } catch { return false; }
-                            }).length;
-                            const pulsePct = nextPulse
-                                ? Math.min(100, (nextPulse.support_count / Math.max(1, nextPulse.threshold)) * 100)
-                                : 0;
-                            const pulseReady = nextPulse && nextPulse.support_count >= nextPulse.threshold;
-                            return (
-                                <a key={m.community_id} href={`#/kibbutz/${m.community_id}`}
-                                    className="card"
-                                    style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-                                    <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div className="row" style={{ gap: "0.5rem" }}>
-                                                <strong>{m.community_name}</strong>
-                                                <span className="pill">member</span>
-                                                {pulseReady && (
-                                                    <span className="pill" style={{ background: "rgba(240,192,64,0.2)", color: "var(--warn)" }}>
-                                                        ⚡ ready
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="muted" style={{ fontSize: "0.82rem", marginTop: 4 }}>
-                                                {active.length} active proposal{active.length === 1 ? "" : "s"}
-                                                {landed24h > 0 && ` · ${landed24h} accepted today`}
-                                                {" · seniority "}{m.seniority}
-                                            </div>
-                                            {nextPulse && (
-                                                <div style={{ marginTop: 8 }}>
-                                                    <div className="muted" style={{ fontSize: "0.75rem", marginBottom: 2 }}>
-                                                        Next pulse: {nextPulse.support_count}/{nextPulse.threshold}
-                                                    </div>
-                                                    <div style={{
-                                                        height: 4, background: "rgba(0,0,0,0.08)",
-                                                        borderRadius: 2, overflow: "hidden",
-                                                    }}>
-                                                        <div style={{
-                                                            width: `${pulsePct}%`, height: "100%",
-                                                            background: pulseReady ? "var(--accent)" : "var(--warn)",
-                                                        }} />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <span className="muted" style={{ marginLeft: "0.5rem" }}>→</span>
-                                    </div>
-                                </a>
-                            );
-                        })}
-                    </div>
+                    <MembershipTree memberships={memberships} stats={stats} />
                 )}
             </section>
 

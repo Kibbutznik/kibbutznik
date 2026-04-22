@@ -768,6 +768,67 @@ function CommentThread({ comments, openDetail, agentsByUserId, highlightCommentB
     );
 }
 
+// ── Community membership tree ──────────────────────────
+// Renders a user's memberships nested under their root kibbutz, so
+// action-communities (children) read as an actions tree rather than a
+// flat list of peers.
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+function CommunityMembershipTree({ communities, openDetail }) {
+    const { byParent, topLevels } = (() => {
+        const byId = new Map();
+        for (const c of communities) byId.set(c.community_id, c);
+        const byParent = new Map();
+        for (const c of communities) {
+            const pid = c.community_parent_id && c.community_parent_id !== NIL_UUID
+                && byId.has(c.community_parent_id) ? c.community_parent_id : null;
+            if (pid) {
+                if (!byParent.has(pid)) byParent.set(pid, []);
+                byParent.get(pid).push(c);
+            }
+        }
+        const topLevels = communities.filter(c => {
+            const pid = c.community_parent_id;
+            return !pid || pid === NIL_UUID || !byId.has(pid);
+        });
+        return { byParent, topLevels };
+    })();
+    return (
+        <div className="detail-list">
+            {topLevels.map(c => (
+                <CommunityMembershipNode key={c.community_id}
+                    community={c} depth={0}
+                    byParent={byParent} openDetail={openDetail} />
+            ))}
+        </div>
+    );
+}
+
+function CommunityMembershipNode({ community: c, depth, byParent, openDetail }) {
+    const children = byParent.get(c.community_id) || [];
+    return (
+        <>
+            <div className="detail-list-item clickable"
+                style={{ marginLeft: depth * 16 }}
+                onClick={() => openDetail("community", c.community_id, c.community_name)}>
+                <span className={`mini-badge ${c.status === 1 ? "status-accepted" : ""}`}>
+                    {c.status === 1 ? "Active" : c.status === 0 ? "Pending" : "Inactive"}
+                </span>
+                <span className="detail-list-text">
+                    {depth > 0 && <span style={{ opacity: 0.5, marginRight: 4 }}>↳</span>}
+                    {c.community_name}
+                </span>
+                <span className="detail-list-meta">Seniority: {c.seniority || 0}</span>
+            </div>
+            {children.map(cc => (
+                <CommunityMembershipNode key={cc.community_id}
+                    community={cc} depth={depth + 1}
+                    byParent={byParent} openDetail={openDetail} />
+            ))}
+        </>
+    );
+}
+
 // ── MemberDetail ───────────────────────────────────────
 function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, events }) {
     const [user, setUser] = useState(null);
@@ -881,17 +942,7 @@ function MemberDetail({ id, openDetail, agents, agentsByUserId, communityId, eve
             {communities.length > 0 && (
                 <div className="detail-section">
                     <div className="detail-section-title">Communities ({communities.length})</div>
-                    <div className="detail-list">
-                        {communities.map(c => (
-                            <div key={c.community_id} className="detail-list-item clickable" onClick={() => openDetail("community", c.community_id, c.community_name)}>
-                                <span className={`mini-badge ${c.status === 1 ? "status-accepted" : ""}`}>
-                                    {c.status === 1 ? "Active" : c.status === 0 ? "Pending" : "Inactive"}
-                                </span>
-                                <span className="detail-list-text">{c.community_name}</span>
-                                <span className="detail-list-meta">Seniority: {c.seniority || 0}</span>
-                            </div>
-                        ))}
-                    </div>
+                    <CommunityMembershipTree communities={communities} openDetail={openDetail} />
                 </div>
             )}
             {membershipProposals.length > 0 && (

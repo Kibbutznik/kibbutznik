@@ -37,6 +37,8 @@ class MembershipOut(BaseModel):
     joined_at: datetime
     seniority: int
     status: int
+    community_parent_id: uuid.UUID | None = None
+    community_root_id: uuid.UUID | None = None
 
 
 class PendingApplicationOut(BaseModel):
@@ -72,24 +74,26 @@ async def my_memberships(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Active memberships for the logged-in user across all communities."""
-    rows = (
-        await db.execute(
-            select(Member, Community.name)
-            .join(Community, Community.id == Member.community_id)
-            .where(Member.user_id == user.id, Member.status == MemberStatus.ACTIVE)
-            .order_by(Member.joined_at.desc())
-        )
-    ).all()
+    """Active memberships for the logged-in user across all communities.
+
+    Each row is enriched with community_parent_id + community_root_id so
+    the dashboard can render action-communities as a tree under their
+    root kibbutz.
+    """
+    from kbz.services.member_service import MemberService
+    rows = await MemberService(db).list_by_user(user.id)
+    rows.sort(key=lambda r: r.joined_at, reverse=True)
     return [
         MembershipOut(
-            community_id=m.community_id,
-            community_name=name,
-            joined_at=m.joined_at,
-            seniority=m.seniority,
-            status=int(m.status),
+            community_id=r.community_id,
+            community_name=r.community_name,
+            joined_at=r.joined_at,
+            seniority=r.seniority,
+            status=int(r.status),
+            community_parent_id=r.community_parent_id,
+            community_root_id=r.community_root_id,
         )
-        for m, name in rows
+        for r in rows
     ]
 
 
