@@ -6,7 +6,7 @@ artifact content, etc.). `pitch` is a separate free-text field for the
 stay valid; new proposals are expected to include one.
 
 Revision ID: b5c6d7e8f9a0
-Revises: a4b5c6d7e8f9
+Revises: b3c4d5e6f7a8
 Create Date: 2026-04-22 12:00:00.000000
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'b5c6d7e8f9a0'
-down_revision: Union[str, None] = 'a4b5c6d7e8f9'
+down_revision: Union[str, None] = 'b3c4d5e6f7a8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
