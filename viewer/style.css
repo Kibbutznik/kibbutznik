@@ -269,16 +269,11 @@ body {
     padding: 20px 24px;
 }
 
-/* Dashboard Grid */
+/* Dashboard Grid — overview on top, proposal board below, both full width. */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: 1fr;
     gap: 16px;
-}
-
-.dashboard-grid .overview {
-    grid-column: 1 / -1;
 }
 
 /* Cards */
@@ -1786,9 +1781,6 @@ body {
 
 /* ── Responsive ──────────────────────────── */
 @media (max-width: 1024px) {
-    .dashboard-grid {
-        grid-template-columns: 1fr;
-    }
     .proposal-columns {
         grid-template-columns: 1fr;
     }

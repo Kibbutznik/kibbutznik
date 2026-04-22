@@ -2972,7 +2972,6 @@ function DashboardTab({ status, events, proposals, pulses, restarting, openDetai
         <div>
             <div className="dashboard-grid">
                 <CommunityOverview status={status} pulses={pulses} openDetail={openDetail} communityId={communityId} overrideCommunity={activeCommunity} />
-                <ActivityFeed events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />
                 <ProposalBoard proposals={proposals} openDetail={openDetail} pulses={pulses} status={status} activeCommunity={activeCommunity} agentsByUserId={agentsByUserId} />
             </div>
         </div>

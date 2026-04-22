@@ -1097,6 +1097,50 @@ function formatRelativeTime(iso) {
     return new Date(iso).toLocaleDateString();
 }
 
+/* Walk parent_id chain from an action community back to its root.
+ * Renders a clickable breadcrumb: Root › Action › Sub-action.
+ * Returns null for top-level kibbutzim (parent_id == NIL). */
+const _actionCrumbCache = {};
+function ActionBreadcrumb({ community }) {
+    const [chain, setChain] = useState([]);
+    useEffect(() => {
+        if (!community || !community.parent_id || community.parent_id === NIL_UUID) {
+            setChain([]);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            const path = [];
+            let currentId = community.parent_id;
+            while (currentId && currentId !== NIL_UUID) {
+                let c = _actionCrumbCache[currentId];
+                if (!c) {
+                    try { c = await api.get(`/communities/${currentId}`); _actionCrumbCache[currentId] = c; }
+                    catch { break; }
+                }
+                path.unshift({ id: c.id, name: c.name });
+                currentId = c.parent_id;
+            }
+            if (!cancelled) setChain(path);
+        })();
+        return () => { cancelled = true; };
+    }, [community?.id, community?.parent_id]);
+
+    if (chain.length === 0) return null;
+    return (
+        <div className="action-breadcrumb">
+            {chain.map((c, i) => (
+                <React.Fragment key={c.id}>
+                    {i > 0 && <span className="action-breadcrumb-sep">›</span>}
+                    <a href={`#/kibbutz/${c.id}`} className="action-breadcrumb-item">{c.name}</a>
+                </React.Fragment>
+            ))}
+            <span className="action-breadcrumb-sep">›</span>
+            <span className="action-breadcrumb-item current">{community.name}</span>
+        </div>
+    );
+}
+
 function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const [community, setCommunity] = useState(null);
     const [members, setMembers] = useState([]);
@@ -1214,6 +1258,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
             <PulseBar communityId={communityId} user={user}
                       imMember={imMember} pulses={pulses} members={members}
                       onChanged={reload} />
+            <ActionBreadcrumb community={community} />
             <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
                 <div>
                     <h2 style={{ margin: 0 }}>{community.name}</h2>
