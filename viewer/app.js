@@ -83,6 +83,53 @@ function truncate(s, n = 80) {
     return s.length > n ? s.slice(0, n) + "..." : s;
 }
 
+// Emoji + human label per proposal type (mirrors the landing mock and app's
+// ProposalCard so an entity "feels" the same across all three surfaces).
+const PROPOSAL_TYPE_META = {
+    Membership:          { emoji: "👋", label: "Membership" },
+    ThrowOut:            { emoji: "🚪", label: "Remove member" },
+    AddStatement:        { emoji: "📜", label: "Add statement" },
+    RemoveStatement:     { emoji: "✂️", label: "Remove statement" },
+    ReplaceStatement:    { emoji: "✏️", label: "Replace statement" },
+    ChangeVariable:      { emoji: "⚙️", label: "Change setting" },
+    AddAction:           { emoji: "🎯", label: "New action" },
+    EndAction:           { emoji: "🛑", label: "End action" },
+    JoinAction:          { emoji: "🤝", label: "Join action" },
+    Funding:             { emoji: "💰", label: "Funding" },
+    Payment:             { emoji: "💸", label: "Payment" },
+    payBack:             { emoji: "↩️", label: "Pay back" },
+    Dividend:            { emoji: "🎁", label: "Dividend" },
+    SetMembershipHandler:{ emoji: "🛂", label: "Membership handler" },
+    CreateArtifact:      { emoji: "📦", label: "Create artifact" },
+    EditArtifact:        { emoji: "📝", label: "Edit artifact" },
+    RemoveArtifact:      { emoji: "🗑️", label: "Remove artifact" },
+    DelegateArtifact:    { emoji: "🔀", label: "Delegate artifact" },
+    CommitArtifact:      { emoji: "🔒", label: "Commit artifact" },
+};
+
+// Plain-English status labels. Title attribute on the pill keeps the
+// jargon term discoverable (OutThere/OnTheAir) for researcher mode.
+const PROPOSAL_STATUS_LABEL = {
+    Draft: "Draft",
+    OutThere: "Open for support",
+    OnTheAir: "Active vote",
+    Accepted: "Accepted",
+    Rejected: "Rejected",
+    Canceled: "Withdrawn",
+};
+
+function formatRelativeTime(iso) {
+    if (!iso) return "";
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return "";
+    const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (secs < 60)    return "just now";
+    if (secs < 3600)  return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    if (secs < 604800) return `${Math.floor(secs / 86400)}d ago`;
+    return new Date(iso).toLocaleDateString();
+}
+
 /** For artifact proposals, val_text (title) is the meaningful text when proposal_text is empty. */
 function proposalDisplayText(p) {
     const ARTIFACT_TYPES = ["CreateArtifact","EditArtifact","DelegateArtifact","CommitArtifact","RemoveArtifact"];
@@ -2726,31 +2773,74 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
 // component identity across re-renders.  Defining it inside ProposalBoard would
 // create a new function reference on every render → React unmounts/remounts
 // every card every poll cycle → useProposalCardTitle resets → visible "jump".
-function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, openDetail }) {
+function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, openDetail, agentsByUserId }) {
     const cardTitle = useProposalCardTitle(p);
-    const statusClass = p.proposal_status === "Accepted" ? "accepted" : p.proposal_status === "Rejected" ? "rejected" : "";
-    const hasEnoughSupport = memberCount > 0 && (
-        p.proposal_status === "OutThere"
-            ? p.support_count >= proposalThreshold
-            : p.proposal_status === "OnTheAir"
-                ? p.support_count >= getTypeThreshold(p.proposal_type)
-                : false
-    );
+
+    // Prefer enriched fields from the API; fall back to the parent-computed
+    // thresholds when the source isn't enriched yet (back-compat safety).
+    const isDecisionPhase = ["OnTheAir","Accepted","Rejected"].includes(p.proposal_status);
+    const typeThresholdFallback = memberCount > 0 ? getTypeThreshold(p.proposal_type) : null;
+    const threshold = isDecisionPhase
+        ? (p.decide_threshold ?? typeThresholdFallback ?? p.promote_threshold ?? proposalThreshold)
+        : (p.promote_threshold ?? proposalThreshold);
+
+    const supportCount = p.support_count ?? 0;
+    const hasThreshold = threshold != null && threshold > 0;
+    const hasEnoughSupport = hasThreshold && supportCount >= threshold &&
+        (p.proposal_status === "OutThere" || p.proposal_status === "OnTheAir");
+
+    const denom = hasThreshold ? Math.max(supportCount, threshold) : Math.max(supportCount, 1);
+    const fillPct = Math.min(100, Math.round((supportCount / denom) * 100));
+    const tickPct = hasThreshold ? Math.min(100, Math.round((threshold / denom) * 100)) : null;
+
+    const typeMeta = PROPOSAL_TYPE_META[p.proposal_type] || { emoji: "📋", label: p.proposal_type };
+    const statusLabel = PROPOSAL_STATUS_LABEL[p.proposal_status] || p.proposal_status;
+    const statusClassName = "pc-status " + (p.proposal_status || "").toLowerCase();
+
+    // Card-level status tint lines (keeps legacy accepted/rejected/ready colors).
+    const cardStatusClass = p.proposal_status === "Accepted" ? "accepted"
+        : p.proposal_status === "Rejected" ? "rejected" : "";
     const readyClass = hasEnoughSupport ? "ready-to-pass" : "";
+
+    // Resolve author name: prefer API enrichment, else the viewer's agent map,
+    // else a short UUID — never show the raw UUID if we can help it.
+    const agent = p.user_id && agentsByUserId ? agentsByUserId[p.user_id] : null;
+    const authorName = p.display_name || p.user_name
+        || agent?.display_name || agent?.user_name
+        || (p.user_id ? p.user_id.slice(0, 8) : "Member");
+    const initial = (authorName || "?").trim().charAt(0).toUpperCase();
+
     return (
-        <div className={`proposal-card ${statusClass} ${readyClass} clickable`}
+        <div className={`proposal-card ${cardStatusClass} ${readyClass} clickable`}
              onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
-            <div className="proposal-type">{p.proposal_type}</div>
-            <div className="proposal-text">{cardTitle}</div>
-            <div className="proposal-meta">
-                <span>Support: {p.support_count}{memberCount > 0 && (
-                    p.proposal_status === "OutThere"
-                        ? `/${proposalThreshold}`
-                        : p.proposal_status === "OnTheAir"
-                            ? `/${getTypeThreshold(p.proposal_type)}`
-                            : ""
-                )}</span>
-                <span>Age: {p.age}</span>
+            <div className="pc-head">
+                <span className="pc-type"><span>{typeMeta.emoji}</span> {typeMeta.label}</span>
+                <span className={statusClassName} title={p.proposal_status}>{statusLabel}</span>
+            </div>
+            <div className="pc-author">
+                <span className="pc-avatar">{initial}</span>
+                <span className="pc-author-name">{authorName}</span>
+                <span className="pc-author-meta">
+                    · {formatRelativeTime(p.created_at) || `age ${p.age}`}
+                </span>
+            </div>
+            <div className="pc-title">{cardTitle}</div>
+            <div className="pc-support">
+                <div className="pc-support-labels">
+                    <span><strong>{supportCount}</strong> support{supportCount === 1 ? "" : "ers"}</span>
+                    {hasThreshold && (
+                        <span>{threshold} to {isDecisionPhase ? "pass" : "open vote"}</span>
+                    )}
+                </div>
+                <div className="pc-support-track">
+                    <div className="pc-support-fill" style={{ width: `${fillPct}%` }}></div>
+                    {tickPct != null && (
+                        <div className="pc-threshold-tick" style={{ left: `${tickPct}%` }}></div>
+                    )}
+                </div>
+            </div>
+            <div className="pc-footer">
+                <span>age {p.age}{p.pulse_id ? " · in pulse" : ""}</span>
                 {hasEnoughSupport && <span className="ready-badge">Ready</span>}
             </div>
         </div>
@@ -2758,7 +2848,7 @@ function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, ope
 }
 
 // ── Proposal Board ──────────────────────────────────────
-function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity }) {
+function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity, agentsByUserId }) {
     const onTheAir = proposals?.filter((p) => p.proposal_status === "OnTheAir") || [];
     const outThere = proposals?.filter((p) => p.proposal_status === "OutThere") || [];
 
@@ -2812,12 +2902,12 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
             <div className="proposal-columns">
                 <div>
                     <div className="proposal-column-title">On The Air ({onTheAir.length})</div>
-                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
+                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                     {onTheAir.length === 0 && <div className="empty-state">None</div>}
                 </div>
                 <div>
                     <div className="proposal-column-title">Out There ({outThere.length})</div>
-                    {outThere.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
+                    {outThere.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                     {outThere.length === 0 && <div className="empty-state">None</div>}
                 </div>
                 <div>
@@ -2825,13 +2915,13 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity 
                     {accepted.length > 0 && (
                         <div style={{ marginBottom: 8 }}>
                             <div className="results-sub accepted">Accepted ({accepted.length})</div>
-                            {accepted.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
+                            {accepted.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                         </div>
                     )}
                     {rejected.length > 0 && (
                         <div>
                             <div className="results-sub rejected">Rejected ({rejected.length})</div>
-                            {rejected.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} />)}
+                            {rejected.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                         </div>
                     )}
                     {recent.length === 0 && <div className="empty-state">No pulse results yet</div>}
@@ -2858,7 +2948,7 @@ function DashboardTab({ status, events, proposals, pulses, restarting, openDetai
             <div className="dashboard-grid">
                 <CommunityOverview status={status} pulses={pulses} openDetail={openDetail} communityId={communityId} overrideCommunity={activeCommunity} />
                 <ActivityFeed events={events} openDetail={openDetail} agentsByUserId={agentsByUserId} activeCommunityId={activeCommunityId} rootCommunityId={rootCommunityId} />
-                <ProposalBoard proposals={proposals} openDetail={openDetail} pulses={pulses} status={status} activeCommunity={activeCommunity} />
+                <ProposalBoard proposals={proposals} openDetail={openDetail} pulses={pulses} status={status} activeCommunity={activeCommunity} agentsByUserId={agentsByUserId} />
             </div>
         </div>
     );
