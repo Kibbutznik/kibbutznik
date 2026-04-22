@@ -986,6 +986,51 @@ const PROPOSAL_STATUS_COLORS = {
     Canceled: "var(--text-dim)",
 };
 
+// Plain-English stage labels (jargon term still exposed on hover).
+const PROPOSAL_STATUS_LABEL = {
+    Draft: "Draft",
+    OutThere: "Open for support",
+    OnTheAir: "Active vote",
+    Accepted: "Accepted",
+    Rejected: "Rejected",
+    Canceled: "Withdrawn",
+};
+
+// Emoji + human label per proposal type (mirrors the landing mock).
+const PROPOSAL_TYPE_META = {
+    Membership:          { emoji: "👋", label: "Membership" },
+    ThrowOut:            { emoji: "🚪", label: "Remove member" },
+    AddStatement:        { emoji: "📜", label: "Add statement" },
+    RemoveStatement:     { emoji: "✂️", label: "Remove statement" },
+    ReplaceStatement:    { emoji: "✏️", label: "Replace statement" },
+    ChangeVariable:      { emoji: "⚙️", label: "Change setting" },
+    AddAction:           { emoji: "🎯", label: "New action" },
+    EndAction:           { emoji: "🛑", label: "End action" },
+    JoinAction:          { emoji: "🤝", label: "Join action" },
+    Funding:             { emoji: "💰", label: "Funding" },
+    Payment:             { emoji: "💸", label: "Payment" },
+    payBack:             { emoji: "↩️", label: "Pay back" },
+    Dividend:            { emoji: "🎁", label: "Dividend" },
+    SetMembershipHandler:{ emoji: "🛂", label: "Membership handler" },
+    CreateArtifact:      { emoji: "📦", label: "Create artifact" },
+    EditArtifact:        { emoji: "📝", label: "Edit artifact" },
+    RemoveArtifact:      { emoji: "🗑️", label: "Remove artifact" },
+    DelegateArtifact:    { emoji: "🔀", label: "Delegate artifact" },
+    CommitArtifact:      { emoji: "🔒", label: "Commit artifact" },
+};
+
+function formatRelativeTime(iso) {
+    if (!iso) return "";
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return "";
+    const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (secs < 60)    return "just now";
+    if (secs < 3600)  return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    if (secs < 604800) return `${Math.floor(secs / 86400)}d ago`;
+    return new Date(iso).toLocaleDateString();
+}
+
 function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const [community, setCommunity] = useState(null);
     const [members, setMembers] = useState([]);
@@ -1218,15 +1263,35 @@ function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
     const [detailOpen, setDetailOpen] = useState(false);
     const cardRef = useRef(null);
 
-    // Scroll the card into view when it's freshly created by this
-    // user — makes "I just clicked File proposal" feel tangible.
     useEffect(() => {
         if (highlightNew && cardRef.current) {
             cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
         }
     }, [highlightNew]);
-    const color = PROPOSAL_STATUS_COLORS[proposal.proposal_status] || "var(--text-dim)";
+
     const canAct = imMember && (proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir");
+    const typeMeta = PROPOSAL_TYPE_META[proposal.proposal_type] || { emoji: "📋", label: proposal.proposal_type };
+    const statusLabel = PROPOSAL_STATUS_LABEL[proposal.proposal_status] || proposal.proposal_status;
+    const statusClass = "pc-status " + (proposal.proposal_status || "").toLowerCase();
+
+    // Choose which threshold line to draw: OutThere = promote_threshold
+    // (move to active vote); OnTheAir / decided states = decide_threshold
+    // (execution line). Fall back gracefully when enrichment is missing.
+    const isDecisionPhase = ["OnTheAir","Accepted","Rejected"].includes(proposal.proposal_status);
+    const threshold = isDecisionPhase
+        ? (proposal.decide_threshold ?? proposal.promote_threshold ?? null)
+        : (proposal.promote_threshold ?? null);
+    const supportCount = proposal.support_count ?? 0;
+    const hasThreshold = threshold != null && threshold > 0;
+    const denom = hasThreshold ? Math.max(supportCount, threshold) : Math.max(supportCount, 1);
+    const fillPct = Math.min(100, Math.round((supportCount / denom) * 100));
+    const tickPct = hasThreshold ? Math.min(100, Math.round((threshold / denom) * 100)) : null;
+
+    const authorName = proposal.display_name || proposal.user_name || "Member";
+    const initial = (authorName || "?").trim().charAt(0).toUpperCase();
+    const body = proposal.proposal_text && proposal.val_text && proposal.proposal_text !== proposal.val_text
+        ? proposal.proposal_text : null;
+    const title = proposal.val_text || proposal.proposal_text || "(untitled)";
 
     const support = async (e) => {
         e?.stopPropagation?.();
@@ -1237,29 +1302,53 @@ function ProposalCard({ proposal, imMember, user, onChanged, highlightNew }) {
         } catch (e) { toast(e.message, "error"); }
         finally { setSupporting(false); }
     };
+
     return (
         <>
-            <div className={"card" + (highlightNew ? " proposal-new-pulse" : "")}
+            <div className={"card proposal-card" + (highlightNew ? " proposal-new-pulse" : "")}
                  ref={cardRef}
                  onClick={() => setDetailOpen(true)}
-                 style={{ cursor: "pointer" }}
                  title="Click for details, supporters, and comments">
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div style={{ flex: 1 }}>
-                        <div className="row" style={{ marginBottom: 4 }}>
-                            <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
-                            <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }}>
-                                {proposal.proposal_status}
-                            </span>
-                            <span className="muted" style={{ fontSize: "0.75rem" }}>age {proposal.age} · support {proposal.support_count}</span>
-                        </div>
-                        <div>{proposal.val_text || proposal.proposal_text || <span className="muted">(untitled)</span>}</div>
-                        {proposal.val_text && proposal.proposal_text && proposal.val_text !== proposal.proposal_text && (
-                            <div className="muted" style={{ marginTop: 4, fontSize: "0.88rem" }}>{proposal.proposal_text}</div>
+                <div className="pc-head">
+                    <span className="pc-type">
+                        <span>{typeMeta.emoji}</span> {typeMeta.label}
+                    </span>
+                    <span className={statusClass} title={proposal.proposal_status}>
+                        {statusLabel}
+                    </span>
+                </div>
+
+                <div className="pc-author">
+                    <span className="pc-avatar">{initial}</span>
+                    <span className="pc-author-name">{authorName}</span>
+                    <span className="pc-author-meta">
+                        &middot; {formatRelativeTime(proposal.created_at) || `age ${proposal.age}`}
+                    </span>
+                </div>
+
+                <div className="pc-title">{title}</div>
+                {body && <div className="pc-body">{body}</div>}
+
+                <div className="pc-support">
+                    <div className="pc-support-labels">
+                        <span><strong>{supportCount}</strong> supporter{supportCount === 1 ? "" : "s"}</span>
+                        {hasThreshold && (
+                            <span>threshold: {threshold} {isDecisionPhase ? "(to pass)" : "(to open vote)"}</span>
                         )}
                     </div>
+                    <div className="pc-support-track">
+                        <div className="pc-support-fill" style={{ width: `${fillPct}%` }}></div>
+                        {tickPct != null && (
+                            <div className="pc-threshold-tick" style={{ left: `${tickPct}%` }}></div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="pc-footer">
+                    <span className="pc-meta">age {proposal.age}{proposal.pulse_id ? " · voting now" : ""}</span>
                     {canAct && (
-                        <button className="btn" disabled={supporting} onClick={support}>
+                        <button className="btn primary pc-support-btn"
+                                disabled={supporting} onClick={support}>
                             {supporting ? "…" : "👍 Support"}
                         </button>
                     )}
