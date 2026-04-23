@@ -232,7 +232,13 @@ async def test_list_proposals_by_status(client):
 
 @pytest.mark.asyncio
 async def test_membership_proposal_by_non_member(client):
-    """Membership proposals can be created by non-members (they propose themselves)."""
+    """Membership proposals can be created by non-members (they propose themselves).
+
+    Also exercises the app's apply-to-join flow end to end: pitch persists,
+    the proposal appears in the community's proposal list, and a second
+    duplicate apply is rejected (409) so the UI can show a meaningful
+    error instead of silently creating a ghost row.
+    """
     user1 = await create_test_user(client, "founder")
     user2 = await create_test_user(client, "applicant")
     community = await create_test_community(client, user1["id"])
@@ -240,7 +246,36 @@ async def test_membership_proposal_by_non_member(client):
     resp = await client.post(f"/communities/{community['id']}/proposals", json={
         "user_id": user2["id"],
         "proposal_type": "Membership",
-        "proposal_text": "I want to join",
+        "proposal_text": "applicant applied to join",
+        "pitch": "I organise weekly co-op meetings and can onboard newcomers.",
         "val_uuid": user2["id"],
     })
-    assert resp.status_code == 201
+    assert resp.status_code == 201, resp.text
+    created = resp.json()
+    assert created["pitch"] == "I organise weekly co-op meetings and can onboard newcomers."
+    assert str(created["user_id"]) == user2["id"]
+    assert str(created["val_uuid"]) == user2["id"]
+
+    # The proposal must show up in the community's proposal list so the
+    # viewer + app can render it. This was the exact symptom the user
+    # reported: "I saw no new membership proposal in the simulated community."
+    listing = (await client.get(f"/communities/{community['id']}/proposals")).json()
+    ids = [p["id"] for p in listing]
+    assert created["id"] in ids, f"membership proposal {created['id']} missing from list"
+
+    # The applicant must be able to submit their own membership proposal.
+    # Otherwise it sits as Draft forever and is invisible to UIs that
+    # filter to OutThere/OnTheAir (which is most of them).
+    sub = await client.patch(f"/proposals/{created['id']}/submit")
+    assert sub.status_code == 200, sub.text
+    assert sub.json()["proposal_status"] == "OutThere"
+
+    # Duplicate apply must 409, not silently 201 a second row.
+    dup = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user2["id"],
+        "proposal_type": "Membership",
+        "proposal_text": "applicant applied to join",
+        "pitch": "retry",
+        "val_uuid": user2["id"],
+    })
+    assert dup.status_code == 409, dup.text

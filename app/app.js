@@ -1233,13 +1233,18 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
         }
         setApplyBusy(true);
         try {
-            await api.post(`/communities/${communityId}/proposals`, {
+            const created = await api.post(`/communities/${communityId}/proposals`, {
                 user_id: user.user_id,
                 proposal_type: "Membership",
                 proposal_text: `${user.user_name} applied to join`,
                 pitch,
                 val_uuid: user.user_id,
             });
+            // Auto-submit so the proposal is visible on the community page
+            // (the listings filter out Drafts — a hidden application is as
+            // useless as no application at all).
+            try { await api.patch(`/proposals/${created.id}/submit`); }
+            catch (_) { /* proposal still exists as Draft — not fatal */ }
             toast("Application filed. Check your dashboard for progress.", "success");
             setApplyOpen(false);
             setApplyPitch("");
