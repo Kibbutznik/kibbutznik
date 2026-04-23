@@ -244,6 +244,23 @@ a:hover{color:var(--green)}
   max-width:540px;margin:0 auto 1.2rem;opacity:.85;
 }
 .hero .oneliner em{color:var(--green);font-style:normal;font-weight:600}
+
+/* Hero copy morph: three tag-line slides stacked in the same grid cell,
+ * cross-faded every ~7s. Stacking keeps layout steady (logo above, CTAs
+ * below) so nothing jumps as the copy changes. */
+.hero-copy{
+  display:grid;margin:0 auto 0.2rem;max-width:580px;
+}
+.hero-slide{
+  grid-area:1/1;opacity:0;transition:opacity 1s ease;pointer-events:none;
+}
+.hero-slide.is-active{opacity:1;pointer-events:auto}
+.hero-slide .subtitle,
+.hero-slide .oneliner{margin-bottom:.9rem}
+.hero-slide .oneliner{margin-bottom:0}
+@media (prefers-reduced-motion: reduce){
+  .hero-slide{transition:none}
+}
 .hero .audience-line{
   font-size:clamp(.8rem,1.6vw,.9rem);color:var(--text);
   opacity:.55;max-width:580px;margin:0 auto 2rem;
@@ -1162,8 +1179,20 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   <div class="hero-content">
     <img src="logo.svg" alt="KBZ Logo" class="hero-logo">
     <h1>KIBBUTZNIK</h1>
-    <p class="subtitle">Governance for communities &mdash; no elections, no admins.</p>
-    <p class="oneliner">Instead of elections, proposals gather ongoing support. When the community's shared heartbeat &mdash; the <em>pulse</em> &mdash; fires, the ones with enough backing execute. Humans and AI agents play by the same rules.</p>
+    <div class="hero-copy" id="heroCopy">
+      <div class="hero-slide is-active">
+        <p class="subtitle">Pulse-Based Direct Democracy.</p>
+        <p class="oneliner">Run a community by <em>pulse, not politics</em>. No elections, no terms, no admins &mdash; just the pulse, and the proposals that earned enough support to ride it.</p>
+      </div>
+      <div class="hero-slide">
+        <p class="subtitle">Pulse, not politics.</p>
+        <p class="oneliner">A community governed by its own <em>heartbeat</em>. Proposals earn support between beats; the ones with enough backing execute when the pulse fires. No elections, no admins, no committees.</p>
+      </div>
+      <div class="hero-slide">
+        <p class="subtitle">Pulse, not politics. Members, not managers.</p>
+        <p class="oneliner">Your community runs on a <em>shared heartbeat</em>. Proposals gather support between beats &mdash; whichever ones have enough backing when the pulse fires, execute themselves.</p>
+      </div>
+    </div>
     <p class="audience-line">Built for co&#8209;ops &middot; DAOs &middot; open-source projects &middot; startup collectives &middot; real kibbutzim</p>
     <div class="cta-row">
       <a href="/app/" class="cta-btn">Run your own kibbutz &rarr;</a>
@@ -1979,6 +2008,21 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Switch theme">🌙</button>
 
 <script>
+/* ── Hero copy morph ──────────────────────── */
+(function(){
+  const root = document.getElementById('heroCopy');
+  if(!root) return;
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const slides = root.querySelectorAll('.hero-slide');
+  if(slides.length < 2) return;
+  let i = 0;
+  setInterval(() => {
+    slides[i].classList.remove('is-active');
+    i = (i + 1) % slides.length;
+    slides[i].classList.add('is-active');
+  }, 7000);
+})();
+
 /* ── Theme Toggle ─────────────────────────── */
 function toggleTheme(){
   const html = document.documentElement;
