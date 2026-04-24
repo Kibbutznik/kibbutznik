@@ -71,6 +71,21 @@ async def test_list_communities_pagination(client):
     assert len(r.json()) == 2
 
 
+@pytest.mark.asyncio
+async def test_list_communities_include_dead_accepts_param(client):
+    """include_dead is the documented operator/debug escape hatch — when
+    true, the alive-filter is skipped. For freshly-created communities
+    in tests, both modes return the same rows, but the endpoint must
+    accept the param and still succeed."""
+    user = await create_test_user(client)
+    await create_test_community(client, user["id"], name="IncDeadCheck")
+    r_default = await client.get("/communities", params={"q": "IncDeadCheck"})
+    r_all = await client.get("/communities", params={"q": "IncDeadCheck", "include_dead": "true"})
+    assert r_default.status_code == 200
+    assert r_all.status_code == 200
+    assert any(c["name"] == "IncDeadCheck" for c in r_all.json())
+
+
 # ── /users/me/memberships ─────────────────────────────────────────
 
 @pytest.mark.asyncio
