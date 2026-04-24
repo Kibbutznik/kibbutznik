@@ -234,6 +234,37 @@ async def test_withdraw_rejects_non_author(client):
     assert r.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_withdraw_blocks_session_spoof(client):
+    """A logged-in stranger must not be able to pass `{user_id: author}`
+    to slip past the proposal.user_id == data.user_id ownership check.
+    That's exactly what enforce_session_matches_body is for."""
+    author_id = await _login(client, "withdraw-victim@example.com")
+    community = await create_test_community(client, author_id)
+    proposal_resp = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "Stays up.",
+        },
+    )
+    pid = proposal_resp.json()["id"]
+
+    client.cookies.clear()
+    await _login(client, "withdraw-spoofer@example.com")
+    # Spoof the author id in the body — old code passed the ownership
+    # check (author == author) and cancelled the proposal.
+    r = await client.post(
+        f"/proposals/{pid}/withdraw",
+        json={"user_id": author_id},
+    )
+    assert r.status_code == 403
+    # And the proposal is still alive.
+    g = await client.get(f"/proposals/{pid}")
+    assert g.json()["proposal_status"] != "Canceled"
+
+
 # ── Session-enforcement on write endpoints ────────────────────────
 
 @pytest.mark.asyncio

@@ -79,6 +79,7 @@ async def withdraw_proposal(
     proposal_id: uuid.UUID,
     data: SupportCreate,  # reused: body = {"user_id": "..."}
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
     """Author cancels their own proposal before quorum.
 
@@ -91,6 +92,10 @@ async def withdraw_proposal(
     from kbz.enums import ProposalStatus
     from kbz.models.proposal import Proposal
 
+    # Block session-user spoofing BEFORE the ownership check, otherwise a
+    # logged-in Mallory could POST {user_id: alice} and pass the
+    # proposal.user_id == data.user_id test simply by echoing Alice's id.
+    enforce_session_matches_body(data.user_id, session_user)
     proposal = (
         await db.execute(select(Proposal).where(Proposal.id == proposal_id))
     ).scalar_one_or_none()
