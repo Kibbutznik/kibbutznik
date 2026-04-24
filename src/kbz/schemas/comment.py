@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CommentCreate(BaseModel):
@@ -24,4 +24,7 @@ class CommentResponse(BaseModel):
 
 
 class ScoreUpdate(BaseModel):
-    delta: int  # +1 or -1
+    # Clamped to a single step either direction — callers have been
+    # observed sending delta=1 per click, and unbounded ints let anyone
+    # pump a comment's score by thousands in a single POST.
+    delta: int = Field(ge=-1, le=1)
