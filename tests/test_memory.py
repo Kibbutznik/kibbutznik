@@ -48,6 +48,34 @@ async def test_create_and_get_memory(client):
 
 
 @pytest.mark.asyncio
+async def test_create_memory_rejects_out_of_range_importance(client):
+    """The list endpoint bounds min_importance to [0, 1]; write endpoints
+    must match, otherwise an agent can write importance=10 and break the
+    ordering/threshold semantics downstream."""
+    user = await create_test_user(client)
+    uid = user["id"]
+    for bad in (1.5, -0.1, 99.0):
+        resp = await client.post("/memories", json={
+            "user_id": uid, "memory_type": "episodic",
+            "content": "out of range", "importance": bad,
+        })
+        assert resp.status_code == 422, f"importance={bad} should 422"
+
+
+@pytest.mark.asyncio
+async def test_update_memory_rejects_out_of_range_importance(client):
+    user = await create_test_user(client)
+    uid = user["id"]
+    created = await client.post("/memories", json={
+        "user_id": uid, "memory_type": "episodic",
+        "content": "baseline", "importance": 0.5,
+    })
+    mem_id = created.json()["id"]
+    resp = await client.put(f"/memories/{mem_id}", json={"importance": 2.0})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_get_memories_by_type(client):
     user = await create_test_user(client)
     uid = user["id"]
