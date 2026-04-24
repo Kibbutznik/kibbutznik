@@ -1,17 +1,19 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CommunityCreate(BaseModel):
-    name: str
+    # communities.name is String(255); an unbounded schema field lets
+    # 300-char names through to the DB layer and 500s on DataError.
+    name: str = Field(min_length=1, max_length=255)
     founder_user_id: uuid.UUID
     parent_id: uuid.UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
     # Briefing written onto the root container so agents know what kind of
     # content this community is supposed to produce. Only used for root
     # communities (parent_id == ZERO_UUID); ignored for sub-actions.
-    initial_artifact_mission: str | None = None
+    initial_artifact_mission: str | None = Field(default=None, max_length=4000)
     # If True, sets `variables['Financial'] = 'internal'` at creation
     # time so the founder doesn't need to file a ChangeVariable
     # proposal against themselves at t=0. Default False keeps

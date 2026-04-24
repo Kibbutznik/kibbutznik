@@ -64,3 +64,26 @@ async def test_get_community(client):
 async def test_community_not_found(client):
     resp = await client.get("/communities/00000000-0000-0000-0000-000000000001")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_community_rejects_empty_name(client):
+    """communities.name is NOT NULL String(255); empty string should
+    422 at the edge, not end up as a blank row or fall back to the
+    server-side default."""
+    user = await create_test_user(client)
+    resp = await client.post("/communities", json={
+        "name": "", "founder_user_id": user["id"],
+    })
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_community_rejects_oversized_name(client):
+    """Names over the String(255) column used to surface as a 500 via
+    DataError; the schema cap turns that into a clean 422."""
+    user = await create_test_user(client)
+    resp = await client.post("/communities", json={
+        "name": "x" * 300, "founder_user_id": user["id"],
+    })
+    assert resp.status_code == 422
