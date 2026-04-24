@@ -29,6 +29,7 @@ from kbz.models.community import Community
 from kbz.models.user import User
 from kbz.services.auth_service import AuthService
 from kbz.services.invite_service import InviteService
+from kbz.services.member_service import MemberService
 from kbz.services.event_bus import event_bus
 
 router = APIRouter(tags=["invites"])
@@ -70,6 +71,23 @@ async def create_invite(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_user),
 ) -> CreateInviteResponse:
+    # Community-existence check goes first so callers still get a 404
+    # for bogus ids instead of a 403 that leaks nothing.
+    exists = (
+        await db.execute(
+            select(Community.id).where(Community.id == community_id)
+        )
+    ).scalar_one_or_none()
+    if exists is None:
+        raise HTTPException(status_code=404, detail="community not found")
+    # Only active members of the community may mint invites. Without
+    # this check any logged-in user could spam invite codes into any
+    # community, bypassing the social-proof model.
+    if not await MemberService(db).is_active_member(community_id, user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only active members can create invites",
+        )
     try:
         issued = await InviteService(db).create(
             community_id=community_id, creator_user_id=user.id
