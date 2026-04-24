@@ -254,6 +254,36 @@ async def test_create_proposal_blocks_when_session_mismatches_body(client):
 
 
 @pytest.mark.asyncio
+async def test_remove_support_blocks_when_session_mismatches_target(client):
+    """DELETE /proposals/{id}/support/{user_id} must enforce session:
+    without it, any logged-in user could shave supports off a rival
+    proposal by hitting the URL with another member's user_id."""
+    victim_id = await _login(client, "remove-victim@example.com")
+    community = await create_test_community(client, victim_id)
+    proposal_resp = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": victim_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "victim's proposal",
+        },
+    )
+    pid = proposal_resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": victim_id})
+
+    # Attacker logs in and tries to drop the victim's support.
+    client.cookies.clear()
+    await _login(client, "remove-attacker@example.com")
+    r = await client.delete(f"/proposals/{pid}/support/{victim_id}")
+    assert r.status_code == 403
+
+    # Support count must still be 1.
+    resp = await client.get(f"/proposals/{pid}")
+    assert resp.json()["support_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_create_proposal_unauthenticated_still_works(client):
     """Agents have NO session cookie; they must still be able to write."""
     user = await create_test_user(client)
