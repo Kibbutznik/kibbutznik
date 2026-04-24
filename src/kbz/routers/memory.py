@@ -1,7 +1,7 @@
 """FastAPI router for agent memory CRUD."""
 
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -13,9 +13,15 @@ from kbz.services.memory_service import MemoryService
 router = APIRouter()
 
 
+# The four values the service queries against and the extractors emit.
+# Accepting arbitrary strings leads to silent dead-end rows (e.g. a typoed
+# "episodc" that can never be retrieved by the usual type filters).
+MemoryType = Literal["episodic", "goal", "relationship", "reflection"]
+
+
 class MemoryCreate(BaseModel):
     user_id: str
-    memory_type: str  # episodic | goal | relationship | reflection
+    memory_type: MemoryType
     content: str
     importance: float = 0.5
     category: Optional[str] = None
