@@ -79,6 +79,17 @@ async def list_communities(
         .offset(offset)
     )
     rows = (await db.execute(stmt)).scalars().all()
+    # Dedupe root communities by name — keep the most recent per name.
+    # Reason: the sim creates a fresh "AI Kibbutz" every run, which leaves
+    # visitors staring at N identically-named rows with no way to tell
+    # which one is the live demo. Older instances remain reachable via
+    # /communities/{id} direct link.
+    if not include_actions:
+        seen: dict[str, Community] = {}
+        for c in rows:
+            if c.name not in seen:
+                seen[c.name] = c
+        rows = list(seen.values())
     return rows
 
 
