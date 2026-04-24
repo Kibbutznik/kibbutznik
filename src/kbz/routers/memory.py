@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
@@ -17,7 +17,7 @@ class MemoryCreate(BaseModel):
     user_id: str
     memory_type: str  # episodic | goal | relationship | reflection
     content: str
-    importance: float = 0.5
+    importance: float = Field(0.5, ge=0.0, le=1.0)
     category: Optional[str] = None
     round_num: Optional[int] = None
     related_id: Optional[str] = None
@@ -26,7 +26,7 @@ class MemoryCreate(BaseModel):
 
 class MemoryUpdate(BaseModel):
     content: Optional[str] = None
-    importance: Optional[float] = None
+    importance: Optional[float] = Field(None, ge=0.0, le=1.0)
     category: Optional[str] = None
     expires_at: Optional[int] = None
 
