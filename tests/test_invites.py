@@ -55,6 +55,21 @@ async def test_create_invite_for_unknown_community_404s(client):
 
 
 @pytest.mark.asyncio
+async def test_create_invite_requires_membership(client):
+    """A logged-in user who is NOT a member of the community cannot mint
+    invites to it. Otherwise anyone could spam invite codes for any
+    community and bypass the social-proof model."""
+    founder_id = await _login(client, "real-founder@example.com")
+    community = await create_test_community(client, founder_id, name="Members Only")
+
+    # Different user logs in and tries to create an invite
+    client.cookies.clear()
+    await _login(client, "outsider@example.com")
+    r = await client.post(f"/communities/{community['id']}/invites")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_preview_invite_returns_community_name(client):
     user_id = await _login(client, "founder3@example.com")
     community = await create_test_community(client, user_id, name="Reading Circle")
