@@ -57,8 +57,18 @@ async def list_proposals(
 
 
 @router.patch("/proposals/{proposal_id}/edit", response_model=ProposalResponse)
-async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSession = Depends(get_db)):
+async def edit_proposal(
+    proposal_id: uuid.UUID,
+    data: ProposalEdit,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
     """Edit a proposal's text. Resets ALL support — supporters must re-evaluate."""
+    # Without this, a logged-in user could POST body `user_id=<author_id>`
+    # and edit someone else's proposal — the service-level check only
+    # validates that `data.user_id` matches the author, not that the
+    # caller IS that author.
+    enforce_session_matches_body(data.user_id, session_user)
     svc = ProposalService(db)
     proposal = await svc.edit_text(
         proposal_id, data.user_id,
