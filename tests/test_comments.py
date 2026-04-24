@@ -83,3 +83,40 @@ async def test_comment_score(client):
     # Net score should be +1
     resp = await client.get(f"/entities/proposal/{entity_id}/comments")
     assert resp.json()[0]["score"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_entity_type_rejected(client):
+    """Only 'proposal' and 'community' are wired through the service +
+    tkg ingestor; anything else silently created orphan rows. Reject
+    at the router so API consumers get a clean 422."""
+    user = await create_test_user(client)
+    entity_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/foobar/{entity_id}/comments", json={
+        "user_id": user["id"], "comment_text": "orphan",
+    })
+    assert resp.status_code == 422
+    resp = await client.get(f"/entities/foobar/{entity_id}/comments")
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_oversized_comment_text_422s(client):
+    """comment_text column is String(2000); without a schema cap the DB
+    error surfaced as a 500. Enforce the 2000-char bound at the edge."""
+    user = await create_test_user(client)
+    entity_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
+        "user_id": user["id"], "comment_text": "x" * 2001,
+    })
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_empty_comment_text_422s(client):
+    user = await create_test_user(client)
+    entity_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
+        "user_id": user["id"], "comment_text": "",
+    })
+    assert resp.status_code == 422
