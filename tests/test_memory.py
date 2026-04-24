@@ -186,6 +186,21 @@ async def test_update_memory_no_fields_returns_400(client):
 
 
 @pytest.mark.asyncio
+async def test_create_memory_rejects_unknown_memory_type(client):
+    """Typos like `episodc` produce dead rows that no filter retrieves —
+    the service only queries against the four canonical types. Schema
+    should reject unknowns before they hit the DB."""
+    user = await create_test_user(client)
+    resp = await client.post("/memories", json={
+        "user_id": user["id"],
+        "memory_type": "episodc",  # typo
+        "content": "lost forever",
+        "importance": 0.5,
+    })
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_relationship_lookup(client):
     user = await create_test_user(client)
     uid = user["id"]
