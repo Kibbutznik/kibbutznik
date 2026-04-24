@@ -19,6 +19,19 @@ class CommunityService:
     async def create(self, data: CommunityCreate) -> Community:
         community_id = uuid.uuid4()
 
+        # Validate parent_id: non-zero parent must point at an existing
+        # community. Without this, callers can spawn orphan sub-communities
+        # under any random UUID and dangle the action tree.
+        ZERO_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+        if data.parent_id != ZERO_UUID:
+            parent_exists = (
+                await self.db.execute(
+                    select(Community.id).where(Community.id == data.parent_id)
+                )
+            ).scalar_one_or_none()
+            if parent_exists is None:
+                raise ValueError(f"parent_id {data.parent_id} does not exist")
+
         # 1. Create community
         community = Community(
             id=community_id,
@@ -64,7 +77,6 @@ class CommunityService:
         self.db.add(pulse)
 
         # 5. If this is a root community (no parent), seed the primordial ArtifactContainer.
-        ZERO_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
         if data.parent_id == ZERO_UUID:
             from kbz.services.artifact_service import ArtifactService
             await ArtifactService(self.db).create_root_container(
