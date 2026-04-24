@@ -18,12 +18,29 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _parse_positive_amount(raw: str) -> Decimal:
+    """Shared amount check: must be finite and > 0.
+
+    Decimal('Infinity') is > 0 and silently passes a naive `<= 0` check,
+    and a bare `Decimal(raw)` accepts "-5" too. Executors also enforce
+    this, but writing a proposal that will just fail later burns a round
+    slot and fans out bogus support state to the community.
+    """
+    try:
+        amount = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid amount: {raw!r}")
+    if not amount.is_finite() or amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be positive")
+    return amount
 
 from kbz.auth_deps import get_current_user, require_user
 from kbz.database import get_db
@@ -223,12 +240,7 @@ async def file_funding_request(
             status_code=409,
             detail="Parent community doesn't have the Financial module enabled.",
         )
-    # Validate the amount format upfront — cleaner error than
-    # letting it fail at execution time.
-    try:
-        Decimal(body.amount)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Invalid amount: {body.amount!r}")
+    _parse_positive_amount(body.amount)
     p = Proposal(
         id=uuid.uuid4(),
         community_id=parent,
@@ -279,10 +291,7 @@ async def file_payment_request(
             status_code=409,
             detail="This community has sub-actions. Only leaf communities may file Payment.",
         )
-    try:
-        Decimal(body.amount)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Invalid amount: {body.amount!r}")
+    _parse_positive_amount(body.amount)
     p = Proposal(
         id=uuid.uuid4(),
         community_id=community_id,
