@@ -56,6 +56,13 @@ def _safe_next_path(candidate: str | None) -> str:
         return _DEFAULT_POST_LOGIN
     if candidate.startswith("//"):
         return _DEFAULT_POST_LOGIN
+    # Backslashes normalize to '/' in Chrome/Safari Location headers, so
+    # `/\evil.com/` ends up as `//evil.com/` in the address bar — an
+    # open redirect through the back door. Strip any candidate with a
+    # backslash. Similarly any whitespace (\t, \r, \n, space) before
+    # the authority can confuse parsers; drop those too.
+    if any(ch in candidate for ch in "\\ \t\r\n"):
+        return _DEFAULT_POST_LOGIN
     # Disallow any scheme-like prefix (e.g. "/http://..." after decoding)
     if "://" in candidate:
         return _DEFAULT_POST_LOGIN
