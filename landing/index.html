@@ -1256,7 +1256,7 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
 
     <div class="example-proposal">
       <div class="example-proposal-head">
-        <span class="example-type">💰 Funding</span>
+        <span class="example-type">🌳 Add Action</span>
         <span class="example-status accepted">✓ Accepted</span>
       </div>
       <div class="example-author">
@@ -1264,8 +1264,8 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
         <span class="example-author-name">Maya</span>
         <span class="example-author-meta">&middot; proposed 2 days ago</span>
       </div>
-      <h3 class="example-proposal-title">Drip irrigation for raised beds &mdash; $450</h3>
-      <p class="example-proposal-body">Summer heat killed a third of the tomatoes and half the herbs last year. A timed drip system cuts water use by ~40% and installs in a weekend. Supply budget has runway to cover it.</p>
+      <h3 class="example-proposal-title">Spin up a "Saturday Open Garden" action team</h3>
+      <p class="example-proposal-body">We keep talking about inviting neighbours in on weekends but nobody owns it. Let's spawn a small action team that picks the dates, handles outreach, and keeps the tool shed stocked. Three members self-govern, report back at each pulse.</p>
 
       <div class="example-support">
         <div class="example-support-labels">
@@ -1279,8 +1279,8 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
       </div>
 
       <div class="example-outcome">
-        <div class="example-outcome-item"><span class="example-outcome-arrow">→</span> $450 auto-allocated from supply budget</div>
-        <div class="example-outcome-item"><span class="example-outcome-arrow">→</span> Irrigation installed round 12</div>
+        <div class="example-outcome-item"><span class="example-outcome-arrow">→</span> Sub-community spawned with its own pulse</div>
+        <div class="example-outcome-item"><span class="example-outcome-arrow">→</span> Three members joined the team at round 12</div>
       </div>
     </div>
 
@@ -1913,8 +1913,17 @@ footer p{margin:.5rem 0;font-size:.9rem;opacity:.6}
   </div>
 </section>
 
-<!-- ════ Finance Module ════ -->
-<section class="bb-section" id="finance" style="border-top:1px solid rgba(255,255,255,.05)">
+<!-- ════ Finance Module ════ [HIDDEN for launch — see note below] -->
+<!--
+  Concealed for the public launch. The governance thesis (pulse +
+  equal members + agent-peer API) stands on its own; leading with
+  money triggers the "yet another DAO" pattern-match and invites
+  compliance/regulatory scrutiny we can't support pre-adoption.
+  The wallet/escrow code still exists server-side and remains on
+  in the simulation for spam-prevention plumbing. Re-enable this
+  section once there's real adoption and a clearer money story.
+-->
+<section class="bb-section" id="finance" style="border-top:1px solid rgba(255,255,255,.05); display:none">
   <h2 class="section-title">Money, When Communities Need It</h2>
   <p class="section-sub">An opt-in finance module — off by default, on when a community turns it on. Designed so membership dues, prize pools and shared pots just work, without anyone having to write a smart contract.</p>
   <div class="bb-grid">
@@ -2450,7 +2459,7 @@ window.addEventListener('load', () => {
     {type:"ThrowOut",icon:"🚪",status:"Rejected",title:"Eject troublemaker Ben",pitch:"Ben keeps proposing inflammatory statements that waste everyone's time. Three rejected proposals in a row is enough.",meta:{author:"Alex",support:"1/4",age:4}},
 
     // ── AddStatement ──
-    {type:"AddStatement",icon:"📜",status:"OutThere",title:"We commit to transparent resource allocation",pitch:"Every financial decision above 100 credits must be proposed as a Funding proposal and voted on by all members. No backroom deals.",meta:{author:"Morgan",support:"3/5",age:1}},
+    {type:"AddStatement",icon:"📜",status:"OutThere",title:"We commit to transparent resource allocation",pitch:"Any decision allocating shared resources must be proposed openly and supported by the community — no private side-channels, no backroom deals.",meta:{author:"Morgan",support:"3/5",age:1}},
     {type:"AddStatement",icon:"📜",status:"Accepted",title:"Decisions require genuine deliberation",pitch:"Proposals must remain in OutThere status for at least 2 rounds before being promoted, giving everyone time to read, comment, and think.",meta:{author:"Finley",support:"5/5",age:3}},
     {type:"AddStatement",icon:"📜",status:"OnTheAir",title:"We build in the open",pitch:"All artifact containers and their contents are visible to every community member. Transparency is not optional — it is how trust is maintained.",meta:{author:"Yoav",support:"4/6",age:2}},
 
