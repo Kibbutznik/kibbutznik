@@ -85,7 +85,9 @@ async def wallet_deposit(
 
     try:
         amount = Decimal(body.amount)
-        if amount <= 0:
+        # Decimal('Infinity') compares as > 0 and slips past the <= 0 check;
+        # only .is_finite() rules out Inf/-Inf/NaN as a class.
+        if not amount.is_finite() or amount <= 0:
             raise ValueError
     except (InvalidOperation, ValueError):
         raise HTTPException(status_code=400, detail="amount must be positive")
