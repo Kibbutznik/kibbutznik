@@ -57,15 +57,22 @@ class MemberService:
         When a member is thrown out of a parent community, they are also
         removed from every action (child community) they belong to.
         This mirrors the real-world rule: leaving the org means leaving its teams.
+
+        No-op when the target is not an ACTIVE member of the parent
+        community (never joined, already thrown out, etc.) — blindly
+        decrementing member_count in those cases would drift the count
+        below zero over time.
         """
         from kbz.models.action import Action
 
-        # 1. Remove from the parent community
-        await self.db.execute(
-            update(Member)
-            .where(Member.community_id == community_id, Member.user_id == user_id)
-            .values(status=MemberStatus.THROWN_OUT)
-        )
+        # 1. Remove from the parent community — gated on the target
+        # actually being ACTIVE here. A ThrowOut proposal can legitimately
+        # target someone who's since left on their own; decrementing
+        # member_count again would corrupt the count.
+        parent_member = await self.get(community_id, user_id)
+        if parent_member is None or parent_member.status != MemberStatus.ACTIVE:
+            return
+        parent_member.status = MemberStatus.THROWN_OUT
         await self.db.execute(
             update(Community)
             .where(Community.id == community_id)
