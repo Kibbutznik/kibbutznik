@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.auth_deps import enforce_session_matches_body, get_current_user
@@ -43,12 +43,15 @@ async def list_proposals(
     val_uuid: uuid.UUID | None = None,
     proposal_type: str | None = None,
     pulse_id: uuid.UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     svc = ProposalService(db)
     proposals = await svc.list_by_community(
         community_id, status=status, user_id=user_id, val_uuid=val_uuid,
         proposal_type=proposal_type, pulse_id=pulse_id,
+        limit=limit, offset=offset,
     )
     return await svc.enrich(proposals, community_id)
 

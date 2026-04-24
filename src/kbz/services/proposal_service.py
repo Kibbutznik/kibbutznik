@@ -317,6 +317,7 @@ class ProposalService:
         self, community_id: uuid.UUID, status: str | None = None, user_id: uuid.UUID | None = None,
         val_uuid: uuid.UUID | None = None, proposal_type: str | None = None,
         pulse_id: uuid.UUID | None = None,
+        limit: int | None = None, offset: int = 0,
     ) -> list[Proposal]:
         query = select(Proposal).where(Proposal.community_id == community_id)
         if status:
@@ -329,7 +330,10 @@ class ProposalService:
             query = query.where(Proposal.proposal_type == proposal_type)
         if pulse_id:
             query = query.where(Proposal.pulse_id == pulse_id)
-        result = await self.db.execute(query.order_by(Proposal.created_at.desc()))
+        query = query.order_by(Proposal.created_at.desc())
+        if limit is not None:
+            query = query.limit(limit).offset(offset)
+        result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def list_by_status(
