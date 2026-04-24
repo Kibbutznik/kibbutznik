@@ -136,9 +136,11 @@ class CommentService:
         return list(result.scalars().all())
 
     async def update_score(self, comment_id: uuid.UUID, delta: int) -> None:
-        await self.db.execute(
+        result = await self.db.execute(
             update(Comment)
             .where(Comment.id == comment_id)
             .values(score=Comment.score + delta)
         )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Comment not found")
         await self.db.commit()

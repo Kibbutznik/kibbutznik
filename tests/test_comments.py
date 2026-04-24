@@ -83,3 +83,10 @@ async def test_comment_score(client):
     # Net score should be +1
     resp = await client.get(f"/entities/proposal/{entity_id}/comments")
     assert resp.json()[0]["score"] == 1
+
+
+@pytest.mark.asyncio
+async def test_score_unknown_comment_returns_404(client):
+    """Scoring a nonexistent comment must 404, not silently 200."""
+    resp = await client.post(f"/comments/{uuid.uuid4()}/score", json={"delta": 1})
+    assert resp.status_code == 404
