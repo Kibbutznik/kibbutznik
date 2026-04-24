@@ -137,6 +137,27 @@ async def test_update_memory(client):
 
 
 @pytest.mark.asyncio
+async def test_update_memory_not_found_returns_404(client):
+    """Updating a memory that doesn't exist returns 404, not 200."""
+    fake_id = str(uuid.uuid4())
+    resp = await client.put(f"/memories/{fake_id}", json={"importance": 0.5})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_memory_no_fields_returns_400(client):
+    """Updating with an empty body returns 400, not 200."""
+    user = await create_test_user(client)
+    resp = await client.post("/memories", json={
+        "user_id": user["id"], "memory_type": "goal",
+        "content": "x", "importance": 0.5,
+    })
+    mem_id = resp.json()["id"]
+    resp = await client.put(f"/memories/{mem_id}", json={})
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_relationship_lookup(client):
     user = await create_test_user(client)
     uid = user["id"]
