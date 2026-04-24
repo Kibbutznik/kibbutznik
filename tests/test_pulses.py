@@ -250,3 +250,24 @@ async def test_duplicate_pulse_support_rejected(client):
         "user_id": user["id"],
     })
     assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_remove_pulse_support_without_support_404s(client):
+    """DELETE pulse-support for a user who never supported must 404 and
+    must NOT decrement the counter — otherwise the threshold math breaks
+    and a random caller can drive support_count negative."""
+    user = await create_test_user(client, "a")
+    other = await create_test_user(client, "b")
+    community = await create_test_community(client, user["id"])
+
+    # `other` never supported the pulse. DELETE must 404.
+    resp = await client.delete(
+        f"/communities/{community['id']}/pulses/support/{other['id']}"
+    )
+    assert resp.status_code == 404
+
+    # And the next pulse's support_count must still be 0.
+    pulses = (await client.get(f"/communities/{community['id']}/pulses")).json()
+    next_pulse = next(p for p in pulses if p["status"] == 0)
+    assert next_pulse["support_count"] == 0

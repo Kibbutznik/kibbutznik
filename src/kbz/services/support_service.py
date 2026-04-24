@@ -220,12 +220,17 @@ class SupportService:
         if not pulse:
             raise HTTPException(status_code=404, detail="No next pulse found")
 
-        await self.db.execute(
+        # Only decrement the counter when the DELETE actually removed a
+        # row. Without this guard, any non-supporter hitting DELETE drives
+        # `support_count` negative and breaks the pulse threshold math.
+        del_result = await self.db.execute(
             delete(PulseSupport).where(
                 PulseSupport.user_id == user_id,
                 PulseSupport.pulse_id == pulse.id,
             )
         )
+        if del_result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Support not found")
         await self.db.execute(
             update(Pulse)
             .where(Pulse.id == pulse.id)
