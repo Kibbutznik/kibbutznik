@@ -254,6 +254,33 @@ async def test_create_proposal_blocks_when_session_mismatches_body(client):
 
 
 @pytest.mark.asyncio
+async def test_edit_proposal_blocks_when_session_mismatches_body(client):
+    """Logged-in user A cannot edit user B's proposal by spoofing user_id=B
+    in the body. The service-level check only validates that body.user_id
+    matches the author — not that the caller IS that author."""
+    author_id = await _login(client, "edit-author@example.com")
+    community = await create_test_community(client, author_id)
+    proposal_resp = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "original",
+        },
+    )
+    pid = proposal_resp.json()["id"]
+
+    # Different logged-in user tries to edit using the author's id.
+    client.cookies.clear()
+    await _login(client, "edit-stranger@example.com")
+    r = await client.patch(
+        f"/proposals/{pid}/edit",
+        json={"user_id": author_id, "proposal_text": "hijacked"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_create_proposal_unauthenticated_still_works(client):
     """Agents have NO session cookie; they must still be able to write."""
     user = await create_test_user(client)
