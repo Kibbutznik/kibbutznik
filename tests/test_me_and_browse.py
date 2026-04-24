@@ -49,6 +49,20 @@ async def test_list_communities_with_search(client):
 
 
 @pytest.mark.asyncio
+async def test_list_communities_dedupes_same_name_root(client):
+    """Public browse should show one row per name, keeping the newest.
+    Sim re-runs create many 'AI Kibbutz' roots; visitors shouldn't see N copies."""
+    user = await create_test_user(client)
+    older = await create_test_community(client, user["id"], name="Same Kibbutz")
+    newer = await create_test_community(client, user["id"], name="Same Kibbutz")
+    r = await client.get("/communities")
+    assert r.status_code == 200
+    same_name = [c for c in r.json() if c["name"] == "Same Kibbutz"]
+    assert len(same_name) == 1, "expected dedupe to collapse same-name roots"
+    assert same_name[0]["id"] == newer["id"], "expected the newer community to win"
+
+
+@pytest.mark.asyncio
 async def test_list_communities_pagination(client):
     user = await create_test_user(client)
     for i in range(5):
