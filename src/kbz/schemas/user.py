@@ -1,14 +1,14 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserCreate(BaseModel):
-    user_name: str
-    password: str
-    about: str = ""
-    wallet_address: str = ""
+    user_name: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=1, max_length=1024)
+    about: str = Field(default="", max_length=4000)
+    wallet_address: str = Field(default="", max_length=255)
 
 
 class UserResponse(BaseModel):

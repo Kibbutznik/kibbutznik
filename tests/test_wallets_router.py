@@ -58,7 +58,7 @@ async def test_create_community_without_enable_financial_stays_off(client):
 
 @pytest.mark.asyncio
 async def test_community_wallet_404_when_not_financial(client):
-    founder = await create_test_user(client, name="f3")
+    founder = await create_test_user(client, name="founder3")
     community = (
         await client.post("/communities", json={
             "name": "Generic", "founder_user_id": founder["id"],
@@ -70,7 +70,7 @@ async def test_community_wallet_404_when_not_financial(client):
 
 @pytest.mark.asyncio
 async def test_community_wallet_200_when_financial(client):
-    founder = await create_test_user(client, name="f4")
+    founder = await create_test_user(client, name="founder4")
     community = (
         await client.post("/communities", json={
             "name": "Financial",
