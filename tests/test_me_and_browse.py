@@ -237,6 +237,31 @@ async def test_withdraw_rejects_non_author(client):
 # ── Session-enforcement on write endpoints ────────────────────────
 
 @pytest.mark.asyncio
+async def test_submit_blocks_when_session_mismatches_author(client):
+    """PATCH /proposals/{id}/submit had no auth check at all — any
+    logged-in user could flip another author's private draft to
+    OutThere before they were ready. The gate now compares session
+    against the proposal's author."""
+    author_id = await _login(client, "submit-author@example.com")
+    community = await create_test_community(client, author_id)
+    prop = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "Author's draft",
+        },
+    )
+    pid = prop.json()["id"]
+
+    # Stranger logs in and tries to submit the author's draft
+    client.cookies.clear()
+    await _login(client, "submit-stranger@example.com")
+    r = await client.patch(f"/proposals/{pid}/submit")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_create_proposal_blocks_when_session_mismatches_body(client):
     """Logged-in user A cannot POST a proposal authored as user B."""
     await _login(client, "sess-a@example.com")

@@ -66,8 +66,25 @@ async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSes
 
 
 @router.patch("/proposals/{proposal_id}/submit", response_model=ProposalResponse)
-async def submit_proposal(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def submit_proposal(
+    proposal_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    # A draft is the author's private workbench; anyone else flipping
+    # it to OutThere pushes the author's unfinished work into public
+    # support-gathering. The service itself doesn't check the author,
+    # so the gate lives here. Anonymous agent traffic (no session)
+    # still passes through — only an authenticated session mismatching
+    # the draft's author is blocked.
     svc = ProposalService(db)
+    if session_user is not None:
+        current = await svc.get(proposal_id)
+        if current is not None and current.user_id != session_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the proposal's author can submit it",
+            )
     proposal = await svc.submit(proposal_id)
     if not proposal:
         raise HTTPException(status_code=400, detail="Cannot submit proposal")
