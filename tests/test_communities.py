@@ -64,3 +64,17 @@ async def test_get_community(client):
 async def test_community_not_found(client):
     resp = await client.get("/communities/00000000-0000-0000-0000-000000000001")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_community_rejects_bogus_parent(client):
+    """Non-zero parent_id must point at an existing community. Otherwise
+    we'd dangle an orphan sub-community that can't be reached from any
+    root — the action tree would silently lose a branch."""
+    user = await create_test_user(client)
+    resp = await client.post("/communities", json={
+        "name": "Orphan",
+        "founder_user_id": user["id"],
+        "parent_id": "11111111-1111-1111-1111-111111111111",
+    })
+    assert resp.status_code == 400
