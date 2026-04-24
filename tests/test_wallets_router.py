@@ -123,6 +123,29 @@ async def test_funding_request_404s_on_unknown_action(client):
 
 
 @pytest.mark.asyncio
+async def test_payment_request_rejects_non_member(client):
+    """Non-members must not be able to file Payment proposals against
+    a community they don't belong to."""
+    # Founder sets up a financial community
+    founder_id = await _login(client, "pr-founder@example.com")
+    c = (
+        await client.post("/communities", json={
+            "name": "Pay Kib",
+            "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+    # Stranger tries to file a payment request against it
+    client.cookies.clear()
+    await _login(client, "pr-stranger@example.com")
+    r = await client.post(
+        f"/communities/{c['id']}/payment-request",
+        json={"amount": "10"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_payment_request_409s_on_non_leaf(client):
     """If the target community has any Action children, Payment is
     refused at the router — the rule matches handler-side enforcement."""
