@@ -83,3 +83,20 @@ async def test_comment_score(client):
     # Net score should be +1
     resp = await client.get(f"/entities/proposal/{entity_id}/comments")
     assert resp.json()[0]["score"] == 1
+
+
+@pytest.mark.asyncio
+async def test_score_delta_must_be_plus_or_minus_one(client):
+    """ScoreUpdate.delta is capped to [-1, 1] — without this, any caller
+    can POST delta=1_000_000 and pin a comment to the top of the sort."""
+    user = await create_test_user(client)
+    entity_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "score guard",
+    })
+    comment_id = resp.json()["id"]
+
+    for bad in (2, -2, 1000000):
+        r = await client.post(f"/comments/{comment_id}/score", json={"delta": bad})
+        assert r.status_code == 422, (bad, r.text)

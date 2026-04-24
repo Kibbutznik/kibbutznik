@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CommentCreate(BaseModel):
@@ -24,4 +24,6 @@ class CommentResponse(BaseModel):
 
 
 class ScoreUpdate(BaseModel):
-    delta: int  # +1 or -1
+    # A vote is +1 or -1. Leaving delta unbounded lets any caller POST
+    # delta=1_000_000 and shoot a comment to the top of the sort.
+    delta: int = Field(..., ge=-1, le=1)
