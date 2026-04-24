@@ -38,6 +38,7 @@ from kbz.models.wallet import (
     LedgerEntry,
     Wallet,
 )
+from kbz.services.member_service import MemberService
 from kbz.services.wallet_service import (
     FinancialModuleDisabledError,
     WalletService,
@@ -223,6 +224,16 @@ async def file_funding_request(
             status_code=409,
             detail="Parent community doesn't have the Financial module enabled.",
         )
+    # Membership check: the general /proposals endpoint enforces this
+    # via ProposalService.create, but this shortcut route builds the
+    # Proposal row by hand and bypasses it. Without this line, any
+    # logged-in user could file Funding proposals in communities they
+    # don't belong to.
+    if not await MemberService(db).is_active_member(parent, user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only active members of the parent community can file funding requests",
+        )
     # Validate the amount format upfront — cleaner error than
     # letting it fail at execution time.
     try:
@@ -267,6 +278,13 @@ async def file_payment_request(
         raise HTTPException(
             status_code=409,
             detail="Community doesn't have the Financial module enabled.",
+        )
+    # Same reason as /funding-request: this shortcut bypasses
+    # ProposalService.create's member check, so we replicate it here.
+    if not await MemberService(db).is_active_member(community_id, user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only active members can file payment requests",
         )
     # Early check that this is a leaf — saves a pointless proposal.
     has_children = (

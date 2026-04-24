@@ -140,3 +140,65 @@ async def test_payment_request_409s_on_non_leaf(client):
     )
     assert r.status_code == 409
     assert "Financial module" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_payment_request_403s_for_non_member(client):
+    """Shortcut payment-request bypasses ProposalService.create, so the
+    membership check has to live on the route itself. Without it, any
+    logged-in user could file payment proposals in a financial community
+    they don't belong to."""
+    founder_id = await _login(client, "pay-founder@example.com")
+    community = (
+        await client.post("/communities", json={
+            "name": "Financial Home",
+            "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+
+    client.cookies.clear()
+    await _login(client, "pay-outsider@example.com")
+    r = await client.post(
+        f"/communities/{community['id']}/payment-request",
+        json={"amount": "10"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_funding_request_403s_for_non_member(client):
+    """Same shortcut, same bypass — funding-request on an action whose
+    parent community the caller doesn't belong to must be 403. Actions
+    only come into existence through the AddAction proposal flow, so
+    set one up end-to-end first."""
+    founder_id = await _login(client, "fund-founder@example.com")
+    parent = (
+        await client.post("/communities", json={
+            "name": "Parent Financial",
+            "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+    # Propose + accept an AddAction so the Action row exists.
+    prop = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": founder_id,
+        "proposal_type": "AddAction",
+        "proposal_text": "Fund this",
+        "val_text": "Funded Committee",
+    })
+    pid = prop.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": founder_id})
+    await client.post(f"/communities/{parent['id']}/pulses/support", json={"user_id": founder_id})
+    await client.post(f"/communities/{parent['id']}/pulses/support", json={"user_id": founder_id})
+    action = (await client.get(f"/communities/{parent['id']}/actions")).json()[0]
+
+    # Outsider logs in and tries to ask the parent for funding
+    client.cookies.clear()
+    await _login(client, "fund-outsider@example.com")
+    r = await client.post(
+        f"/actions/{action['action_id']}/funding-request",
+        json={"amount": "25", "pitch": "give me money"},
+    )
+    assert r.status_code == 403
