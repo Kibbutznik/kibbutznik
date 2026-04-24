@@ -1,19 +1,27 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# The proposal columns are sql TEXT (unbounded). We still need an
+# upstream cap: otherwise an attacker can bloat rows with megabytes of
+# free text, and worse — the EditArtifact anti-hallucination check does
+# a 5-word window scan across proposal_text, which is O(N*M) on the
+# comment text. 10k chars is roomy for a detailed rationale while
+# making multi-MB abuse a non-starter.
+_TEXT_MAX = 10_000
 
 
 class ProposalCreate(BaseModel):
     user_id: uuid.UUID
     proposal_type: str
-    proposal_text: str = ""
+    proposal_text: str = Field(default="", max_length=_TEXT_MAX)
     # `pitch` is the proposer's rationale — why this should be accepted.
     # Optional on the wire for legacy tooling, but the UI and bots are
     # expected to populate it. Stored in its own column.
-    pitch: str | None = None
+    pitch: str | None = Field(default=None, max_length=_TEXT_MAX)
     val_uuid: uuid.UUID | None = None
-    val_text: str = ""
+    val_text: str = Field(default="", max_length=_TEXT_MAX)
 
 
 class ProposalResponse(BaseModel):
@@ -46,9 +54,9 @@ class ProposalResponse(BaseModel):
 
 class ProposalEdit(BaseModel):
     user_id: uuid.UUID
-    proposal_text: str | None = None
-    pitch: str | None = None
-    val_text: str | None = None
+    proposal_text: str | None = Field(default=None, max_length=_TEXT_MAX)
+    pitch: str | None = Field(default=None, max_length=_TEXT_MAX)
+    val_text: str | None = Field(default=None, max_length=_TEXT_MAX)
 
 
 class SupportCreate(BaseModel):
