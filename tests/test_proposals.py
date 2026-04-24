@@ -111,6 +111,43 @@ async def test_submit_proposal(client):
 
 
 @pytest.mark.asyncio
+async def test_submit_proposal_rejects_non_author_session(client):
+    """A logged-in user cannot promote someone else's draft."""
+    # Create community + draft as the founder
+    await client.post("/auth/request-magic-link", json={"email": "author@ex.com"})
+    r = await client.get((await client.post(
+        "/auth/request-magic-link", json={"email": "author@ex.com"},
+    )).json()["link"])
+    author_id = r.json()["user"]["user_id"]
+    community = (await client.post("/communities", json={
+        "name": "Kib", "founder_user_id": author_id,
+    })).json()
+    proposal = (await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "work-in-progress",
+        },
+    )).json()
+    # Log out, log in as stranger, try to submit
+    client.cookies.clear()
+    r = await client.post(
+        "/auth/request-magic-link", json={"email": "stranger@ex.com"},
+    )
+    await client.get(r.json()["link"])
+    r = await client.patch(f"/proposals/{proposal['id']}/submit")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_submit_proposal_404_for_unknown_id(client):
+    import uuid as _uuid
+    r = await client.patch(f"/proposals/{_uuid.uuid4()}/submit")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_support_proposal(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

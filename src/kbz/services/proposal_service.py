@@ -306,8 +306,12 @@ class ProposalService:
 
     async def submit(self, proposal_id: uuid.UUID) -> Proposal | None:
         proposal = await self.get(proposal_id)
-        if not proposal or proposal.proposal_status != ProposalStatus.DRAFT:
-            raise HTTPException(status_code=400, detail="Only draft proposals can be submitted")
+        if not proposal:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if proposal.proposal_status != ProposalStatus.DRAFT:
+            raise HTTPException(
+                status_code=400, detail="Only draft proposals can be submitted",
+            )
         proposal.proposal_status = ProposalStatus.OUT_THERE
         await self.db.commit()
         await self.db.refresh(proposal)

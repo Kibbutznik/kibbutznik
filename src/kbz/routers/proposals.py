@@ -66,11 +66,27 @@ async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSes
 
 
 @router.patch("/proposals/{proposal_id}/submit", response_model=ProposalResponse)
-async def submit_proposal(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def submit_proposal(
+    proposal_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    """Promote a draft proposal to OutThere.
+
+    Agents (no session) pass straight through — same as other write paths.
+    Logged-in users must be the proposal's author; otherwise one user
+    could promote another user's in-progress draft before they were ready.
+    """
     svc = ProposalService(db)
+    proposal = await svc.get(proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if session_user is not None and proposal.user_id != session_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the proposal's author can submit it",
+        )
     proposal = await svc.submit(proposal_id)
-    if not proposal:
-        raise HTTPException(status_code=400, detail="Cannot submit proposal")
     return await svc.enrich_one(proposal)
 
 
