@@ -268,3 +268,57 @@ async def test_create_proposal_unauthenticated_still_works(client):
         },
     )
     assert r.status_code in (200, 201), r.text
+
+
+@pytest.mark.asyncio
+async def test_withdraw_blocks_when_session_mismatches_body(client):
+    """Logged-in user A cannot withdraw user B's proposal by spoofing B's
+    user_id in the body. Session-match check must come BEFORE the author
+    equality check, otherwise a mismatched session + correct author_id
+    would silently succeed for an anonymous attacker."""
+    # Author creates a proposal
+    author_id = await _login(client, "sess-w-author@example.com")
+    community = await create_test_community(client, author_id)
+    prop = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "Author's thought",
+        },
+    )
+    pid = prop.json()["id"]
+
+    # Attacker logs in and tries to withdraw by spoofing author's id.
+    client.cookies.clear()
+    await _login(client, "sess-w-attacker@example.com")
+    r = await client.post(
+        f"/proposals/{pid}/withdraw",
+        json={"user_id": author_id},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_edit_blocks_when_session_mismatches_body(client):
+    """Same session-match rule for PATCH /proposals/{id}/edit — logged-in
+    attacker cannot spoof another user's user_id in the body."""
+    author_id = await _login(client, "sess-e-author@example.com")
+    community = await create_test_community(client, author_id)
+    prop = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "Original",
+        },
+    )
+    pid = prop.json()["id"]
+
+    client.cookies.clear()
+    await _login(client, "sess-e-attacker@example.com")
+    r = await client.patch(
+        f"/proposals/{pid}/edit",
+        json={"user_id": author_id, "proposal_text": "hacked"},
+    )
+    assert r.status_code == 403

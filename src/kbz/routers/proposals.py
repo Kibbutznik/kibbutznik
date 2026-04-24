@@ -54,8 +54,14 @@ async def list_proposals(
 
 
 @router.patch("/proposals/{proposal_id}/edit", response_model=ProposalResponse)
-async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSession = Depends(get_db)):
+async def edit_proposal(
+    proposal_id: uuid.UUID,
+    data: ProposalEdit,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
     """Edit a proposal's text. Resets ALL support — supporters must re-evaluate."""
+    enforce_session_matches_body(data.user_id, session_user)
     svc = ProposalService(db)
     proposal = await svc.edit_text(
         proposal_id, data.user_id,
@@ -79,6 +85,7 @@ async def withdraw_proposal(
     proposal_id: uuid.UUID,
     data: SupportCreate,  # reused: body = {"user_id": "..."}
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
     """Author cancels their own proposal before quorum.
 
@@ -86,6 +93,7 @@ async def withdraw_proposal(
     ON_THE_AIR, ACCEPTED, REJECTED, or CANCELED, we don't allow retraction
     (too late, or already done). The author's user_id must match.
     """
+    enforce_session_matches_body(data.user_id, session_user)
     from sqlalchemy import select, update
 
     from kbz.enums import ProposalStatus
