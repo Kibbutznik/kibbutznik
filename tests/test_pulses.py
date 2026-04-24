@@ -250,3 +250,50 @@ async def test_duplicate_pulse_support_rejected(client):
         "user_id": user["id"],
     })
     assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_remove_pulse_support_404_without_corrupting_count(client):
+    """DELETE /communities/{cid}/pulses/support/{uid} for a user who
+    never supported must 404 — and must NOT decrement the pulse's
+    support_count. Previously the handler ran the DELETE (0 rows) then
+    unconditionally did `support_count = support_count - 1`, drifting
+    the counter below the true value."""
+    founder = await create_test_user(client, "founder-unsupport")
+    # Apply with an applicant so member_count rises above 1 and the
+    # first support doesn't auto-fire the pulse before we can inspect it.
+    applicant = await create_test_user(client, "applicant-unsupport")
+    community = await create_test_community(client, founder["id"])
+    prop = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": applicant["id"],
+        "proposal_type": "Membership",
+        "proposal_text": "Let me in",
+        "val_uuid": applicant["id"],
+    })
+    proposal = prop.json()
+    await client.patch(f"/proposals/{proposal['id']}/submit")
+    await client.post(f"/proposals/{proposal['id']}/support", json={"user_id": founder["id"]})
+    # Two pulses to pass OutThere→OnTheAir→Accepted. Now member_count=2.
+    for _ in range(2):
+        await client.post(f"/communities/{community['id']}/pulses/support", json={
+            "user_id": founder["id"],
+        })
+
+    # Founder supports the current Next pulse (threshold=ceil(2*0.5)=1,
+    # so this DOES trigger). We need the support rows to land first, so
+    # instead check the count on the NEW next pulse after firing.
+    pulses_before = (await client.get(f"/communities/{community['id']}/pulses")).json()
+    next_pulse = next(p for p in pulses_before if p["status"] == 0)
+    before_count = next_pulse["support_count"]
+
+    # Try to unsupport as a user who never supported.
+    resp = await client.delete(
+        f"/communities/{community['id']}/pulses/support/{applicant['id']}"
+    )
+    assert resp.status_code == 404
+
+    pulses_after = (await client.get(f"/communities/{community['id']}/pulses")).json()
+    next_after = next(p for p in pulses_after if p["status"] == 0)
+    assert next_after["support_count"] == before_count, (
+        "support_count drifted — the failed unsupport must not decrement"
+    )
