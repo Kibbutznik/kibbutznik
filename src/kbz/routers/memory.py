@@ -3,7 +3,7 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,9 +73,11 @@ async def update_memory(
 ):
     svc = MemoryService(db)
     updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
     result = await svc.update_memory(uuid.UUID(memory_id), **updates)
     if result is None:
-        return {"detail": "Memory not found or no valid fields to update"}
+        raise HTTPException(status_code=404, detail="Memory not found")
     return result
 
 
