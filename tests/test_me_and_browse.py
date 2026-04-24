@@ -268,3 +268,46 @@ async def test_create_proposal_unauthenticated_still_works(client):
         },
     )
     assert r.status_code in (200, 201), r.text
+
+
+@pytest.mark.asyncio
+async def test_remove_support_blocks_session_mismatch(client):
+    """DELETE /proposals/{id}/support/{user_id} with a logged-in session
+    that isn't `user_id` must 403. Otherwise a logged-in user A could
+    strip user B's support from a proposal by hitting this URL directly.
+    `user_id` is a path param here, not a body field, but the check
+    applies the same way."""
+    author_id = await _login(client, "rm-support-a@example.com")
+    community = await create_test_community(client, author_id)
+    prop = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "Support me",
+        },
+    )
+    pid = prop.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": author_id})
+
+    client.cookies.clear()
+    await _login(client, "rm-support-b@example.com")
+    r = await client.delete(f"/proposals/{pid}/support/{author_id}")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_remove_pulse_support_blocks_session_mismatch(client):
+    """Same rule for DELETE /communities/{cid}/pulses/support/{user_id}:
+    a logged-in attacker cannot unsupport on another user's behalf.
+    The session-match check runs before any pulse lookup, so the 403 is
+    stable even if no pulse exists."""
+    author_id = await _login(client, "rm-pulse-a@example.com")
+    community = await create_test_community(client, author_id)
+    # Stranger's user id — different from the logged-in session.
+    stranger = await create_test_user(client, "rm-pulse-stranger")
+    r = await client.delete(
+        f"/communities/{community['id']}/pulses/support/{stranger['id']}"
+    )
+    assert r.status_code == 403
