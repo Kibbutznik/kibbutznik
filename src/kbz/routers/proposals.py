@@ -207,7 +207,16 @@ async def get_supporters(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_
 
 
 @router.delete("/proposals/{proposal_id}/support/{user_id}", status_code=200)
-async def remove_support(proposal_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def remove_support(
+    proposal_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    # Without the session check, a logged-in user could DELETE any other
+    # member's support row purely by URL — a one-shot way to shave points
+    # off a rival proposal before a pulse.
+    enforce_session_matches_body(user_id, session_user)
     svc = SupportService(db)
     await svc.remove_proposal_support(proposal_id, user_id)
     return {"status": "unsupported"}
