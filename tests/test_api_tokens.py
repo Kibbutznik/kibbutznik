@@ -9,6 +9,7 @@ Covers the two contracts external bots depend on:
 
 from __future__ import annotations
 
+import uuid
 
 import pytest
 
