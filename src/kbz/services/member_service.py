@@ -107,8 +107,8 @@ class MemberService:
         per-community bot display_name.
 
         Returns SimpleNamespace objects so callers can use attribute
-        access (`m.user_id`) and pydantic MemberResponse can pick up
-        user_name / display_name via from_attributes.
+        access (`m.user_id`) and pydantic CommunityMemberResponse can
+        pick up user_name / display_name via from_attributes.
         """
         stmt = (
             select(Member, User.user_name, BotProfile.display_name)
@@ -213,7 +213,6 @@ class MemberService:
                     community_id=row["community_id"],
                     user_id=row["user_id"],
                     user_name=row["user_name"],
-                    display_name=None,
                     status=row["status"],
                     seniority=row["seniority"],
                     joined_at=row["joined_at"],

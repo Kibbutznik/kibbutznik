@@ -52,6 +52,40 @@ async def test_founder_is_member(client):
 
 
 @pytest.mark.asyncio
+async def test_community_members_response_shape(client):
+    """`/communities/{id}/members` should NOT leak the user-membership
+    enrichment fields (community_name, community_parent_id,
+    community_root_id). The caller already knows the community."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    resp = await client.get(f"/communities/{community['id']}/members")
+    assert resp.status_code == 200
+    row = resp.json()[0]
+    for dead in ("community_name", "community_parent_id", "community_root_id"):
+        assert dead not in row, f"{dead} should not appear on CommunityMemberResponse"
+    for kept in ("user_name", "display_name", "status", "seniority"):
+        assert kept in row
+
+
+@pytest.mark.asyncio
+async def test_user_communities_response_shape(client):
+    """`/users/{id}/communities` should carry community_* enrichment fields
+    but NOT display_name — it spans multiple communities and the bot's
+    per-community display_name is not meaningful cross-community."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    resp = await client.get(f"/users/{user['id']}/communities")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert rows, "founder should have at least one membership"
+    row = next(r for r in rows if r["community_id"] == community["id"])
+    assert "display_name" not in row
+    for kept in ("community_name", "community_parent_id", "community_root_id"):
+        assert kept in row
+    assert row["community_name"] == community["name"]
+
+
+@pytest.mark.asyncio
 async def test_get_community(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
