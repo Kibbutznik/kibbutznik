@@ -147,3 +147,41 @@ async def test_score_delta_must_be_single_step(client):
     assert resp.status_code == 422
     resp = await client.post(f"/comments/{cid}/score", json={"delta": -42})
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reply_rejects_parent_on_different_entity(client):
+    """A reply's parent_comment_id must live on the same entity —
+    otherwise a reply can jump threads (e.g. claim to reply to comment
+    on proposal A while posting on proposal B) and the tree view
+    silently loses the thread."""
+    user = await create_test_user(client)
+    entity_a = str(uuid.uuid4())
+    entity_b = str(uuid.uuid4())
+
+    parent = await client.post(f"/entities/proposal/{entity_a}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "Parent on A",
+    })
+    parent_id = parent.json()["id"]
+
+    # Try to reply on entity B using a parent from entity A.
+    bogus = await client.post(f"/entities/proposal/{entity_b}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "cross-thread reply",
+        "parent_comment_id": parent_id,
+    })
+    assert bogus.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reply_rejects_missing_parent(client):
+    """parent_comment_id pointing at nothing → 404, not silent orphan."""
+    user = await create_test_user(client)
+    entity_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "reply to ghost",
+        "parent_comment_id": str(uuid.uuid4()),
+    })
+    assert resp.status_code == 404

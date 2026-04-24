@@ -48,6 +48,23 @@ class CommentService:
     async def add_comment(
         self, entity_id: uuid.UUID, entity_type: str, data: CommentCreate
     ) -> Comment:
+        # If this is a reply, the parent must exist AND be attached to the
+        # same (entity_id, entity_type). Otherwise a reply can jump threads
+        # — e.g. reply to a comment on proposal A while posting on proposal
+        # B — and the tree view silently loses or duplicates the thread.
+        if data.parent_comment_id is not None:
+            parent = (
+                await self.db.execute(
+                    select(Comment).where(Comment.id == data.parent_comment_id)
+                )
+            ).scalar_one_or_none()
+            if parent is None:
+                raise HTTPException(status_code=404, detail="parent comment not found")
+            if parent.entity_id != entity_id or parent.entity_type != entity_type:
+                raise HTTPException(
+                    status_code=400,
+                    detail="parent comment belongs to a different entity",
+                )
         # Anti-hallucination guard for EditArtifact proposal comments:
         # the comment must literally quote at least 5 consecutive words from
         # the proposal text, otherwise the agent is making it up.
