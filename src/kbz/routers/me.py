@@ -477,5 +477,7 @@ async def revoke_api_token(
     db: AsyncSession = Depends(get_db),
 ):
     from kbz.services.auth_service import AuthService
-    await AuthService(db).revoke_api_token(user, token_id)
+    revoked = await AuthService(db).revoke_api_token(user, token_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Token not found")
     await db.commit()
