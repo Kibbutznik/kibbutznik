@@ -41,7 +41,7 @@ async def test_bots_empty_on_fresh_user(client):
 @pytest.mark.asyncio
 async def test_put_bot_rejects_non_member(client):
     """You can't activate a bot in a kibbutz you aren't a member of."""
-    uid = await _login(client, "outsider@example.com")
+    await _login(client, "outsider@example.com")
     # Someone ELSE creates a community
     client.cookies.clear()
     other_uid = await _login(client, "founder@example.com")

@@ -1,5 +1,4 @@
 """Typed async client wrapping all KBZ API endpoints for agent use."""
-import uuid
 from typing import Any
 
 import httpx

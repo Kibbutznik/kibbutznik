@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from kbz.enums import ProposalStatus, ProposalType
 from kbz.models.community import Community
-from kbz.models.member import Member
 from kbz.models.proposal import Proposal
 from kbz.models.variable import Variable
 from kbz.services.execution_service import ExecutionService

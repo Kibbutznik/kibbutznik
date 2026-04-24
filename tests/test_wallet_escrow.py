@@ -56,7 +56,7 @@ async def _fund_user(svc: WalletService, user_id, amount) -> Wallet:
 @pytest.mark.asyncio
 async def test_escrow_open_debits_user_and_parks_in_escrow(sf):
     async with sf() as db:
-        cid = await _seed_financial_community(db)
+        await _seed_financial_community(db)
         await db.commit()
         svc = WalletService(db)
         user_id = uuid.uuid4()
@@ -124,7 +124,7 @@ async def test_escrow_release_moves_to_community(sf):
 @pytest.mark.asyncio
 async def test_escrow_refund_returns_to_applicant(sf):
     async with sf() as db:
-        cid = await _seed_financial_community(db)
+        await _seed_financial_community(db)
         await db.commit()
         svc = WalletService(db)
         user_id = uuid.uuid4()

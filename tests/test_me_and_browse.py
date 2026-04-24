@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import uuid
 
 import pytest
 
@@ -30,7 +29,7 @@ async def _login(client, email: str) -> str:
 async def test_list_communities_default_shows_roots(client):
     # Create one root community
     user = await create_test_user(client)
-    c1 = await create_test_community(client, user["id"], name="First Kibbutz")
+    await create_test_community(client, user["id"], name="First Kibbutz")
     r = await client.get("/communities")
     assert r.status_code == 200
     names = [c["name"] for c in r.json()]

@@ -12,7 +12,6 @@ import argparse
 import asyncio
 import json
 import re
-import sys
 import time
 
 # ── Minimal sample prompt (representative KBZ decision context) ─────────────
