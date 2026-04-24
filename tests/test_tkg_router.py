@@ -82,7 +82,7 @@ async def test_timeline_filters_window(client, db_engine):
 
 @pytest.mark.asyncio
 async def test_prune_endpoint(client, db_engine):
-    ids = await _seed(db_engine)
+    await _seed(db_engine)
     # ALLIED_WITH is the only closed edge (closed at 7). Prune older_than=100.
     resp = await client.delete("/tkg/prune", params={"older_than_round": 100})
     assert resp.status_code == 200

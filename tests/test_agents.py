@@ -5,9 +5,7 @@ Tests persona loading, community observation, decision parsing,
 and the full agent observe → think → act loop with a mock LLM.
 """
 import json
-import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -15,11 +13,10 @@ from httpx import ASGITransport, AsyncClient
 
 from agents.api_client import KBZClient
 from agents.agent import Agent
-from agents.community_state import CommunitySnapshot, observe_community
+from agents.community_state import CommunitySnapshot
 from agents.decision_engine import AgentAction, DecisionEngine, build_decision_prompt
 from agents.persona import Persona, Traits, load_all_personas, load_persona
 
-from tests.conftest import create_test_user, create_test_community
 
 
 # --- Persona Tests ---

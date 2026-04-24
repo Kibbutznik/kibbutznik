@@ -4,7 +4,6 @@ what's happening in their community before making decisions.
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 from agents.api_client import KBZClient
 
@@ -229,7 +228,7 @@ class CommunitySnapshot:
             cid = c["id"]
             st = status_label.get(c.get("status"), str(c.get("status")))
             is_delegated_container = bool(c.get("delegated_from_artifact_id"))
-            origin = " (root)" if not is_delegated_container else f" (delegated from parent — YOUR WORK CONTAINER)"
+            origin = " (root)" if not is_delegated_container else " (delegated from parent — YOUR WORK CONTAINER)"
             lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid[:8]}] — {st}{origin}")
             mission = (c.get("mission") or "").strip()
             if mission:
@@ -449,9 +448,9 @@ class CommunitySnapshot:
                 # Warn agents NOT to JoinAction for AddAction proposals that haven't been accepted yet
                 if p["proposal_type"] == "AddAction":
                     lines.append(
-                        f"    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
-                        f"Support this AddAction proposal first, wait for it to be accepted, "
-                        f"then it will appear in 'Actions You Can Join'."
+                        "    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
+                        "Support this AddAction proposal first, wait for it to be accepted, "
+                        "then it will appear in 'Actions You Can Join'."
                     )
                 comments = self.proposal_comments.get(p["id"], [])
                 for c in comments[:3]:
@@ -459,7 +458,7 @@ class CommunitySnapshot:
                     lines.append(f"    > {commenter}: \"{c['comment_text'][:80]}\"")
 
         if self.proposals_on_the_air:
-            lines.append(f"\n### Proposals Being Decided (if pulse fires NOW):")
+            lines.append("\n### Proposals Being Decided (if pulse fires NOW):")
             will_pass = []
             will_fail = []
             for p in self.proposals_on_the_air:
@@ -481,8 +480,8 @@ class CommunitySnapshot:
                 _append_edit_diff(p, lines)
                 if p["proposal_type"] == "AddAction":
                     lines.append(
-                        f"    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
-                        f"It will appear in 'Actions You Can Join' after the pulse accepts it."
+                        "    ⚠️ This action does NOT exist yet — do NOT propose JoinAction for it! "
+                        "It will appear in 'Actions You Can Join' after the pulse accepts it."
                     )
             if will_pass or will_fail:
                 lines.append(f"  >>> PULSE IMPACT: {len(will_pass)} would PASS, {len(will_fail)} would FAIL")

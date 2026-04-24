@@ -7,11 +7,10 @@ governance cycles. This is the "simulation engine".
 import asyncio
 import logging
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
 
-from agents.agent import Agent, ActionLog
+from agents.agent import Agent
 from agents.api_client import KBZClient
 from agents.decision_engine import DecisionEngine
 from agents.memory import MemoryStore
@@ -658,7 +657,7 @@ class Orchestrator:
         try:
             user = await self.client.create_user(
                 user_name=user_name,
-                about=f"Newcomer applying to join the community",
+                about="Newcomer applying to join the community",
             )
             user_id = user["id"]
             # Generate the newcomer's persona now so we can use their background

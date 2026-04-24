@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import re
-import random
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -612,7 +611,9 @@ class DecisionEngine:
     async def _call_openrouter(self, prompt: str) -> str:
         """Call OpenRouter (OpenAI-compatible) with the given prompt."""
         if self._openrouter_client is None:
-            import configparser, os, httpx
+            import configparser
+            import os
+            import httpx
             api_key = os.environ.get("OPENROUTER_API_KEY")
             if not api_key:
                 cfg = configparser.ConfigParser()

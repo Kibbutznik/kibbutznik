@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from tests.conftest import create_test_community, create_test_user
+from tests.conftest import create_test_community
 
 
 async def _login(client, email: str) -> str:

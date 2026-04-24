@@ -18,7 +18,6 @@ def _ensure_venv():
     try:
         import kbz  # noqa: F401
     except ModuleNotFoundError:
-        import subprocess
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         venv_python = os.path.join(root, ".venv", "bin", "python")
         if os.path.isfile(venv_python):
@@ -35,7 +34,6 @@ _ensure_venv()
 import argparse
 import asyncio
 import logging
-import sys
 
 from agents.orchestrator import Orchestrator
 from agents.persona import load_all_personas
