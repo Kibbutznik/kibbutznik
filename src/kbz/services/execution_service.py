@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import update, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kbz.enums import ProposalType, CommunityStatus, DEFAULT_VARIABLES, StatementStatus, ProposalStatus
+from kbz.enums import ProposalType, CommunityStatus, StatementStatus, ProposalStatus
 from kbz.models.action import Action
 from kbz.models.community import Community
 from kbz.models.proposal import Proposal
@@ -243,7 +243,7 @@ class ExecutionService:
         ProposalService so this is a defense in depth."""
         from kbz.services.wallet_service import (
             WalletService, FinancialModuleDisabledError, InsufficientFundsError,
-            OWNER_ACTION, OWNER_COMMUNITY,
+            OWNER_COMMUNITY,
         )
 
         if not (proposal.val_text or "").strip():

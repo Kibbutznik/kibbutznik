@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, String, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID

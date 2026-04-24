@@ -3,12 +3,11 @@ import uuid
 from types import SimpleNamespace
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, delete, update
+from sqlalchemy import func, select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import DEFAULT_VARIABLES, PROPOSAL_TYPE_THRESHOLDS, ProposalStatus, ProposalType
 from kbz.models.bot_profile import BotProfile
-from kbz.models.community import Community
 from kbz.models.proposal import Proposal
 from kbz.models.support import Support
 from kbz.models.user import User

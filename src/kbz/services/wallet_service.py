@@ -24,10 +24,8 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal, InvalidOperation
-from typing import Iterable
 
-from sqlalchemy import and_, select, update
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.models.action import Action
@@ -42,6 +40,25 @@ from kbz.models.wallet import (
     Wallet,
     WalletWebhookEvent,
 )
+
+# Re-exported for callers that import owner-kind constants from this
+# module — don't drop these even if the service itself doesn't use
+# every one. Listed explicitly so linters see the intent.
+__all__ = [
+    "FINANCIAL_OFF_VALUES",
+    "OWNER_ACTION",
+    "OWNER_COMMUNITY",
+    "OWNER_ESCROW",
+    "OWNER_USER",
+    "LedgerEntry",
+    "Wallet",
+    "WalletWebhookEvent",
+    "WalletError",
+    "FinancialModuleDisabledError",
+    "InsufficientFundsError",
+    "DuplicateWebhookError",
+    "WalletService",
+]
 
 
 # ─── Exceptions ────────────────────────────────────────────────────

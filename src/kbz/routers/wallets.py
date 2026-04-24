@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kbz.auth_deps import get_current_user, require_user
+from kbz.auth_deps import require_user
 from kbz.database import get_db
 from kbz.enums import ProposalStatus, ProposalType
 from kbz.models.action import Action
@@ -39,7 +39,6 @@ from kbz.models.wallet import (
     Wallet,
 )
 from kbz.services.wallet_service import (
-    FinancialModuleDisabledError,
     WalletService,
 )
 

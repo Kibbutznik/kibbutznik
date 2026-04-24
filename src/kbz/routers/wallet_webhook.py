@@ -26,11 +26,9 @@ from kbz.models.wallet import (
     OWNER_ACTION,
     OWNER_COMMUNITY,
     OWNER_USER,
-    Wallet,
 )
 from kbz.services.wallet_backing import resolve_backing
 from kbz.services.wallet_service import (
-    FinancialModuleDisabledError,
     WalletService,
 )
 

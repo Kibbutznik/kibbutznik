@@ -1,7 +1,7 @@
 import math
 import uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import (

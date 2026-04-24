@@ -36,10 +36,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from kbz.models.proposal import Proposal
 from kbz.models.tkg import TKGNodeKind, TKGRelation
 from kbz.services.embedding_service import EmbeddingService
 from kbz.services.event_bus import Event, event_bus

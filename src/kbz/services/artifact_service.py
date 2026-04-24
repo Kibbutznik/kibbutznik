@@ -13,7 +13,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import (
@@ -442,13 +442,6 @@ class ArtifactService:
     async def _cleanup_committed_container(self, container: ArtifactContainer) -> None:
         """Retire artifacts, cancel orphaned proposals, and cascade to sub-containers."""
         active_statuses = (ProposalStatus.OUT_THERE.value, ProposalStatus.ON_THE_AIR.value)
-        artifact_types = [
-            ProposalType.EDIT_ARTIFACT.value,
-            ProposalType.REMOVE_ARTIFACT.value,
-            ProposalType.DELEGATE_ARTIFACT.value,
-            ProposalType.CREATE_ARTIFACT.value,
-            ProposalType.COMMIT_ARTIFACT.value,
-        ]
 
         # 1. Retire all ACTIVE artifacts in this container
         active_arts = await self.list_artifacts(container.id, include_history=False)

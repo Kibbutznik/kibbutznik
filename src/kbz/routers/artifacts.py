@@ -5,9 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
-from kbz.enums import ArtifactStatus, ContainerStatus
-from kbz.models.action import Action
-from kbz.models.artifact import Artifact
 from kbz.models.artifact_container import ArtifactContainer
 from kbz.schemas.artifact import (
     ArtifactContainerResponse,
