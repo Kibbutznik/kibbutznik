@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kbz.auth_deps import enforce_session_matches_body, get_current_user
 from kbz.database import get_db
 from kbz.models.community import Community
 from kbz.models.member import Member
@@ -16,7 +17,15 @@ router = APIRouter()
 
 
 @router.post("", response_model=CommunityResponse, status_code=201)
-async def create_community(data: CommunityCreate, db: AsyncSession = Depends(get_db)):
+async def create_community(
+    data: CommunityCreate,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    # Without this, a logged-in human can POST with someone else's
+    # founder_user_id and pollute the victim's "my memberships" with a
+    # community they never created. Agents (no cookie) pass through.
+    enforce_session_matches_body(data.founder_user_id, session_user)
     svc = CommunityService(db)
     try:
         community = await svc.create(data)
