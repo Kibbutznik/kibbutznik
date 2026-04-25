@@ -655,6 +655,15 @@ class ProposalService:
         # status directly and leave escrow plumbing alone.
         original.proposal_status = ProposalStatus.CANCELED
 
+        # Track the original so we emit proposal.canceled AFTER
+        # commit (TKG ingestor needs the event to stamp
+        # canceled_at_round on the proposal node — without it the
+        # amend-canceled row stayed invisible in semantic search).
+        _amend_canceled_id = original.id
+        _amend_canceled_type = str(original.proposal_type)
+        _amend_canceled_user = original.user_id
+        _amend_canceled_community = original.community_id
+
         successor = Proposal(
             id=uuid.uuid4(),
             community_id=original.community_id,
@@ -682,6 +691,18 @@ class ProposalService:
         self.db.add(successor)
         await self.db.commit()
         await self.db.refresh(successor)
+        # Emit proposal.canceled for the original AFTER commit so
+        # subscribers see the persisted CANCELED status. The
+        # successor's proposal.created emit (added in PR #42) fires
+        # alongside; clients that follow the chain via
+        # parent_proposal_id can react to both.
+        await event_bus.emit(
+            "proposal.canceled",
+            community_id=_amend_canceled_community,
+            user_id=_amend_canceled_user,
+            proposal_id=_amend_canceled_id,
+            proposal_type=_amend_canceled_type,
+        )
         return successor
 
     async def list_versions(self, proposal_id: uuid.UUID) -> list[Proposal]:
