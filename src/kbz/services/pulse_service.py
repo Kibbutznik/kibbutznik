@@ -60,8 +60,29 @@ class PulseService:
         return val or "0"
 
     async def execute_pulse(self, community_id: uuid.UUID) -> None:
-        """The heart of the governance system. Executes a full pulse cycle in one transaction."""
+        """The heart of the governance system. Executes a full pulse cycle in one transaction.
 
+        Race-window safety: two concurrent threshold-crossing
+        pulse-supports both refresh, both see
+        ``support_count >= threshold``, and both call this. Without
+        protection, both would process the same OnTheAir proposals
+        AND both create a new NEXT pulse — leaving the community
+        with two NEXT pulses, breaking every subsequent
+        ``get_next_pulse()`` with MultipleResultsFound. The partial
+        unique indexes on ``(community_id) WHERE status = NEXT/ACTIVE``
+        turn the loser's NEW NEXT insert into a clean
+        IntegrityError; we rollback and bail so the loser's
+        transaction has no observable effect.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        try:
+            await self._execute_pulse_unsafe(community_id)
+        except IntegrityError:
+            await self.db.rollback()
+            return
+
+    async def _execute_pulse_unsafe(self, community_id: uuid.UUID) -> None:
         # Get community
         result = await self.db.execute(select(Community).where(Community.id == community_id))
         community = result.scalar_one_or_none()
