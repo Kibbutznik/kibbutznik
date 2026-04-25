@@ -84,7 +84,14 @@ class PulseService:
                     ProposalType(proposal.proposal_type)
                 )
                 threshold_pct = int(float(await self._get_variable_value(community_id, threshold_var)))
-                threshold = math.ceil(member_count * threshold_pct / 100)
+                # Floor at 1 — `ceil(0 * pct / 100) == 0`, and "support_count
+                # >= 0" is always true. Without this floor, a community whose
+                # member_count somehow hit zero (everyone thrown out, or a
+                # mis-counted rollback) would auto-ACCEPT every OnTheAir
+                # proposal on the next pulse with no real support behind it.
+                # Mirrors the same defense already used at the new-pulse
+                # threshold computation below.
+                threshold = max(1, math.ceil(member_count * threshold_pct / 100))
 
                 if proposal.support_count >= threshold:
                     proposal.proposal_status = ProposalStatus.ACCEPTED
@@ -133,8 +140,11 @@ class PulseService:
                 await self.db.flush()
                 continue
 
-            # Check if enough support to move to OnTheAir
-            required_support = math.ceil(member_count * proposal_support_pct / 100)
+            # Check if enough support to move to OnTheAir.
+            # Same floor-at-1 reasoning as the OnTheAir step above:
+            # otherwise a 0-member community auto-promotes every
+            # OutThere proposal to OnTheAir.
+            required_support = max(1, math.ceil(member_count * proposal_support_pct / 100))
             if proposal.support_count >= required_support:
                 proposal.proposal_status = ProposalStatus.ON_THE_AIR
                 proposal.pulse_id = next_pulse.id

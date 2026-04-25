@@ -132,6 +132,107 @@ async def test_webhook_is_idempotent_on_same_key(client):
 
 
 @pytest.mark.asyncio
+async def test_webhook_handles_concurrent_dedupe_collision(client, db):
+    """Race regression. Two concurrent webhooks with the same
+    (event, idempotency_key) both pass `find_webhook` (because the
+    dedupe row doesn't exist yet) and both reach the `mint`+
+    `record_webhook` step. The unique index on (event,
+    idempotency_key) makes the second `record_webhook` fail with
+    IntegrityError.
+
+    Pre-fix: that IntegrityError bubbled as 500 AND left the
+    second mint committed — double-credit.
+
+    Post-fix: the route catches IntegrityError, rolls back its own
+    mint, and returns the WINNING request's ledger_entry_id with
+    status='duplicate'.
+
+    We simulate the race by pre-inserting the dedupe row before
+    the request runs, so the route's record_webhook step is
+    guaranteed to collide.
+    """
+    import uuid as _u
+    from kbz.models.wallet import LedgerEntry, Wallet, WalletWebhookEvent
+    from sqlalchemy import select
+    cid = await _make_financial_community(client)
+
+    # Hand-craft a "winning" mint that the simulated other request
+    # already committed: a real ledger entry + the dedupe row
+    # pointing at it. The idempotency_key matches what the
+    # incoming request will use.
+    # First seed the wallet so the ledger entry has a target.
+    from kbz.models.wallet import OWNER_COMMUNITY
+    wallet = Wallet(
+        id=_u.uuid4(),
+        owner_kind=OWNER_COMMUNITY,
+        owner_id=_u.UUID(cid),
+        balance="0",
+    )
+    db.add(wallet)
+    winning_entry = LedgerEntry(
+        id=_u.uuid4(),
+        from_wallet=None,
+        to_wallet=wallet.id,
+        amount="50",
+        proposal_id=None,
+        external_ref="winning",
+        webhook_event="test.seed",
+        memo="winning earlier deposit",
+    )
+    db.add(winning_entry)
+    db.add(WalletWebhookEvent(
+        id=_u.uuid4(),
+        event="test.seed",
+        idempotency_key="race-key",
+        ledger_entry_id=winning_entry.id,
+    ))
+    await db.commit()
+
+    # Now this incoming request will: pass find_webhook (it sees
+    # the existing row and short-circuits as duplicate). Wait —
+    # that's the easy path. We need a path where find_webhook
+    # MISSES the row. That happens when both requests land before
+    # either's row has been committed.
+    #
+    # Easiest reproduction in a single-process test: monkeypatch
+    # WalletService.find_webhook to return None on first call
+    # only. Then the route proceeds to mint + record_webhook,
+    # the IntegrityError fires, and the route's exception handler
+    # should re-find the existing row and report 'duplicate'.
+    from kbz.services.wallet_service import WalletService
+    real_find = WalletService.find_webhook
+    bypass_count = {"n": 0}
+
+    async def _bypass_find_once(self, *, event, idempotency_key):
+        bypass_count["n"] += 1
+        if bypass_count["n"] == 1:
+            return None
+        return await real_find(self, event=event, idempotency_key=idempotency_key)
+
+    WalletService.find_webhook = _bypass_find_once
+    try:
+        body = {
+            "target_kind": "community",
+            "target_id": cid,
+            "amount": "50",
+            "event": "test.seed",
+            "external_ref": "loser",
+            "idempotency_key": "race-key",
+        }
+        raw = json.dumps(body).encode()
+        r = await client.post(
+            "/webhooks/wallet-deposit",
+            content=raw,
+            headers={"X-KBZ-Signature": _sig(raw), "Content-Type": "application/json"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "duplicate"
+        assert r.json()["ledger_entry_id"] == str(winning_entry.id)
+    finally:
+        WalletService.find_webhook = real_find
+
+
+@pytest.mark.asyncio
 async def test_webhook_404s_on_non_financial_community(client):
     # Community with Financial=false
     founder = await create_test_user(client, name="non-fin")
