@@ -172,12 +172,25 @@ class CommentService:
         *,
         limit: int | None = None,
         after: datetime | None = None,
+        include_replies: bool = True,
     ) -> list[Comment]:
+        """Return comments on an entity.
+
+        `include_replies=True` (default): returns the full tree as a
+        flat list. The client groups by `parent_comment_id` to render
+        threading. This is what the proposal-detail / zoomed-comment
+        modal needs — without it, replies are never sent over the wire
+        and the threaded view always looks empty under each parent.
+
+        `include_replies=False`: legacy behavior — root comments only.
+        Useful for compact summary widgets that don't render threads.
+        """
         query = select(Comment).where(
             Comment.entity_id == entity_id,
             Comment.entity_type == entity_type,
-            Comment.parent_comment_id.is_(None),
         )
+        if not include_replies:
+            query = query.where(Comment.parent_comment_id.is_(None))
         if after is not None:
             query = query.where(Comment.created_at > after)
         # Chat (community entity_type) uses chronological order;
@@ -199,12 +212,20 @@ class CommentService:
         )
         return list(result.scalars().all())
 
-    async def update_score(self, comment_id: uuid.UUID, delta: int) -> None:
+    async def update_score(self, comment_id: uuid.UUID, delta: int) -> int:
+        """Atomic score bump. Returns the new score so callers can
+        update their UI without re-fetching the whole comment tree —
+        the previous shape (just \"updated\") forced the client to
+        reload everything to see the new value, which caused the
+        proposal modal to flicker on every vote."""
         result = await self.db.execute(
             update(Comment)
             .where(Comment.id == comment_id)
             .values(score=Comment.score + delta)
+            .returning(Comment.score)
         )
-        if result.rowcount == 0:
+        new_score = result.scalar_one_or_none()
+        if new_score is None:
             raise HTTPException(status_code=404, detail="Comment not found")
         await self.db.commit()
+        return int(new_score)

@@ -39,6 +39,10 @@ async def test_get_comments(client):
 
 @pytest.mark.asyncio
 async def test_nested_comments(client):
+    """Default behavior includes the full tree (parent + replies) as
+    a flat list — the client groups by parent_comment_id to render
+    threading. Pre-fix this returned root only and the zoomed comment
+    view never showed any replies."""
     user = await create_test_user(client)
     entity_id = str(uuid.uuid4())
 
@@ -56,8 +60,21 @@ async def test_nested_comments(client):
         "parent_comment_id": parent_id,
     })
 
-    # Top-level comments should only show parent
+    # Default: full tree, parent + reply both returned.
     resp = await client.get(f"/entities/proposal/{entity_id}/comments")
+    rows = resp.json()
+    assert len(rows) == 2
+    texts = {r["comment_text"] for r in rows}
+    assert texts == {"Parent", "Reply to parent"}
+    # The reply carries parent_comment_id pointing back at the parent
+    # so the client can rebuild the tree.
+    reply = next(r for r in rows if r["comment_text"] == "Reply to parent")
+    assert reply["parent_comment_id"] == parent_id
+
+    # include_replies=false preserves the legacy compact-view behavior.
+    resp = await client.get(
+        f"/entities/proposal/{entity_id}/comments?include_replies=false"
+    )
     assert len(resp.json()) == 1
     assert resp.json()[0]["comment_text"] == "Parent"
 
@@ -73,14 +90,19 @@ async def test_comment_score(client):
     })
     comment_id = resp.json()["id"]
 
-    # Upvote
-    await client.post(f"/comments/{comment_id}/score", json={"delta": 1})
-    await client.post(f"/comments/{comment_id}/score", json={"delta": 1})
+    # Upvote — response now carries the NEW score so the client can
+    # update its UI without re-fetching the whole proposal modal.
+    r = await client.post(f"/comments/{comment_id}/score", json={"delta": 1})
+    assert r.json()["score"] == 1
+    assert r.json()["id"] == comment_id
+    r = await client.post(f"/comments/{comment_id}/score", json={"delta": 1})
+    assert r.json()["score"] == 2
 
     # Downvote
-    await client.post(f"/comments/{comment_id}/score", json={"delta": -1})
+    r = await client.post(f"/comments/{comment_id}/score", json={"delta": -1})
+    assert r.json()["score"] == 1
 
-    # Net score should be +1
+    # Net score should be +1 (and the GET reflects it too).
     resp = await client.get(f"/entities/proposal/{entity_id}/comments")
     assert resp.json()[0]["score"] == 1
 

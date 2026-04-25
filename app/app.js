@@ -1636,14 +1636,21 @@ function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
     const [replyDraft, setReplyDraft] = useState("");
     const [voteBusy, setVoteBusy] = useState(false);
     const [replyBusy, setReplyBusy] = useState(false);
+    // Local score so a vote bumps just the up/down counter — the
+    // proposal modal used to call onReload() here, which refetched
+    // supporters + the whole comment tree and made the entire widget
+    // flicker on every vote. The score endpoint now returns the
+    // new value so we can update locally.
+    const [score, setScore] = useState(c.score || 0);
+    useEffect(() => { setScore(c.score || 0); }, [c.score]);
     const children = byParent.get(c.id) || [];
 
     const vote = async (delta) => {
         if (!user || voteBusy) return;
         setVoteBusy(true);
         try {
-            await api.post(`/comments/${c.id}/score`, { delta });
-            await onReload?.();
+            const r = await api.post(`/comments/${c.id}/score`, { delta });
+            if (typeof r?.score === "number") setScore(r.score);
         } catch (e) { toast(e.message, "error"); }
         finally { setVoteBusy(false); }
     };
@@ -1695,7 +1702,7 @@ function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
                                     style={{ padding: "0 6px", fontSize: "0.8rem" }}
                                     title="Upvote">▲</button>
                             <span className="muted" style={{ minWidth: 16, textAlign: "center" }}>
-                                {c.score || 0}
+                                {score}
                             </span>
                             <button className="btn ghost" disabled={voteBusy}
                                     onClick={() => vote(-1)}
