@@ -318,6 +318,35 @@ async def test_exec_create_artifact_refuses_cross_community_container(db):
 
 
 @pytest.mark.asyncio
+async def test_delegate_refuses_foreign_source_artifact(db):
+    """ArtifactService.delegate must refuse a source artifact that
+    belongs to a community OTHER than delegating_proposal.community_id.
+    Without this guard, A could delegate B's artifact into A's
+    own child action; the eventual commit would inject a Draft
+    EditArtifact into B's queue without B's consent."""
+    a_parent = await _mk_community(db, "A-parent")
+    a_child = await _mk_child_action(db, a_parent, "A-child")
+    b_parent = await _mk_community(db, "B-parent")
+
+    svc = ArtifactService(db)
+    user = uuid.uuid4()
+
+    # B's container with a real artifact in it.
+    b_container = await svc.create_root_container(b_parent.id)
+    b_proposal = await _mk_proposal(db, b_parent.id, user)
+    b_artifact = await svc.create_artifact(
+        b_container.id, "B's content", "B title", user, b_proposal.id,
+    )
+
+    # A's DelegateArtifact proposal targets B's artifact + A's child.
+    delegating = await _mk_proposal(
+        db, a_parent.id, user, ProposalType.DELEGATE_ARTIFACT,
+    )
+    with pytest.raises(ArtifactServiceError, match="Source artifact must belong"):
+        await svc.delegate(b_artifact.id, a_child.id, delegating)
+
+
+@pytest.mark.asyncio
 async def test_commit_root_container_seals_directly(db):
     community = await _mk_community(db)
     svc = ArtifactService(db)
