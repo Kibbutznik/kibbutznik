@@ -421,6 +421,31 @@ class ExecutionService:
         if not proposal.val_uuid:
             logger.warning("CommitArtifact %s missing val_uuid (container_id)", proposal.id)
             return
+        # Same cross-community defense as the Edit/Remove artifact
+        # executors. An accepted CommitArtifact in community A
+        # whose val_uuid pointed at a container in B would let A:
+        #   - mark B's container as COMMITTED (status flip),
+        #   - overwrite B's committed_content with whatever A
+        #     packaged (an empty val_text wipes it to ""),
+        #   - and for delegated containers, materialize a Draft
+        #     EditArtifact in B's parent community without their
+        #     authorization.
+        # Refuse if the container's community_id doesn't match
+        # the proposal's community_id.
+        from kbz.models.artifact_container import ArtifactContainer
+        container_cid = (
+            await self.db.execute(
+                select(ArtifactContainer.community_id).where(
+                    ArtifactContainer.id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if container_cid is None or container_cid != proposal.community_id:
+            logger.warning(
+                "CommitArtifact %s val_uuid %s targets a foreign or missing container — refused",
+                proposal.id, proposal.val_uuid,
+            )
+            return
         try:
             ordered_ids = parse_ordered_uuid_list(proposal.val_text or "")
             await ArtifactService(self.db).commit_container(
