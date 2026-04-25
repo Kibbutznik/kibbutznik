@@ -55,6 +55,21 @@ async def test_create_invite_for_unknown_community_404s(client):
 
 
 @pytest.mark.asyncio
+async def test_create_invite_requires_membership(client):
+    """A logged-in user who is NOT a member of the community cannot mint
+    invites to it. Otherwise anyone could spam invite codes for any
+    community and bypass the social-proof model."""
+    founder_id = await _login(client, "real-founder@example.com")
+    community = await create_test_community(client, founder_id, name="Members Only")
+
+    # Different user logs in and tries to create an invite
+    client.cookies.clear()
+    await _login(client, "outsider@example.com")
+    r = await client.post(f"/communities/{community['id']}/invites")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_preview_invite_returns_community_name(client):
     user_id = await _login(client, "founder3@example.com")
     community = await create_test_community(client, user_id, name="Reading Circle")
@@ -119,6 +134,56 @@ async def test_claim_twice_rejects_second(client):
     )
     assert r2.status_code == 400
     assert "already claimed" in r2.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_claim_dedupes_existing_in_flight_membership(client):
+    """A user who already has an in-flight Membership proposal in
+    a community must NOT get a second one created when they
+    consume an invite for the same community. The invite still
+    goes claimed (it's been used), but the returned proposal_id
+    points at the existing row and no duplicate appears in the
+    community's proposal listing."""
+    founder_id = await _login(client, "dedupe-founder@example.com")
+    community = await create_test_community(client, founder_id)
+
+    # Create TWO invites for the same community.
+    code1 = (await client.post(f"/communities/{community['id']}/invites")).json()["code"]
+    code2 = (await client.post(f"/communities/{community['id']}/invites")).json()["code"]
+    client.cookies.clear()
+
+    # Same email claims both.
+    r1 = await client.post(
+        "/invites/claim",
+        json={"invite_code": code1, "email": "twice@example.com"},
+    )
+    assert r1.status_code == 200
+    first_pid = r1.json()["membership_proposal_id"]
+
+    r2 = await client.post(
+        "/invites/claim",
+        json={"invite_code": code2, "email": "twice@example.com"},
+    )
+    assert r2.status_code == 200
+    second_pid = r2.json()["membership_proposal_id"]
+
+    # The second claim must have RETURNED THE SAME proposal id —
+    # not minted a new ghost row.
+    assert second_pid == first_pid
+
+    # The community must show exactly ONE Membership proposal for
+    # this applicant.
+    listing = (
+        await client.get(
+            f"/communities/{community['id']}/proposals",
+            params={"proposal_type": "Membership"},
+        )
+    ).json()
+    membership_for_applicant = [
+        p for p in listing if p["proposal_text"].startswith("twice")
+        or "twice@example.com" in (p.get("proposal_text") or "")
+    ]
+    assert len(membership_for_applicant) == 1
 
 
 @pytest.mark.asyncio

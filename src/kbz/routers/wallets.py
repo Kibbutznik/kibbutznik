@@ -240,6 +240,9 @@ async def file_funding_request(
             status_code=409,
             detail="Parent community doesn't have the Financial module enabled.",
         )
+    from kbz.services.member_service import MemberService
+    if not await MemberService(db).is_active_member(parent, user.id):
+        raise HTTPException(status_code=403, detail="User is not an active member")
     _parse_positive_amount(body.amount)
     p = Proposal(
         id=uuid.uuid4(),
@@ -280,6 +283,9 @@ async def file_payment_request(
             status_code=409,
             detail="Community doesn't have the Financial module enabled.",
         )
+    from kbz.services.member_service import MemberService
+    if not await MemberService(db).is_active_member(community_id, user.id):
+        raise HTTPException(status_code=403, detail="User is not an active member")
     # Early check that this is a leaf — saves a pointless proposal.
     # Match `status == ACTIVE` so an EndAction'd sub-Action (which
     # leaves an INACTIVE Action row behind for audit) doesn't

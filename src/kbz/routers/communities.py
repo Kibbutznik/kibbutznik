@@ -18,7 +18,10 @@ router = APIRouter()
 @router.post("", response_model=CommunityResponse, status_code=201)
 async def create_community(data: CommunityCreate, db: AsyncSession = Depends(get_db)):
     svc = CommunityService(db)
-    community = await svc.create(data)
+    try:
+        community = await svc.create(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     await db.commit()
     await db.refresh(community)
     return community
