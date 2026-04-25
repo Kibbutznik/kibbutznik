@@ -267,14 +267,21 @@ class MetricsService:
     async def _deadlock_pulses(self, community_id: uuid.UUID, total_pulses: int) -> int:
         """Pulses elapsed since the most recent acceptance.
 
-        We don't have a status_changed_at column; use a heuristic: the max
-        created_at of accepted proposals locates "when any accepted proposal
-        was created", and count pulses created AFTER that timestamp but
-        status = DONE. If no accepted proposals exist, deadlock = total_pulses.
+        Anchor on the proposal's DECISION timestamp, not creation time. A
+        proposal filed on day 0 and accepted on day 5 should count
+        "deadlock" from day 5, not day 0 — using created_at would count
+        every intervening pulse as deadlocked even though the community
+        was actively deciding. `decided_at` ships from the audit-log
+        feature; legacy rows with NULL fall back to created_at via
+        COALESCE so a partially-backfilled DB still returns a sane
+        number.
+
+        If no accepted proposals exist, deadlock = total_pulses.
         """
+        decision_ts = func.coalesce(Proposal.decided_at, Proposal.created_at)
         last_accepted_ts = (
             await self.db.execute(
-                select(func.max(Proposal.created_at)).where(
+                select(func.max(decision_ts)).where(
                     Proposal.community_id == community_id,
                     Proposal.proposal_status == ProposalStatus.ACCEPTED,
                 )
