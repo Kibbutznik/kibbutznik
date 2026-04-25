@@ -17,7 +17,7 @@ winner — operator must manually resolve (typically: keep the
 oldest, mark the others DONE).
 
 Revision ID: n2o3p4q5r6s7
-Revises: m1n2o3p4q5r6
+Revises: e9f0a1b2c3d4
 Create Date: 2026-04-26 09:00:00.000000
 
 """
@@ -27,7 +27,11 @@ from alembic import op
 
 
 revision: str = 'n2o3p4q5r6s7'
-down_revision: Union[str, None] = 'b5c6d7e8f9a0'
+# Chain after the audit-log + reasons migrations so we keep a single
+# alembic head. The original `b5c6d7e8f9a0` parent created a sibling
+# branch, which `alembic upgrade head` can't follow alongside the
+# also-being-fixed reasons/decided_at chain.
+down_revision: Union[str, None] = 'e9f0a1b2c3d4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

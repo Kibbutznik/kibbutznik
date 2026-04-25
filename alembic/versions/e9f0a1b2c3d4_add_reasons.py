@@ -6,7 +6,7 @@ to with counter-claims, forming a pro/con tree. Hot path: list
 all reasons for a proposal — the index covers it.
 
 Revision ID: e9f0a1b2c3d4
-Revises: c6d7e8f9a0b1
+Revises: g1a2b3c4d5e6
 Create Date: 2026-04-25 14:00:00.000000
 
 """
@@ -18,7 +18,13 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = 'e9f0a1b2c3d4'
-down_revision: Union[str, None] = 'c6d7e8f9a0b1'
+# Re-pointed from the never-merged c6d7e8f9a0b1 (charter, PR #10) to
+# g1a2b3c4d5e6 (decided_at — also re-pointed in the same fix). Both
+# migrations are independent (reasons table vs proposals.decided_at
+# column), so chaining them linearly here is safe — order doesn't
+# matter operationally, but we need a single head for `alembic
+# upgrade head` to work.
+down_revision: Union[str, None] = 'g1a2b3c4d5e6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
