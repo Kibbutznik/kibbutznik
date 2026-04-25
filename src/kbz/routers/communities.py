@@ -94,6 +94,13 @@ async def get_community(community_id: uuid.UUID, db: AsyncSession = Depends(get_
 @router.get("/{community_id}/variables", response_model=CommunityVariablesResponse)
 async def get_variables(community_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     svc = CommunityService(db)
+    # Without this gate, calling /variables on a bogus UUID returns a
+    # cheerful 200 echoing the bogus id back with `variables: {}`. That
+    # makes "community exists with no vars" indistinguishable from
+    # "community doesn't exist" for clients, and lets typos look like
+    # success in logs.
+    if await svc.get(community_id) is None:
+        raise HTTPException(status_code=404, detail="Community not found")
     variables = await svc.get_variables(community_id)
     return CommunityVariablesResponse(community_id=community_id, variables=variables)
 
@@ -101,4 +108,6 @@ async def get_variables(community_id: uuid.UUID, db: AsyncSession = Depends(get_
 @router.get("/{community_id}/children", response_model=list[CommunityResponse])
 async def get_children(community_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     svc = CommunityService(db)
+    if await svc.get(community_id) is None:
+        raise HTTPException(status_code=404, detail="Community not found")
     return await svc.get_children(community_id)

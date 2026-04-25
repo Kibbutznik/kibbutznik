@@ -28,6 +28,18 @@ async def test_community_has_variables(client):
 
 
 @pytest.mark.asyncio
+async def test_variables_and_children_404_on_unknown_community(client):
+    """/variables and /children on a bogus community used to return 200
+    with empty payloads, making missing communities look identical to
+    real-but-empty ones. Both must 404 instead."""
+    bogus = "11111111-1111-1111-1111-111111111111"
+    resp = await client.get(f"/communities/{bogus}/variables")
+    assert resp.status_code == 404
+    resp = await client.get(f"/communities/{bogus}/children")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_community_has_initial_pulse(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
