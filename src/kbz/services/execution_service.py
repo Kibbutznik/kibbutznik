@@ -64,21 +64,43 @@ class ExecutionService:
 
     async def _exec_remove_statement(self, proposal: Proposal) -> None:
         if proposal.val_uuid:
+            # Scope the UPDATE to the proposal's own community. Without
+            # this, an accepted RemoveStatement in community A that
+            # carried `val_uuid` pointing at a statement in community B
+            # would silently REMOVE B's statement — community A has no
+            # business deleting B's text.
             await self.db.execute(
                 update(Statement)
-                .where(Statement.id == proposal.val_uuid)
+                .where(
+                    Statement.id == proposal.val_uuid,
+                    Statement.community_id == proposal.community_id,
+                )
                 .values(status=StatementStatus.REMOVED)
             )
             await self.db.flush()
 
     async def _exec_replace_statement(self, proposal: Proposal) -> None:
-        # Remove old statement
+        # Remove old statement — same cross-community guard as
+        # _exec_remove_statement: only mark REMOVED if the target
+        # actually belongs to this community. If the guard rejects
+        # the old row we still skip creating a successor below so
+        # we don't dangle a prev_statement_id at a foreign row.
+        old_removed = False
         if proposal.val_uuid:
-            await self.db.execute(
+            res = await self.db.execute(
                 update(Statement)
-                .where(Statement.id == proposal.val_uuid)
+                .where(
+                    Statement.id == proposal.val_uuid,
+                    Statement.community_id == proposal.community_id,
+                )
                 .values(status=StatementStatus.REMOVED)
             )
+            old_removed = (res.rowcount or 0) > 0
+            if not old_removed:
+                # Cross-community val_uuid (or unknown id) — abort the
+                # whole replace rather than silently inserting a new
+                # statement that references nothing.
+                return
         # Create new statement referencing old one
         stmt = Statement(
             id=uuid.uuid4(),
