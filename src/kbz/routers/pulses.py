@@ -43,6 +43,11 @@ async def add_pulse_support(
 
 @router.get("/pulses/{pulse_id}/supporters")
 async def get_pulse_supporters(pulse_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    # Without an existence check on the pulse, a typo'd or stale pulse id
+    # returns 200 + empty list — indistinguishable from a real pulse
+    # nobody supported. 404 instead so clients can tell the cases apart.
+    if await PulseService(db).get(pulse_id) is None:
+        raise HTTPException(status_code=404, detail="Pulse not found")
     svc = SupportService(db)
     return await svc.get_pulse_supporters(pulse_id)
 
