@@ -269,6 +269,22 @@ class ExecutionService:
             )
             return
         member_svc = MemberService(self.db)
+        # Re-check parent membership at execute time. Pre-fix, a
+        # proposer who was thrown out of the PARENT community after
+        # filing JoinAction (but before it was decided) still got
+        # added to the action's sub-community — they had no
+        # business being there. The dedupe rule prevents reapply
+        # on the same target, so without this gate they'd snowball
+        # into actions across the parent's tree.
+        if not await member_svc.is_active_member(
+            proposal.community_id, proposal.user_id,
+        ):
+            logger.warning(
+                "JoinAction %s refused — proposer %s is no longer an "
+                "active member of parent community %s",
+                proposal.id, proposal.user_id, proposal.community_id,
+            )
+            return
         await member_svc.create(proposal.val_uuid, proposal.user_id)
 
     async def _exec_set_membership_handler(self, proposal: Proposal) -> None:

@@ -251,3 +251,80 @@ async def test_join_action_refuses_foreign_action(client):
     ).json()
     member_ids = [m["user_id"] for m in b_action_members]
     assert user2["id"] not in member_ids
+
+
+@pytest.mark.asyncio
+async def test_join_action_refuses_when_proposer_thrown_out_of_parent(client, db):
+    """A proposer who got thrown out of the PARENT community must NOT
+    be added to the action's sub-community when the JoinAction lands.
+    Pre-fix the executor blindly called member_svc.create against
+    the action with no parent-membership re-check.
+
+    Test path: drive the executor directly with a forged Accepted
+    JoinAction so we sidestep the pulse machinery (which has its own
+    cascade behaviors that confound the assertion)."""
+    import uuid as _uuid
+    from kbz.enums import MemberStatus, ProposalStatus, ProposalType
+    from kbz.models.action import Action
+    from kbz.models.community import Community
+    from kbz.models.member import Member
+    from kbz.models.proposal import Proposal
+    from kbz.services.execution_service import ExecutionService
+
+    founder = await create_test_user(client, "jrc-founder")
+    joiner = await create_test_user(client, "jrc-joiner")
+    parent = await create_test_community(client, founder["id"])
+
+    # Hand-build an action under the parent so we don't need to drive
+    # AddAction through pulses.
+    parent_id = _uuid.UUID(parent["id"])
+    action_id = _uuid.uuid4()
+    db.add(Community(
+        id=action_id, parent_id=parent_id, name="WG-direct",
+        status=1, member_count=0,
+    ))
+    db.add(Action(action_id=action_id, parent_community_id=parent_id, status=1))
+    # Joiner is a member of the parent — will be thrown out below.
+    joiner_uuid = _uuid.UUID(joiner["id"])
+    db.add(Member(
+        community_id=parent_id, user_id=joiner_uuid,
+        status=MemberStatus.THROWN_OUT, seniority=0,
+    ))
+    await db.commit()
+
+    # Forge an ACCEPTED JoinAction by joiner against the action.
+    p = Proposal(
+        id=_uuid.uuid4(),
+        community_id=parent_id,
+        user_id=joiner_uuid,
+        proposal_type=ProposalType.JOIN_ACTION,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="let me on",
+        val_text="",
+        val_uuid=action_id,
+        age=0,
+        support_count=0,
+    )
+    db.add(p)
+    await db.commit()
+
+    await ExecutionService(db).execute_proposal(p)
+    await db.commit()
+
+    # The thrown-out joiner must NOT have been inserted as a member
+    # of the action's sub-community. Pre-fix, member_svc.create
+    # would have INSERTed an ACTIVE Member row regardless of
+    # parent-membership status.
+    from sqlalchemy import select as _select
+    rows = (
+        await db.execute(
+            _select(Member).where(
+                Member.community_id == action_id,
+                Member.user_id == joiner_uuid,
+            )
+        )
+    ).scalars().all()
+    assert rows == [], (
+        f"thrown-out parent member should not be added to action; "
+        f"got Member rows: {[(r.community_id, r.status) for r in rows]}"
+    )
