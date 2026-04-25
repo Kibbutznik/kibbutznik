@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.config import settings
@@ -141,12 +142,38 @@ async def wallet_deposit(
         external_ref=body.external_ref,
         memo=f"deposit via {body.event}",
     )
-    await svc.record_webhook(
-        event=body.event,
-        idempotency_key=body.idempotency_key,
-        ledger_entry_id=entry.id,
-    )
-    await db.commit()
+    # Idempotency dedupe row. The unique index on
+    # (event, idempotency_key) enforces single-mint even when two
+    # concurrent requests slip past the find_webhook check above
+    # — they'll both reach this insert, the second one fails with
+    # IntegrityError, we roll back its own mint, and we report
+    # the WINNING request's ledger_entry_id back to the loser.
+    # Without this race-handling, the prior code would 500 the
+    # loser AND leave its mint committed = double-credit.
+    try:
+        await svc.record_webhook(
+            event=body.event,
+            idempotency_key=body.idempotency_key,
+            ledger_entry_id=entry.id,
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        winner = await svc.find_webhook(
+            event=body.event, idempotency_key=body.idempotency_key,
+        )
+        if winner is None:
+            # Defense-in-depth: the unique-index error fired but
+            # we can't find the winning row. Surface a clean 409
+            # rather than a confusing 500 — the caller can retry.
+            raise HTTPException(
+                status_code=409,
+                detail="webhook concurrent collision; retry idempotently",
+            )
+        return {
+            "status": "duplicate",
+            "ledger_entry_id": str(winner.ledger_entry_id),
+        }
     return {
         "status": "credited",
         "ledger_entry_id": str(entry.id),
