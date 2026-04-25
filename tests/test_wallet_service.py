@@ -139,6 +139,59 @@ async def test_get_or_create_community_wallet_when_financial(sf):
 
 
 @pytest.mark.asyncio
+async def test_get_or_create_race_returns_winner_not_500(sf):
+    """Two concurrent first-access requests for the same wallet both
+    pass the SELECT before either flushes. The unique index on
+    (owner_kind, owner_id) catches the loser's INSERT — pre-fix the
+    loser surfaced as a raw IntegrityError → 500. Now the service
+    catches it, rolls back, and returns the winner's row.
+
+    Repro deterministically by inserting a wallet row out-of-band
+    THEN calling get_or_create with monkey-patched SELECT to skip
+    the dedupe check and force the IntegrityError.
+    """
+    async with sf() as db:
+        cid = await _make_financial_community(db)
+        await db.commit()
+
+    # First request lands the row.
+    async with sf() as db:
+        await WalletService(db).get_or_create(OWNER_COMMUNITY, cid)
+        await db.commit()
+
+    # Second request: monkey-patch the dedupe SELECT to return None
+    # so we proceed to INSERT and trigger the unique-index violation.
+    from unittest.mock import patch
+
+    async with sf() as db:
+        svc = WalletService(db)
+        original_execute = db.execute
+
+        async def fake_execute(stmt, *args, **kwargs):
+            sql = str(stmt).lower()
+            # Skip the first dedupe SELECT (looks for an existing wallet)
+            # by returning a fake "no rows" result. Other queries pass through.
+            if "select" in sql and "wallets" in sql and "owner_kind" in sql:
+                class _Empty:
+                    def scalar_one_or_none(self_inner): return None
+                    def scalar_one(self_inner): return None
+                    def all(self_inner): return []
+                    def scalars(self_inner): return self_inner
+                # Restore execute for subsequent calls — we only want to
+                # short-circuit the FIRST dedupe SELECT.
+                db.execute = original_execute
+                return _Empty()
+            return await original_execute(stmt, *args, **kwargs)
+
+        with patch.object(db, "execute", side_effect=fake_execute):
+            winner = await svc.get_or_create(OWNER_COMMUNITY, cid)
+
+        assert winner is not None
+        assert winner.owner_kind == OWNER_COMMUNITY
+        assert winner.owner_id == cid
+
+
+@pytest.mark.asyncio
 async def test_user_wallets_bypass_financial_gate(sf):
     async with sf() as db:
         # No community at all — user wallets are platform-wide.
