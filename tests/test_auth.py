@@ -144,6 +144,23 @@ async def test_verify_next_rejects_open_redirect(client):
 
 
 @pytest.mark.asyncio
+async def test_verify_next_rejects_backslash_bypass(client):
+    """Browsers normalize backslash to '/' in Location headers, so a
+    candidate like `/\\evil.com/…` decodes to `//evil.com/…` in the
+    address bar — an open redirect through the back door. Must be
+    rejected alongside the leading-`//` variant.
+    """
+    r = await client.post(
+        "/auth/request-magic-link", json={"email": "safebackslash@example.com"}
+    )
+    link = r.json()["link"]
+    # URL-encoded backslash = %5C
+    r = await client.get(link + "&next=/%5Cevil.com/phish", follow_redirects=False)
+    assert r.status_code == 303
+    assert "evil.com" not in r.headers["location"]
+
+
+@pytest.mark.asyncio
 async def test_verify_expired_with_next_redirects_to_login(client):
     """Expired/invalid token + next param → redirect to /app/#/login
     rather than surfacing a 400 JSON error."""
