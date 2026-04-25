@@ -147,6 +147,53 @@ async def test_pulse_support_race_returns_409_not_500(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_only_one_next_pulse_per_community(db):
+    """Schema invariant: at most one NEXT pulse per community.
+    Race-protected execute_pulse depends on this — two concurrent
+    threshold-crossing pulse_supports both call execute_pulse, both
+    try to insert a new NEXT pulse, and the loser's INSERT must
+    fail with IntegrityError so the service can rollback cleanly.
+    Verify the partial unique index actually catches it."""
+    import uuid as _uuid
+    from sqlalchemy.exc import IntegrityError
+    from kbz.enums import CommunityStatus, PulseStatus
+    from kbz.models.community import Community
+    from kbz.models.pulse import Pulse
+
+    cid = _uuid.uuid4()
+    db.add(Community(
+        id=cid,
+        parent_id=_uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Race-pulse",
+        status=CommunityStatus.ACTIVE,
+        member_count=1,
+    ))
+    db.add(Pulse(
+        id=_uuid.uuid4(),
+        community_id=cid,
+        status=PulseStatus.NEXT,
+        support_count=0,
+        threshold=1,
+    ))
+    await db.flush()
+
+    # Inserting a SECOND NEXT pulse in the same community must
+    # fail because of the partial unique index. Without the index
+    # this would silently land and break the next get_next_pulse
+    # call with MultipleResultsFound.
+    db.add(Pulse(
+        id=_uuid.uuid4(),
+        community_id=cid,
+        status=PulseStatus.NEXT,
+        support_count=0,
+        threshold=1,
+    ))
+    with pytest.raises(IntegrityError):
+        await db.flush()
+    await db.rollback()
+
+
+@pytest.mark.asyncio
 async def test_pulse_support(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
