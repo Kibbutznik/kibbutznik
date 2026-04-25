@@ -22,12 +22,20 @@ class CommentResponse(BaseModel):
     parent_comment_id: uuid.UUID | None
     score: int
     created_at: datetime
+    # The viewer's own vote on this comment, or None if no session /
+    # no vote cast. Lets the dashboard highlight the up/down arrow
+    # the user already clicked without a separate per-comment query.
+    my_value: int | None = None
 
     model_config = {"from_attributes": True}
 
 
 class ScoreUpdate(BaseModel):
-    # Clamped to a single step either direction — callers have been
-    # observed sending delta=1 per click, and unbounded ints let anyone
-    # pump a comment's score by thousands in a single POST.
+    # `user_id` is required so the server can dedupe per-user (one
+    # vote per (user, comment) — see comment_votes table). Pre-fix
+    # this endpoint was anonymous and added the delta blindly, so a
+    # single user pressing the up arrow N times added N points.
+    user_id: uuid.UUID
+    # Single-step clicks. delta=0 isn't meaningful — to clear a vote,
+    # click the SAME direction again (toggle off).
     delta: int = Field(ge=-1, le=1)

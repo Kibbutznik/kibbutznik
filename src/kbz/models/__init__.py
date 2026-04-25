@@ -8,6 +8,7 @@ from kbz.models.statement import Statement
 from kbz.models.action import Action
 from kbz.models.support import Support, PulseSupport
 from kbz.models.comment import Comment
+from kbz.models.comment_vote import CommentVote
 from kbz.models.closeness import Closeness
 from kbz.models.variable import Variable
 from kbz.models.artifact_container import ArtifactContainer
@@ -33,6 +34,7 @@ __all__ = [
     "Support",
     "PulseSupport",
     "Comment",
+    "CommentVote",
     "Closeness",
     "Variable",
     "ArtifactContainer",

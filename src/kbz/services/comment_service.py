@@ -3,11 +3,12 @@ import uuid
 from datetime import datetime
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import delete as sa_delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import ProposalType
 from kbz.models.comment import Comment
+from kbz.models.comment_vote import CommentVote
 from kbz.models.proposal import Proposal
 from kbz.schemas.comment import CommentCreate
 from kbz.services.event_bus import event_bus
@@ -212,20 +213,115 @@ class CommentService:
         )
         return list(result.scalars().all())
 
-    async def update_score(self, comment_id: uuid.UUID, delta: int) -> int:
-        """Atomic score bump. Returns the new score so callers can
-        update their UI without re-fetching the whole comment tree —
-        the previous shape (just \"updated\") forced the client to
-        reload everything to see the new value, which caused the
-        proposal modal to flicker on every vote."""
+    async def cast_vote(
+        self,
+        comment_id: uuid.UUID,
+        user_id: uuid.UUID,
+        delta: int,
+    ) -> tuple[int, int | None]:
+        """Toggle-aware vote cast.
+
+        Pre-fix `update_score` blindly added `delta` to comment.score
+        with no per-user dedupe — pressing the up arrow 20 times added
+        20 points. Now backed by `comment_votes` (one row per (user,
+        comment)). Semantics:
+
+            - No prior vote, click up   → INSERT +1, score += 1
+            - No prior vote, click down → INSERT -1, score -= 1
+            - Prior +1, click up        → DELETE (toggle off), score -= 1
+            - Prior -1, click down      → DELETE (toggle off), score += 1
+            - Prior +1, click down      → UPDATE to -1 (flip), score -= 2
+            - Prior -1, click up        → UPDATE to +1 (flip), score += 2
+
+        Returns `(new_score, my_value_after)` where `my_value_after`
+        is None when the click resulted in toggle-off.
+        """
+        if delta not in (1, -1):
+            raise HTTPException(status_code=422, detail="delta must be -1 or 1")
+
+        # Confirm the comment exists up front so the 404 is clean
+        # rather than depending on a downstream UPDATE returning 0 rows.
+        comment_score = (
+            await self.db.execute(
+                select(Comment.score).where(Comment.id == comment_id)
+            )
+        ).scalar_one_or_none()
+        if comment_score is None:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        existing = (
+            await self.db.execute(
+                select(CommentVote).where(
+                    CommentVote.user_id == user_id,
+                    CommentVote.comment_id == comment_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if existing is None:
+            # Brand new vote.
+            self.db.add(
+                CommentVote(
+                    user_id=user_id, comment_id=comment_id, value=delta,
+                )
+            )
+            score_delta = delta
+            my_value_after: int | None = delta
+        elif existing.value == delta:
+            # Toggle off — same direction click cancels the vote.
+            await self.db.execute(
+                sa_delete(CommentVote).where(
+                    CommentVote.user_id == user_id,
+                    CommentVote.comment_id == comment_id,
+                )
+            )
+            score_delta = -existing.value
+            my_value_after = None
+        else:
+            # Flip from +1 → -1 or -1 → +1. Net delta is 2× the new
+            # direction (cancel old contribution + apply new).
+            existing.value = delta
+            score_delta = 2 * delta
+            my_value_after = delta
+
         result = await self.db.execute(
             update(Comment)
             .where(Comment.id == comment_id)
-            .values(score=Comment.score + delta)
+            .values(score=Comment.score + score_delta)
             .returning(Comment.score)
         )
-        new_score = result.scalar_one_or_none()
-        if new_score is None:
-            raise HTTPException(status_code=404, detail="Comment not found")
+        new_score = result.scalar_one()
         await self.db.commit()
-        return int(new_score)
+        return int(new_score), my_value_after
+
+    async def get_my_vote(
+        self, comment_id: uuid.UUID, user_id: uuid.UUID,
+    ) -> int | None:
+        """Return the viewer's current vote on this comment (or None).
+        Used by the dashboard to highlight the up/down arrow that's
+        already cast."""
+        return (
+            await self.db.execute(
+                select(CommentVote.value).where(
+                    CommentVote.user_id == user_id,
+                    CommentVote.comment_id == comment_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def get_my_votes_bulk(
+        self, comment_ids: list[uuid.UUID], user_id: uuid.UUID,
+    ) -> dict[uuid.UUID, int]:
+        """Bulk lookup so the comment-list endpoint can stamp every
+        row with `my_value` in one query instead of N+1."""
+        if not comment_ids:
+            return {}
+        rows = (
+            await self.db.execute(
+                select(CommentVote.comment_id, CommentVote.value).where(
+                    CommentVote.user_id == user_id,
+                    CommentVote.comment_id.in_(comment_ids),
+                )
+            )
+        ).all()
+        return {cid: int(v) for cid, v in rows}

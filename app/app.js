@@ -1636,21 +1636,27 @@ function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
     const [replyDraft, setReplyDraft] = useState("");
     const [voteBusy, setVoteBusy] = useState(false);
     const [replyBusy, setReplyBusy] = useState(false);
-    // Local score so a vote bumps just the up/down counter — the
-    // proposal modal used to call onReload() here, which refetched
-    // supporters + the whole comment tree and made the entire widget
-    // flicker on every vote. The score endpoint now returns the
-    // new value so we can update locally.
+    // Local score + the viewer's own vote on THIS comment. The score
+    // endpoint returns both so we can update only the up/down arrows
+    // without re-fetching the whole modal. Each user gets exactly one
+    // vote per comment (server enforces via comment_votes table).
     const [score, setScore] = useState(c.score || 0);
+    const [myVote, setMyVote] = useState(c.my_value ?? null);
     useEffect(() => { setScore(c.score || 0); }, [c.score]);
+    useEffect(() => { setMyVote(c.my_value ?? null); }, [c.my_value]);
     const children = byParent.get(c.id) || [];
 
     const vote = async (delta) => {
         if (!user || voteBusy) return;
         setVoteBusy(true);
         try {
-            const r = await api.post(`/comments/${c.id}/score`, { delta });
+            const r = await api.post(`/comments/${c.id}/score`, {
+                delta, user_id: user.user_id,
+            });
             if (typeof r?.score === "number") setScore(r.score);
+            if (Object.prototype.hasOwnProperty.call(r || {}, "my_value")) {
+                setMyVote(r.my_value);
+            }
         } catch (e) { toast(e.message, "error"); }
         finally { setVoteBusy(false); }
     };
@@ -1699,15 +1705,23 @@ function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
                         <>
                             <button className="btn ghost" disabled={voteBusy}
                                     onClick={() => vote(1)}
-                                    style={{ padding: "0 6px", fontSize: "0.8rem" }}
-                                    title="Upvote">▲</button>
+                                    style={{
+                                        padding: "0 6px", fontSize: "0.8rem",
+                                        color: myVote === 1 ? "var(--accent)" : undefined,
+                                        fontWeight: myVote === 1 ? 700 : undefined,
+                                    }}
+                                    title={myVote === 1 ? "Click to remove your upvote" : "Upvote"}>▲</button>
                             <span className="muted" style={{ minWidth: 16, textAlign: "center" }}>
                                 {score}
                             </span>
                             <button className="btn ghost" disabled={voteBusy}
                                     onClick={() => vote(-1)}
-                                    style={{ padding: "0 6px", fontSize: "0.8rem" }}
-                                    title="Downvote">▼</button>
+                                    style={{
+                                        padding: "0 6px", fontSize: "0.8rem",
+                                        color: myVote === -1 ? "var(--danger, #c33)" : undefined,
+                                        fontWeight: myVote === -1 ? 700 : undefined,
+                                    }}
+                                    title={myVote === -1 ? "Click to remove your downvote" : "Downvote"}>▼</button>
                         </>
                     )}
                     {canReply && !replying && depth < 3 && (
