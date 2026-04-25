@@ -215,8 +215,11 @@ class ExecutionService:
             )
         )
         orphans = orphan_result.scalars().all()
+        from datetime import datetime as _dt, timezone as _tz
+        _decided_now = _dt.now(_tz.utc)
         for orphan in orphans:
             orphan.proposal_status = ProposalStatus.CANCELED.value
+            orphan.decided_at = _decided_now
             logger.info(
                 "Auto-canceled %s proposal %s targeting ended action %s",
                 orphan.proposal_type, orphan.id, ended_action_id,
@@ -237,6 +240,7 @@ class ExecutionService:
         )
         for inside in inside_result.scalars().all():
             inside.proposal_status = ProposalStatus.CANCELED.value
+            inside.decided_at = _decided_now
             logger.info(
                 "Auto-canceled %s proposal %s inside ended community %s",
                 inside.proposal_type, inside.id, ended_action_id,
