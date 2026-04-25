@@ -145,6 +145,53 @@ async def test_funding_handler_moves_parent_to_child(sf):
 
 
 @pytest.mark.asyncio
+async def test_funding_refuses_action_belonging_to_other_community(sf):
+    """An accepted Funding in community A whose val_uuid points at an
+    action under community B must NOT transfer A's credits. Without
+    this guard, A could send its own treasury into B's action wallet,
+    bypassing B's governance over its own action tree."""
+    async with sf() as db:
+        a = await _mk_community(db, financial=True, name="alpha")
+        b = await _mk_community(db, financial=True, name="bravo")
+        b_action = await _mk_action(db, b)  # action belongs to B, not A
+        await db.commit()
+
+        svc = WalletService(db)
+        a_w = await svc.get_or_create(OWNER_COMMUNITY, a)
+        await svc.mint(a_w, "100", webhook_event="seed", external_ref="r")
+        await db.commit()
+
+        prop = await _mk_proposal(
+            db,
+            community_id=a,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.FUNDING,
+            val_uuid=b_action,
+            val_text="30",
+        )
+        await db.commit()
+
+        await ExecutionService(db)._exec_funding(prop)
+        await db.commit()
+
+        # A's wallet untouched — no cross-tree transfer.
+        a_w = (
+            await db.execute(select(Wallet).where(Wallet.id == a_w.id))
+        ).scalar_one()
+        assert a_w.balance == Decimal("100")
+        # And no action wallet was created for B's action either.
+        b_action_w = (
+            await db.execute(
+                select(Wallet).where(
+                    Wallet.owner_kind == OWNER_ACTION,
+                    Wallet.owner_id == b_action,
+                )
+            )
+        ).scalar_one_or_none()
+        assert b_action_w is None
+
+
+@pytest.mark.asyncio
 async def test_funding_short_circuits_when_community_not_financial(sf):
     async with sf() as db:
         parent = await _mk_community(db, financial=False, name="not-fin")

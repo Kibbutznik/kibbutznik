@@ -58,6 +58,75 @@ async def test_remove_statement_via_proposal(client):
 
 
 @pytest.mark.asyncio
+async def test_remove_statement_cannot_target_foreign_community(client):
+    """An accepted RemoveStatement in community A whose val_uuid points
+    at a statement in community B must NOT remove B's statement.
+    Without the community_id guard in the executor, A could delete
+    B's text just by accepting a proposal with a foreign val_uuid."""
+    user = await create_test_user(client)
+    a = await create_test_community(client, user["id"], name="Alpha")
+    b = await create_test_community(client, user["id"], name="Bravo")
+
+    # Land a statement in B.
+    resp = await client.post(f"/communities/{b['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "Bravo's rule",
+    })
+    await _accept_proposal(client, b["id"], user["id"], resp.json()["id"])
+    b_stmt_id = (await client.get(f"/communities/{b['id']}/statements")).json()[0]["id"]
+
+    # File a RemoveStatement in A that points at B's statement.
+    resp = await client.post(f"/communities/{a['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "RemoveStatement",
+        "proposal_text": "Remove Bravo's rule from inside Alpha",
+        "val_uuid": b_stmt_id,
+    })
+    await _accept_proposal(client, a["id"], user["id"], resp.json()["id"])
+
+    # B's statement must still be active — A cannot delete it.
+    b_stmts = (await client.get(f"/communities/{b['id']}/statements")).json()
+    assert len(b_stmts) == 1
+    assert b_stmts[0]["id"] == b_stmt_id
+
+
+@pytest.mark.asyncio
+async def test_replace_statement_cannot_target_foreign_community(client):
+    """ReplaceStatement with a foreign val_uuid must abort entirely —
+    don't remove B's statement, and don't insert a stub successor in
+    A pointing at B's id either."""
+    user = await create_test_user(client)
+    a = await create_test_community(client, user["id"], name="Alpha")
+    b = await create_test_community(client, user["id"], name="Bravo")
+
+    resp = await client.post(f"/communities/{b['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "Bravo original",
+    })
+    await _accept_proposal(client, b["id"], user["id"], resp.json()["id"])
+    b_stmt_id = (await client.get(f"/communities/{b['id']}/statements")).json()[0]["id"]
+
+    resp = await client.post(f"/communities/{a['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ReplaceStatement",
+        "proposal_text": "Try to hijack Bravo's statement",
+        "val_uuid": b_stmt_id,
+        "val_text": "Hijacked text",
+    })
+    await _accept_proposal(client, a["id"], user["id"], resp.json()["id"])
+
+    # B's statement still active and unchanged.
+    b_stmts = (await client.get(f"/communities/{b['id']}/statements")).json()
+    assert len(b_stmts) == 1
+    assert b_stmts[0]["statement_text"] == "Bravo original"
+    # A did NOT gain a phantom statement referencing B's row.
+    a_stmts = (await client.get(f"/communities/{a['id']}/statements")).json()
+    assert all(s["statement_text"] != "Hijacked text" for s in a_stmts)
+
+
+@pytest.mark.asyncio
 async def test_replace_statement_via_proposal(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

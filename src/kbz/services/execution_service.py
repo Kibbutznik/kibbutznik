@@ -64,21 +64,43 @@ class ExecutionService:
 
     async def _exec_remove_statement(self, proposal: Proposal) -> None:
         if proposal.val_uuid:
+            # Scope the UPDATE to the proposal's own community. Without
+            # this, an accepted RemoveStatement in community A that
+            # carried `val_uuid` pointing at a statement in community B
+            # would silently REMOVE B's statement — community A has no
+            # business deleting B's text.
             await self.db.execute(
                 update(Statement)
-                .where(Statement.id == proposal.val_uuid)
+                .where(
+                    Statement.id == proposal.val_uuid,
+                    Statement.community_id == proposal.community_id,
+                )
                 .values(status=StatementStatus.REMOVED)
             )
             await self.db.flush()
 
     async def _exec_replace_statement(self, proposal: Proposal) -> None:
-        # Remove old statement
+        # Remove old statement — same cross-community guard as
+        # _exec_remove_statement: only mark REMOVED if the target
+        # actually belongs to this community. If the guard rejects
+        # the old row we still skip creating a successor below so
+        # we don't dangle a prev_statement_id at a foreign row.
+        old_removed = False
         if proposal.val_uuid:
-            await self.db.execute(
+            res = await self.db.execute(
                 update(Statement)
-                .where(Statement.id == proposal.val_uuid)
+                .where(
+                    Statement.id == proposal.val_uuid,
+                    Statement.community_id == proposal.community_id,
+                )
                 .values(status=StatementStatus.REMOVED)
             )
+            old_removed = (res.rowcount or 0) > 0
+            if not old_removed:
+                # Cross-community val_uuid (or unknown id) — abort the
+                # whole replace rather than silently inserting a new
+                # statement that references nothing.
+                return
         # Create new statement referencing old one
         stmt = Statement(
             id=uuid.uuid4(),
@@ -134,6 +156,24 @@ class ExecutionService:
     async def _exec_end_action(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             return
+        # Parent → child-action only, same shape as the Funding guard.
+        # Without this, an accepted EndAction in community A whose
+        # val_uuid pointed at an action under community B would
+        # silently mark B's action + sub-community INACTIVE *and*
+        # sweep its wallet up to A. Refuse cross-tree targets.
+        action_parent = (
+            await self.db.execute(
+                select(Action.parent_community_id).where(
+                    Action.action_id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if action_parent is None or action_parent != proposal.community_id:
+            logger.warning(
+                "EndAction %s val_uuid %s is not a direct child action of community %s — refused",
+                proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
         ended_action_id = str(proposal.val_uuid)
 
         # Sweep the ending action's wallet balance up to its parent
@@ -185,9 +225,27 @@ class ExecutionService:
         await self.db.flush()
 
     async def _exec_join_action(self, proposal: Proposal) -> None:
-        if proposal.val_uuid:
-            member_svc = MemberService(self.db)
-            await member_svc.create(proposal.val_uuid, proposal.user_id)
+        if not proposal.val_uuid:
+            return
+        # Parent → child-action only. JoinAction in community A naming
+        # an action that belongs to B's tree would otherwise let A's
+        # vote add the proposer to one of B's actions — bypassing B's
+        # governance over its own membership.
+        action_parent = (
+            await self.db.execute(
+                select(Action.parent_community_id).where(
+                    Action.action_id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if action_parent is None or action_parent != proposal.community_id:
+            logger.warning(
+                "JoinAction %s val_uuid %s is not a direct child action of community %s — refused",
+                proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
+        member_svc = MemberService(self.db)
+        await member_svc.create(proposal.val_uuid, proposal.user_id)
 
     async def _exec_set_membership_handler(self, proposal: Proposal) -> None:
         if proposal.val_uuid:
@@ -218,6 +276,24 @@ class ExecutionService:
 
         if not proposal.val_uuid or not (proposal.val_text or "").strip():
             logger.warning("Funding %s missing val_uuid or val_text", proposal.id)
+            return
+        # Funding is parent → child-action only. Without this guard,
+        # an accepted Funding in community A whose val_uuid pointed at
+        # an action under community B would transfer A's credits into
+        # B's action wallet, bypassing B's governance over its own
+        # action tree. Refuse if val_uuid isn't a direct child of A.
+        action_row = (
+            await self.db.execute(
+                select(Action.parent_community_id).where(
+                    Action.action_id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if action_row is None or action_row != proposal.community_id:
+            logger.warning(
+                "Funding %s val_uuid %s is not a direct child action of community %s — refused",
+                proposal.id, proposal.val_uuid, proposal.community_id,
+            )
             return
         svc = WalletService(self.db)
         if not await svc.is_financial(proposal.community_id):
@@ -357,6 +433,26 @@ class ExecutionService:
         if not proposal.val_uuid:
             logger.warning("CreateArtifact %s missing val_uuid (container_id)", proposal.id)
             return
+        # Same per-community guard as Edit/Remove/CommitArtifact.
+        # Without it, an accepted CreateArtifact in community A
+        # whose val_uuid pointed at a container in B would let A
+        # inject an Artifact into B's container. The new Artifact
+        # row would carry container.community_id (i.e. B's id),
+        # but B never authorized it.
+        from kbz.models.artifact_container import ArtifactContainer
+        container_cid = (
+            await self.db.execute(
+                select(ArtifactContainer.community_id).where(
+                    ArtifactContainer.id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if container_cid is None or container_cid != proposal.community_id:
+            logger.warning(
+                "CreateArtifact %s val_uuid %s targets a foreign or missing container — refused",
+                proposal.id, proposal.val_uuid,
+            )
+            return
         try:
             await ArtifactService(self.db).create_artifact(
                 container_id=proposal.val_uuid,
@@ -368,9 +464,32 @@ class ExecutionService:
         except ArtifactServiceError as e:
             logger.warning("CreateArtifact %s failed: %s", proposal.id, e)
 
+    async def _artifact_belongs_to(
+        self, artifact_id: uuid.UUID, community_id: uuid.UUID,
+    ) -> bool:
+        """Used by Edit/Remove artifact executors to refuse cross-community
+        targets — without this, an accepted EditArtifact in community A
+        whose val_uuid pointed at an artifact in community B would let A
+        rewrite B's text. The guard is here in the executor (rather than
+        deep inside ArtifactService) so the per-community-scope check
+        lives next to the proposal that authorized it."""
+        from kbz.models.artifact import Artifact
+        row = (
+            await self.db.execute(
+                select(Artifact.community_id).where(Artifact.id == artifact_id)
+            )
+        ).scalar_one_or_none()
+        return row is not None and row == community_id
+
     async def _exec_edit_artifact(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             logger.warning("EditArtifact %s missing val_uuid (artifact_id)", proposal.id)
+            return
+        if not await self._artifact_belongs_to(proposal.val_uuid, proposal.community_id):
+            logger.warning(
+                "EditArtifact %s val_uuid %s targets a foreign or missing artifact — refused",
+                proposal.id, proposal.val_uuid,
+            )
             return
         try:
             await ArtifactService(self.db).edit_artifact(
@@ -386,6 +505,12 @@ class ExecutionService:
     async def _exec_remove_artifact(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             logger.warning("RemoveArtifact %s missing val_uuid (artifact_id)", proposal.id)
+            return
+        if not await self._artifact_belongs_to(proposal.val_uuid, proposal.community_id):
+            logger.warning(
+                "RemoveArtifact %s val_uuid %s targets a foreign or missing artifact — refused",
+                proposal.id, proposal.val_uuid,
+            )
             return
         try:
             await ArtifactService(self.db).remove_artifact(proposal.val_uuid)
@@ -420,6 +545,31 @@ class ExecutionService:
     async def _exec_commit_artifact(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             logger.warning("CommitArtifact %s missing val_uuid (container_id)", proposal.id)
+            return
+        # Same cross-community defense as the Edit/Remove artifact
+        # executors. An accepted CommitArtifact in community A
+        # whose val_uuid pointed at a container in B would let A:
+        #   - mark B's container as COMMITTED (status flip),
+        #   - overwrite B's committed_content with whatever A
+        #     packaged (an empty val_text wipes it to ""),
+        #   - and for delegated containers, materialize a Draft
+        #     EditArtifact in B's parent community without their
+        #     authorization.
+        # Refuse if the container's community_id doesn't match
+        # the proposal's community_id.
+        from kbz.models.artifact_container import ArtifactContainer
+        container_cid = (
+            await self.db.execute(
+                select(ArtifactContainer.community_id).where(
+                    ArtifactContainer.id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if container_cid is None or container_cid != proposal.community_id:
+            logger.warning(
+                "CommitArtifact %s val_uuid %s targets a foreign or missing container — refused",
+                proposal.id, proposal.val_uuid,
+            )
             return
         try:
             ordered_ids = parse_ordered_uuid_list(proposal.val_text or "")

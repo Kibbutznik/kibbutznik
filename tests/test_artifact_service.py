@@ -140,6 +140,82 @@ async def test_remove_artifact_marks_retired(db):
 
 
 @pytest.mark.asyncio
+async def test_exec_edit_artifact_refuses_cross_community_target(db):
+    """An accepted EditArtifact in community A whose val_uuid points
+    at an artifact in community B must NOT mutate B's artifact.
+    Without the executor's per-community guard, A could rewrite B's
+    text just by accepting a proposal that carried a foreign val_uuid.
+    """
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha")
+    b_comm = await _mk_community(db, "Bravo")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+    b_proposal = await _mk_proposal(db, b_comm.id, user)
+    b_art = await svc.create_artifact(
+        b_container.id, "Bravo's text", "title", user, b_proposal.id,
+    )
+
+    # Forge an accepted EditArtifact in A whose val_uuid points at B's row.
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.EDIT_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="overwritten by Alpha",
+        val_text="hijacked title",
+        val_uuid=b_art.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    await db.refresh(b_art)
+    assert b_art.content == "Bravo's text"
+    assert b_art.title == "title"
+
+
+@pytest.mark.asyncio
+async def test_exec_remove_artifact_refuses_cross_community_target(db):
+    """Same guard for RemoveArtifact: A cannot retire B's artifact."""
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha2")
+    b_comm = await _mk_community(db, "Bravo2")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+    b_proposal = await _mk_proposal(db, b_comm.id, user)
+    b_art = await svc.create_artifact(
+        b_container.id, "B content", "B title", user, b_proposal.id,
+    )
+
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.REMOVE_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="",
+        val_text="",
+        val_uuid=b_art.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    await db.refresh(b_art)
+    assert b_art.status == ArtifactStatus.ACTIVE
+
+
+@pytest.mark.asyncio
 async def test_delegate_requires_direct_child_action(db):
     parent = await _mk_community(db, "Parent")
     child = await _mk_child_action(db, parent, "Child")
@@ -162,6 +238,112 @@ async def test_delegate_requires_direct_child_action(db):
     # Negative: stranger community is not a child Action.
     with pytest.raises(ArtifactServiceError):
         await svc.delegate(artifact.id, stranger.id, delegating_proposal)
+
+
+@pytest.mark.asyncio
+async def test_exec_commit_artifact_refuses_cross_community_container(db):
+    """An accepted CommitArtifact in community A whose val_uuid
+    points at a container in community B must NOT mark B's
+    container committed or wipe B's committed_content. Without
+    the executor's per-community guard, A could empty B's
+    deliverables just by accepting a proposal that carried a
+    foreign val_uuid + an empty val_text."""
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha-c")
+    b_comm = await _mk_community(db, "Bravo-c")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+    b_proposal = await _mk_proposal(db, b_comm.id, user)
+    await svc.create_artifact(
+        b_container.id, "B's content", "B title", user, b_proposal.id,
+    )
+
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.COMMIT_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="",
+        val_text="[]",  # valid JSON empty list — wipes content if reached
+        val_uuid=b_container.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    await db.refresh(b_container)
+    # B's container is untouched: status still OPEN, no committed_content set.
+    assert b_container.status == ContainerStatus.OPEN
+    assert b_container.committed_content in (None, "")
+
+
+@pytest.mark.asyncio
+async def test_exec_create_artifact_refuses_cross_community_container(db):
+    """An accepted CreateArtifact in community A whose val_uuid
+    points at a container in community B must NOT inject a new
+    artifact into B's container."""
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha-cr")
+    b_comm = await _mk_community(db, "Bravo-cr")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.CREATE_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="Alpha sneak attack",
+        val_text="Hijacked Title",
+        val_uuid=b_container.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    artifacts_in_b = await svc.list_artifacts(b_container.id)
+    # B's container must contain ZERO artifacts — nothing got
+    # injected by A's accepted proposal.
+    assert artifacts_in_b == []
+
+
+@pytest.mark.asyncio
+async def test_delegate_refuses_foreign_source_artifact(db):
+    """ArtifactService.delegate must refuse a source artifact that
+    belongs to a community OTHER than delegating_proposal.community_id.
+    Without this guard, A could delegate B's artifact into A's
+    own child action; the eventual commit would inject a Draft
+    EditArtifact into B's queue without B's consent."""
+    a_parent = await _mk_community(db, "A-parent")
+    a_child = await _mk_child_action(db, a_parent, "A-child")
+    b_parent = await _mk_community(db, "B-parent")
+
+    svc = ArtifactService(db)
+    user = uuid.uuid4()
+
+    # B's container with a real artifact in it.
+    b_container = await svc.create_root_container(b_parent.id)
+    b_proposal = await _mk_proposal(db, b_parent.id, user)
+    b_artifact = await svc.create_artifact(
+        b_container.id, "B's content", "B title", user, b_proposal.id,
+    )
+
+    # A's DelegateArtifact proposal targets B's artifact + A's child.
+    delegating = await _mk_proposal(
+        db, a_parent.id, user, ProposalType.DELEGATE_ARTIFACT,
+    )
+    with pytest.raises(ArtifactServiceError, match="Source artifact must belong"):
+        await svc.delegate(b_artifact.id, a_child.id, delegating)
 
 
 @pytest.mark.asyncio
