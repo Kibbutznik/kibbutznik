@@ -17,6 +17,7 @@ from kbz.models.tkg import TKGEdge, TKGEmbedding, TKGNode, TKGNodeKind, TKGRelat
 from kbz.models.auth import AuthToken, Invite
 from kbz.models.bot_profile import BotProfile
 from kbz.models.wallet import LedgerEntry, Wallet, WalletWebhookEvent
+from kbz.models.notification import Notification
 
 __all__ = [
     "Base",
@@ -46,4 +47,5 @@ __all__ = [
     "Wallet",
     "LedgerEntry",
     "WalletWebhookEvent",
+    "Notification",
 ]

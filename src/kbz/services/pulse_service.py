@@ -98,6 +98,27 @@ class PulseService:
                     if proposal.proposal_type == ProposalType.MEMBERSHIP:
                         from kbz.services.wallet_service import WalletService
                         await WalletService(self.db).escrow_refund(proposal.id)
+                # Inbox: tell the author their proposal landed.
+                # Same-transaction so the author can't refresh and
+                # see Accepted/Rejected before the notification
+                # row exists.
+                from kbz.services.notification_service import NotificationService
+                from kbz.models.notification import (
+                    KIND_PROPOSAL_ACCEPTED, KIND_PROPOSAL_REJECTED,
+                )
+                outcome_kind = (
+                    KIND_PROPOSAL_ACCEPTED
+                    if proposal.proposal_status == ProposalStatus.ACCEPTED
+                    else KIND_PROPOSAL_REJECTED
+                )
+                await NotificationService(self.db).fanout_proposal_outcome(
+                    community_id=community_id,
+                    proposal_id=proposal.id,
+                    proposal_type=str(proposal.proposal_type),
+                    proposal_text=proposal.proposal_text or "",
+                    author_user_id=proposal.user_id,
+                    outcome_kind=outcome_kind,
+                )
                 await closeness_svc.apply_proposal_outcome(community_id, proposal.id)
                 await self.db.flush()
 

@@ -203,6 +203,19 @@ class ProposalService:
                             detail=f"Insufficient credits for {fee} membership fee: {e}",
                         )
 
+        # Fan out a Notification row to every other active member
+        # BEFORE we commit, so the proposal + its inbox entries land
+        # atomically. A reader who sees the proposal in /communities
+        # is guaranteed to see its notification too.
+        from kbz.services.notification_service import NotificationService
+        await NotificationService(self.db).fanout_proposal_created(
+            community_id=community_id,
+            proposal_id=proposal.id,
+            proposal_type=str(proposal.proposal_type),
+            proposal_text=proposal.proposal_text or proposal.val_text or "",
+            author_user_id=proposal.user_id,
+        )
+
         await self.db.commit()
         await self.db.refresh(proposal)
         # Emit so the TKG ingestor can record AUTHORED and embed the text.
