@@ -100,6 +100,189 @@ async def test_list_proposals_respects_limit_and_offset(client):
 
 
 @pytest.mark.asyncio
+async def test_per_member_proposal_cap_blocks_sixth_in_flight(client):
+    """Default ProposalRateLimit is 5 — the 6th in-flight proposal
+    by the same author 429s until earlier ones land or get canceled."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    for i in range(5):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"draft #{i}",
+        })
+        assert resp.status_code == 201
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "one too many",
+    })
+    assert resp.status_code == 429
+    assert "in-flight" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_change_variable_for_rate_limit_bypasses_cap(client):
+    """A capped member must always be able to file the ONE proposal
+    that would unstick the community — ChangeVariable targeting
+    ProposalRateLimit itself. Without this escape hatch, a single-
+    member community that hits its own cap is permanently stuck."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    # Fill the cap with 5 in-flight AddStatements.
+    for i in range(5):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"capper #{i}",
+        })
+        assert resp.status_code == 201
+
+    # A regular ChangeVariable still 429s.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "MaxAge",
+        "val_text": "10",
+    })
+    assert resp.status_code == 429
+
+    # ChangeVariable targeting ProposalRateLimit goes through.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "ProposalRateLimit\nbumping the cap so we can move",
+        "val_text": "20",
+    })
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_proposal_rate_limit_can_be_voted_higher(client):
+    """A community can change ProposalRateLimit through the normal
+    governance flow; once the new value lands the cap moves. We
+    verify by voting the limit to 10 and then filing a 6th proposal
+    that would have been refused under the default."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # Land a ChangeVariable that bumps the cap to 10.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "ProposalRateLimit",
+        "val_text": "10",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user["id"]},
+        )
+
+    # Cap is now 10. File 6 AddStatements — all succeed.
+    for i in range(6):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"under-the-new-cap #{i}",
+        })
+        assert resp.status_code == 201, f"#{i}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_proposal_rate_limit_zero_disables_cap(client):
+    """Setting ProposalRateLimit to '0' disables the cap entirely.
+    Useful for trusted bot-driven communities that intentionally
+    want unbounded queueing."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # Vote the limit to 0.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "ProposalRateLimit",
+        "val_text": "0",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user["id"]},
+        )
+
+    # File 12 — none get capped.
+    for i in range(12):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"unbounded #{i}",
+        })
+        assert resp.status_code == 201, f"#{i}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_throw_out_cooldown_blocks_repeat_against_same_target(client):
+    """After a ThrowOut against user X is Canceled (decided), a new
+    ThrowOut against the same X can't be filed for 24h. Stops the
+    repeated-pitchfork pattern. We use Withdraw to land it in
+    CANCELED — the cooldown counts decided proposals regardless of
+    outcome."""
+    founder = await create_test_user(client, "throw-cooldown-f")
+    target = await create_test_user(client, "throw-cooldown-t")
+    community = await create_test_community(client, founder["id"])
+
+    # Land target as a member.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": target["id"],
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": target["id"],
+    })
+    membership_id = resp.json()["id"]
+    await client.patch(f"/proposals/{membership_id}/submit")
+    await client.post(
+        f"/proposals/{membership_id}/support", json={"user_id": founder["id"]},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": founder["id"]},
+        )
+
+    # File first ThrowOut and immediately withdraw it (→ CANCELED).
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "first try",
+        "val_uuid": target["id"],
+    })
+    first_id = resp.json()["id"]
+    resp = await client.post(f"/proposals/{first_id}/withdraw", json={
+        "user_id": founder["id"],
+    })
+    assert resp.status_code == 200
+
+    # A fresh ThrowOut against the same target now 429s due to
+    # cooldown (the existing DEDUPE_RULES wouldn't catch it because
+    # the prior one is now CANCELED, not in-flight).
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "second try same day",
+        "val_uuid": target["id"],
+    })
+    assert resp.status_code == 429
+    assert "cooldown" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
