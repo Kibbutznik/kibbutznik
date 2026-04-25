@@ -192,6 +192,48 @@ async def test_funding_refuses_action_belonging_to_other_community(sf):
 
 
 @pytest.mark.asyncio
+async def test_dividend_refuses_non_finite_amount(sf):
+    """An accepted Dividend with val_text='Infinity' must NOT
+    crash the executor. Decimal('Infinity').quantize(...) raises
+    InvalidOperation which would otherwise bubble up through
+    pulse_service.execute_pulse and corrupt pulse processing.
+    The handler must short-circuit on non-finite amounts."""
+    from kbz.enums import MemberStatus
+    async with sf() as db:
+        cid = await _mk_community(db, financial=True, name="div-inf")
+        # Need at least one active member so the early-return on
+        # `if not members` doesn't mask the real bug.
+        member_id = uuid.uuid4()
+        db.add(Member(
+            community_id=cid,
+            user_id=member_id,
+            status=MemberStatus.ACTIVE,
+            seniority=0,
+        ))
+        await db.commit()
+        svc = WalletService(db)
+        w = await svc.get_or_create(OWNER_COMMUNITY, cid)
+        await svc.mint(w, "100", webhook_event="seed", external_ref="r")
+        await db.commit()
+
+        prop = await _mk_proposal(
+            db,
+            community_id=cid,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.DIVIDEND,
+            val_text="Infinity",
+        )
+        await db.commit()
+
+        # Without the fix: raises InvalidOperation. With it: returns
+        # cleanly and the wallet stays untouched.
+        await ExecutionService(db)._exec_dividend(prop)
+        await db.commit()
+        w = (await db.execute(select(Wallet).where(Wallet.id == w.id))).scalar_one()
+        assert w.balance == Decimal("100")  # untouched
+
+
+@pytest.mark.asyncio
 async def test_funding_short_circuits_when_community_not_financial(sf):
     async with sf() as db:
         parent = await _mk_community(db, financial=False, name="not-fin")

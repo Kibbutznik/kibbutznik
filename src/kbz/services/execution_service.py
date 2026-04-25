@@ -394,7 +394,7 @@ class ExecutionService:
 
     async def _exec_dividend(self, proposal: Proposal) -> None:
         """Split `val_text` amount equally among active members."""
-        from decimal import Decimal
+        from decimal import Decimal, InvalidOperation
         from kbz.services.wallet_service import (
             WalletService, FinancialModuleDisabledError, InsufficientFundsError,
             OWNER_COMMUNITY, OWNER_USER,
@@ -407,8 +407,20 @@ class ExecutionService:
             return
         try:
             amount = Decimal(proposal.val_text)
-        except Exception:
+        except (InvalidOperation, ValueError, TypeError):
             logger.warning("Dividend %s: bad amount %r", proposal.id, proposal.val_text)
+            return
+        # Reject Decimal("Infinity") / Decimal("NaN") / non-positive
+        # at the source. Without this guard, `share.quantize(...)`
+        # on an infinite/NaN amount raises InvalidOperation that
+        # bubbles up through pulse_service.execute_pulse and
+        # crashes the entire pulse — half-processed proposals get
+        # left in inconsistent states.
+        if not amount.is_finite() or amount <= 0:
+            logger.warning(
+                "Dividend %s: non-positive or non-finite amount %r — refused",
+                proposal.id, proposal.val_text,
+            )
             return
         member_svc = MemberService(self.db)
         members = await member_svc.list_by_community(proposal.community_id)

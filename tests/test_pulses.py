@@ -3,7 +3,6 @@ from tests.conftest import create_test_user, create_test_community
 
 
 @pytest.mark.asyncio
-<<<<<<< HEAD
 async def test_pulse_thresholds_floor_at_one_for_zero_member_community(db):
     """If member_count somehow hits zero (everyone thrown out), the
     OutThere→OnTheAir and OnTheAir→Accepted thresholds used to drop
