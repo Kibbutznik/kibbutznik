@@ -82,6 +82,24 @@ PROPOSAL_RATE_LIMIT_VAR = "ProposalRateLimit"
 PROPOSAL_RATE_LIMIT_DEFAULT = 5
 THROW_OUT_COOLDOWN_HOURS = 24
 
+# Variables whose value MUST parse as a finite number. pulse_service
+# does `int(float(value))` on them every cycle; a non-numeric string
+# (e.g. ChangeVariable accepted with val_text="soon") would crash
+# execute_pulse with ValueError mid-cycle and leave the community's
+# state half-processed. Enumerate the numeric ones so ChangeVariable
+# can validate at create time. Other defaults — Name, Financial,
+# membershipHandler — are intentionally string-valued.
+_NUMERIC_VARIABLES = {
+    "PulseSupport", "ProposalSupport", "ChangeVariable", "Membership",
+    "ThrowOut", "AddStatement", "RemoveStatement", "AddAction",
+    "EndAction", "ReplaceStatement", "JoinAction", "Funding", "Payment",
+    "payBack", "Dividend", "SetMembershipHandler", "CreateArtifact",
+    "EditArtifact", "RemoveArtifact", "DelegateArtifact", "CommitArtifact",
+    "MinCommittee", "MaxAge", "ProposalRateLimit", "seniorityWeight",
+    "membershipFee", "dividendBySeniority", "proposalCooldown",
+    "quorumThreshold",
+}
+
 
 def _is_rate_limit_change_proposal(data: ProposalCreate) -> bool:
     """True iff this is the one ChangeVariable case that bypasses
@@ -157,6 +175,32 @@ class ProposalService:
             member_svc = MemberService(self.db)
             if not await member_svc.is_active_member(community_id, data.user_id):
                 raise HTTPException(status_code=403, detail="User is not an active member")
+
+        # ChangeVariable validation. Numeric-typed variables
+        # (PulseSupport, MaxAge, etc.) are parsed via int(float(value))
+        # every pulse cycle. Letting a non-numeric val_text land —
+        # e.g. ChangeVariable("PulseSupport", "soon") — crashes
+        # execute_pulse with ValueError mid-cycle and leaves the
+        # community's state half-processed. Validate at create time
+        # so the author sees their bad input immediately.
+        if data.proposal_type == ProposalType.CHANGE_VARIABLE:
+            var_name = (data.proposal_text or "").split("\n", 1)[0].strip()
+            if var_name in _NUMERIC_VARIABLES:
+                raw = (data.val_text or "").strip()
+                try:
+                    parsed = float(raw)
+                    if parsed != parsed:  # NaN check (NaN != NaN)
+                        raise ValueError("NaN")
+                    if parsed in (float("inf"), float("-inf")):
+                        raise ValueError("infinite")
+                except (TypeError, ValueError):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"ChangeVariable on '{var_name}' requires a "
+                            f"finite numeric val_text; got {data.val_text!r}"
+                        ),
+                    )
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in

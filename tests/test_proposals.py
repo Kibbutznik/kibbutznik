@@ -559,6 +559,53 @@ async def test_amend_404_for_unknown(client):
 
 
 @pytest.mark.asyncio
+async def test_change_variable_rejects_non_numeric_for_numeric_var(client):
+    """ChangeVariable("PulseSupport", "soon") used to land Accepted
+    AND THEN crash the next pulse cycle with ValueError because
+    pulse_service does int(float("soon")). Now refused at create
+    time so the author sees their bad input immediately and the
+    community's pulse cycle stays healthy."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    for bad in ("soon", "abc", "Infinity", "NaN", ""):
+        r = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "ChangeVariable",
+            "proposal_text": "PulseSupport",
+            "val_text": bad,
+        })
+        assert r.status_code == 422, f"val_text={bad!r} should 422; got {r.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_change_variable_accepts_numeric_for_numeric_var(client):
+    """The honest path: numeric val_text on a numeric variable still
+    creates the proposal (proves we didn't over-tighten). Vary the
+    variable name per call so DEDUPE_RULES doesn't 409 us — the rule
+    keys on proposal_text."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    cases = [
+        ("PulseSupport", "60"),
+        ("MaxAge", "5"),
+        ("ProposalSupport", "30"),
+        ("ProposalRateLimit", "10"),
+    ]
+    for var_name, ok in cases:
+        r = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "ChangeVariable",
+            "proposal_text": var_name,
+            "val_text": ok,
+        })
+        assert r.status_code == 201, (
+            f"var={var_name} val_text={ok!r} should 201; got {r.text}"
+        )
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
