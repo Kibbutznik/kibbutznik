@@ -264,6 +264,77 @@ async def test_deadlock_zero_when_accepted_proposal_is_latest(db_engine):
 
 
 @pytest.mark.asyncio
+async def test_deadlock_anchors_on_decided_at_not_created_at(db_engine):
+    """Repro for the deadlock-pulses anchoring bug: when a proposal was
+    filed long ago but decided recently, deadlock must count from
+    DECISION time. The buggy `max(Proposal.created_at)` would anchor on
+    the file timestamp, counting every intervening pulse — including
+    those that came BEFORE the decision — as deadlock.
+
+    Setup:
+        T+0  : Pulse A (DONE)
+        T+0.5: Proposal P filed (created_at = T+0.5)
+        T+1  : Pulse B (DONE)
+        T+2  : Pulse C (DONE) — proposal P decided here (decided_at = T+2)
+        T+3  : Pulse D (DONE)
+
+    Correct deadlock: 1 (only Pulse D is after the decision).
+    Bug: 3 (Pulses B/C/D all happened after the proposal was *filed*).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+
+    sf = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as db:
+        cid = await _seed_community(db)
+        u = uuid.uuid4()
+        await _add_member(db, cid, u)
+        base = datetime.now(timezone.utc)
+
+        # Pulse A at T+0
+        pa = await _add_pulse(db, cid)
+        # Proposal P at T+0.5, decided at T+2
+        pid = await _add_proposal(db, cid, u, ProposalStatus.ACCEPTED, age=1)
+        # Pulses B, C, D at T+1, T+2, T+3
+        pb = await _add_pulse(db, cid)
+        pc = await _add_pulse(db, cid)
+        pd = await _add_pulse(db, cid)
+        await db.flush()
+
+        # Fix timestamps deterministically.
+        for pulse_id, dt in (
+            (pa, base),
+            (pb, base + timedelta(seconds=1)),
+            (pc, base + timedelta(seconds=2)),
+            (pd, base + timedelta(seconds=3)),
+        ):
+            await db.execute(
+                update(Pulse).where(Pulse.id == pulse_id).values(created_at=dt)
+            )
+        # Critical: proposal was filed BEFORE pulse B, decided at pulse C time.
+        await db.execute(
+            update(Proposal)
+            .where(Proposal.id == pid)
+            .values(
+                created_at=base + timedelta(milliseconds=500),
+                decided_at=base + timedelta(seconds=2),
+            )
+        )
+        await db.commit()
+
+    async with sf() as db:
+        m = await MetricsService(db).compute(cid)
+    # Only pulse D is strictly after the decision time.
+    assert m.deadlock_pulses == 1, (
+        f"Expected 1 deadlock pulse (only Pulse D after decision), got "
+        f"{m.deadlock_pulses}. The bug anchors on created_at instead of "
+        f"decided_at — counting Pulses B/C/D all of which happened after "
+        f"the proposal was *filed*."
+    )
+
+
+@pytest.mark.asyncio
 async def test_deadlock_equals_total_when_nothing_accepted(db_engine):
     """No accepted proposals ever → deadlock = total_pulses."""
     sf = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
