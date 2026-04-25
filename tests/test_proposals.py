@@ -844,3 +844,56 @@ async def test_create_proposal_rejects_megabyte_text(client):
             f"/communities/{community['id']}/proposals", json=body,
         )
         assert r.status_code == 422, f"{field}: {r.status_code} {r.text}"
+
+
+@pytest.mark.asyncio
+async def test_remove_support_refused_after_decision(client):
+    """Once a proposal lands a terminal status (Accepted/Rejected/
+    Canceled), DELETE /proposals/{id}/support/{uid} must 400. The
+    audit log re-queries the Support table at read time, so deleting
+    a Support row after the decision rewrites who-supported-what
+    after the fact — a governance integrity hole. Pre-decision,
+    supporters can change their mind freely; post-decision, the
+    historical record is frozen."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "Soon to be accepted",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    # Drive two pulses to land it.
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user["id"]},
+        )
+
+    # Confirm landed.
+    decided = await client.get(f"/proposals/{pid}")
+    assert decided.json()["proposal_status"] == "Accepted"
+
+    # The audit log shows the supporter at the moment of decision.
+    audit_before = (await client.get(f"/communities/{community['id']}/audit")).json()
+    matching_before = [e for e in audit_before if e["proposal_id"] == pid]
+    assert len(matching_before) == 1
+    assert any(
+        s["user_id"] == user["id"] for s in matching_before[0]["supporters"]
+    ), f"expected user as supporter in audit, got: {matching_before[0]['supporters']}"
+
+    # Now try to retroactively withdraw support — must 400.
+    resp = await client.delete(f"/proposals/{pid}/support/{user['id']}")
+    assert resp.status_code == 400, resp.text
+    assert "decided" in resp.json()["detail"].lower()
+
+    # Audit log still shows the supporter — history is preserved.
+    audit_after = (await client.get(f"/communities/{community['id']}/audit")).json()
+    matching_after = [e for e in audit_after if e["proposal_id"] == pid]
+    assert len(matching_after) == 1
+    assert any(
+        s["user_id"] == user["id"] for s in matching_after[0]["supporters"]
+    ), "audit log lost the supporter — history was rewritten"

@@ -77,6 +77,28 @@ class SupportService:
         )
 
     async def remove_proposal_support(self, proposal_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        # Block withdrawal once the proposal has reached a terminal
+        # status. The audit log resolves supporters by re-querying
+        # the Support table at read time (see routers/audit.py), so
+        # deleting a Support row after Accept/Reject/Cancel rewrites
+        # who-supported-what after the fact — a governance integrity
+        # hole. Pre-decision, supporters can freely change their
+        # mind; post-decision, the historical record is frozen.
+        proposal = (
+            await self.db.execute(
+                select(Proposal).where(Proposal.id == proposal_id)
+            )
+        ).scalar_one_or_none()
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if proposal.proposal_status not in (
+            ProposalStatus.OUT_THERE, ProposalStatus.ON_THE_AIR,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Proposal already decided — support cannot be withdrawn",
+            )
+
         result = await self.db.execute(
             select(Support).where(Support.user_id == user_id, Support.proposal_id == proposal_id)
         )
