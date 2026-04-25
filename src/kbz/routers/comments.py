@@ -47,15 +47,34 @@ async def get_comments(
     entity_id: uuid.UUID,
     limit: int | None = Query(None, ge=1, le=500),
     after: datetime | None = Query(None),
+    include_replies: bool = Query(
+        True,
+        description=(
+            "When true (default) the response includes the full tree as a "
+            "flat list — clients group by parent_comment_id to render "
+            "threading. Pass false for compact views that only need roots."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     _require_entity_type(entity_type)
     svc = CommentService(db)
-    return await svc.get_comments(entity_id, entity_type, limit=limit, after=after)
+    return await svc.get_comments(
+        entity_id, entity_type,
+        limit=limit, after=after, include_replies=include_replies,
+    )
 
 
 @router.post("/comments/{comment_id}/score")
 async def update_score(comment_id: uuid.UUID, data: ScoreUpdate, db: AsyncSession = Depends(get_db)):
+    """Bump a comment's score by ±1. Returns the comment id and its
+    NEW score so the client can update only the up/down counter
+    instead of re-fetching the entire proposal modal (which used to
+    flicker the whole widget on every vote)."""
     svc = CommentService(db)
-    await svc.update_score(comment_id, data.delta)
-    return {"status": "updated"}
+    new_score = await svc.update_score(comment_id, data.delta)
+    return {
+        "status": "updated",
+        "id": str(comment_id),
+        "score": new_score,
+    }
