@@ -536,6 +536,80 @@ async def test_committed_container_cleanup_emits_proposal_canceled(db):
 
 
 @pytest.mark.asyncio
+async def test_commit_delegated_container_notifies_parent_members(db):
+    """When a sub-action's container commits and creates the parent's
+    review-Draft EditArtifact, every active member of the PARENT
+    community (except the committer) must get a proposal.created
+    notification. Pre-fix the proposal was minted silently — members
+    saw nothing in their inbox and the work could sit unreviewed."""
+    from sqlalchemy import select as _select
+    from kbz.enums import MemberStatus
+    from kbz.models.member import Member
+    from kbz.models.notification import KIND_PROPOSAL_CREATED, Notification
+
+    parent = await _mk_community(db, "ParentNotif")
+    child = await _mk_child_action(db, parent, "ChildNotif")
+    svc = ArtifactService(db)
+    parent_container = await svc.create_root_container(parent.id)
+    committer = uuid.uuid4()
+    other_member = uuid.uuid4()
+    # Both users are active members of the parent community. The
+    # committer should NOT get a notification (it's their action);
+    # the other member SHOULD.
+    db.add(Member(community_id=parent.id, user_id=committer, status=MemberStatus.ACTIVE, seniority=0))
+    db.add(Member(community_id=parent.id, user_id=other_member, status=MemberStatus.ACTIVE, seniority=0))
+    await db.flush()
+
+    p = await _mk_proposal(db, parent.id, committer)
+    parent_artifact = await svc.create_artifact(
+        parent_container.id, "stub", "Chapter", committer, p.id,
+    )
+    delegating = await _mk_proposal(db, parent.id, committer, ProposalType.DELEGATE_ARTIFACT)
+    child_container = await svc.delegate(parent_artifact.id, child.id, delegating)
+    cp = await _mk_proposal(db, child.id, committer)
+    a = await svc.create_artifact(child_container.id, "delivered text", "", committer, cp.id)
+
+    parent_proposal = await svc.commit_container(child_container.id, [a.id], committer)
+    assert parent_proposal is not None
+    await db.commit()
+
+    # Other active member of the parent community must have one
+    # proposal.created notification pointing at the new draft.
+    rows = (
+        await db.execute(
+            _select(Notification).where(
+                Notification.user_id == other_member,
+                Notification.kind == KIND_PROPOSAL_CREATED,
+            )
+        )
+    ).scalars().all()
+    matching = [
+        n for n in rows
+        if (n.payload_json or {}).get("proposal_id") == str(parent_proposal.id)
+    ]
+    assert len(matching) == 1, (
+        f"expected one proposal.created for the other member; got "
+        f"{[n.payload_json for n in rows]}"
+    )
+
+    # The committer themselves must NOT receive the notification —
+    # fanout_proposal_created excludes the author.
+    self_rows = (
+        await db.execute(
+            _select(Notification).where(
+                Notification.user_id == committer,
+                Notification.kind == KIND_PROPOSAL_CREATED,
+            )
+        )
+    ).scalars().all()
+    self_match = [
+        n for n in self_rows
+        if (n.payload_json or {}).get("proposal_id") == str(parent_proposal.id)
+    ]
+    assert self_match == []
+
+
+@pytest.mark.asyncio
 async def test_cascade_accept_seals_child_container(db):
     parent = await _mk_community(db, "Parent")
     child = await _mk_child_action(db, parent, "Child")

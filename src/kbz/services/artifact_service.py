@@ -431,6 +431,33 @@ class ArtifactService:
         container.status = ContainerStatus.PENDING_PARENT
         container.pending_parent_proposal_id = parent_proposal.id
         await self.db.flush()
+        # Inbox + TKG fanout. Without these, the parent community
+        # silently inherits a Draft EditArtifact that nobody knows
+        # about — members get no notification, the TKG ingestor
+        # never opens the AUTHORED edge, and the WebSocket viewer
+        # doesn't see the proposal pop up. Same gap that PR #36
+        # closed on the wallet shortcuts.
+        from kbz.services.event_bus import event_bus
+        from kbz.services.notification_service import NotificationService
+        await NotificationService(self.db).fanout_proposal_created(
+            community_id=source.community_id,
+            proposal_id=parent_proposal.id,
+            proposal_type=str(parent_proposal.proposal_type),
+            proposal_text=parent_proposal.proposal_text or parent_proposal.val_text or "",
+            author_user_id=committer_user_id,
+        )
+        # Event emission is fire-and-forget; subscribers may race with
+        # the outer pulse_service commit, but the inbox row above
+        # already lands atomically with the proposal row so the
+        # notification UI is consistent regardless.
+        await event_bus.emit(
+            "proposal.created",
+            community_id=source.community_id,
+            user_id=committer_user_id,
+            proposal_id=parent_proposal.id,
+            proposal_type=str(parent_proposal.proposal_type),
+            proposal_text=parent_proposal.proposal_text or parent_proposal.val_text or "",
+        )
         return parent_proposal
 
     # ---------- Cascade event handlers ----------
