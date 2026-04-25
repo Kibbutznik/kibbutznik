@@ -270,9 +270,11 @@ async def test_withdraw_blocks_session_spoof(client):
 @pytest.mark.asyncio
 async def test_create_proposal_blocks_when_session_mismatches_body(client):
     """Logged-in user A cannot POST a proposal authored as user B."""
-    await _login(client, "sess-a@example.com")
     other_user = await create_test_user(client)   # random user B
+    # Set up B's community while UNauthenticated so the new founder-binding
+    # guard doesn't 403 us at setup time.
     community = await create_test_community(client, other_user["id"])
+    await _login(client, "sess-a@example.com")
     r = await client.post(
         f"/communities/{community['id']}/proposals",
         json={
@@ -355,3 +357,42 @@ async def test_create_proposal_unauthenticated_still_works(client):
         },
     )
     assert r.status_code in (200, 201), r.text
+
+
+@pytest.mark.asyncio
+async def test_create_community_blocks_when_session_mismatches_founder(client):
+    """A logged-in user can't POST /communities with someone else's
+    founder_user_id — otherwise they could pollute the victim's
+    `/users/me/memberships` with communities they never opted into."""
+    await _login(client, "comm-attacker@example.com")
+    victim = await create_test_user(client)   # random user B
+    r = await client.post(
+        "/communities",
+        json={
+            "name": "Victim's Unwanted Kibbutz",
+            "founder_user_id": victim["id"],   # spoofed
+        },
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_community_unauthenticated_still_works(client):
+    """Agents (no cookie) must continue to create communities for any user."""
+    user = await create_test_user(client)
+    r = await client.post(
+        "/communities",
+        json={"name": "Agent Made", "founder_user_id": user["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_create_community_works_when_session_matches_founder(client):
+    """The honest path: a logged-in user creates a community as themselves."""
+    me_id = await _login(client, "honest-founder@example.com")
+    r = await client.post(
+        "/communities",
+        json={"name": "My Place", "founder_user_id": me_id},
+    )
+    assert r.status_code == 201, r.text
