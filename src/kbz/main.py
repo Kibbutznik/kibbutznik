@@ -8,6 +8,7 @@ from kbz.database import async_session
 from kbz.routers import (
     actions,
     artifacts,
+    audit,
     auth,
     closeness,
     comments,
@@ -54,6 +55,7 @@ app.include_router(statements.router, tags=["statements"])
 app.include_router(actions.router, tags=["actions"])
 app.include_router(comments.router, tags=["comments"])
 app.include_router(closeness.router, tags=["closeness"])
+app.include_router(audit.router, tags=["audit"])
 app.include_router(artifacts.router)
 app.include_router(memory.router, tags=["memory"])
 app.include_router(tkg.router)

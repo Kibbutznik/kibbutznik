@@ -30,6 +30,15 @@ class Proposal(Base):
     pulse_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
     age: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     support_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Decision moment. NULL while DRAFT/OUT_THERE/ON_THE_AIR. Set to
+    # NOW() when the proposal flips to ACCEPTED / REJECTED / CANCELED.
+    # Lets the audit log answer "when was this rule passed?" without
+    # walking pulse history. Distinct from created_at (when the
+    # proposal was filed) — they differ by however many pulses the
+    # proposal lived through.
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
     __table_args__ = (

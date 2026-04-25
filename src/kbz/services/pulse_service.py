@@ -93,11 +93,15 @@ class PulseService:
                 # threshold computation below.
                 threshold = max(1, math.ceil(member_count * threshold_pct / 100))
 
+                from datetime import datetime, timezone
+                _decided_now = datetime.now(timezone.utc)
                 if proposal.support_count >= threshold:
                     proposal.proposal_status = ProposalStatus.ACCEPTED
+                    proposal.decided_at = _decided_now
                     await execution_svc.execute_proposal(proposal)
                 else:
                     proposal.proposal_status = ProposalStatus.REJECTED
+                    proposal.decided_at = _decided_now
                     # If this rejected Membership proposal had an
                     # escrow, return the fee to the applicant. No-op
                     # when no escrow exists (non-financial community
@@ -132,7 +136,9 @@ class PulseService:
 
             # Cancel if too old
             if proposal.age > max_age:
+                from datetime import datetime, timezone
                 proposal.proposal_status = ProposalStatus.CANCELED
+                proposal.decided_at = datetime.now(timezone.utc)
                 # Refund Membership escrow if one exists
                 if proposal.proposal_type == ProposalType.MEMBERSHIP:
                     from kbz.services.wallet_service import WalletService

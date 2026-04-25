@@ -140,10 +140,14 @@ async def withdraw_proposal(
             status_code=400,
             detail=f"Cannot withdraw — proposal is {proposal.proposal_status}",
         )
+    from datetime import datetime, timezone
     await db.execute(
         update(Proposal)
         .where(Proposal.id == proposal_id)
-        .values(proposal_status=ProposalStatus.CANCELED)
+        .values(
+            proposal_status=ProposalStatus.CANCELED,
+            decided_at=datetime.now(timezone.utc),
+        )
     )
     # Refund any Membership escrow before committing
     from kbz.enums import ProposalType as _PT
