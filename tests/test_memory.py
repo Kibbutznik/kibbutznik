@@ -307,6 +307,36 @@ async def test_memories_isolated_per_user(client):
     assert resp2.json()[0]["content"] == "User2 event"
 
 
+@pytest.mark.asyncio
+async def test_memory_routes_reject_malformed_uuid_with_422(client):
+    """Memory routes used to take `user_id` / `memory_id` as plain str
+    and call `uuid.UUID(...)` inside the handler — which raises
+    ValueError on a malformed value and surfaces as a 500. The
+    endpoints now declare those params as `uuid.UUID`, so FastAPI
+    rejects the bad request cleanly with a 422.
+    """
+    # Path-param UUID: GET /memories/{user_id}
+    resp = await client.get("/memories/not-a-uuid")
+    assert resp.status_code == 422
+
+    # Path-param UUID: PUT /memories/{memory_id}
+    resp = await client.put("/memories/not-a-uuid", json={"importance": 0.3})
+    assert resp.status_code == 422
+
+    # Path-param UUID: DELETE /memories/prune/{user_id}
+    resp = await client.delete("/memories/prune/not-a-uuid?current_round=1")
+    assert resp.status_code == 422
+
+    # Body-field UUID: POST /memories
+    resp = await client.post("/memories", json={
+        "user_id": "definitely-not-a-uuid",
+        "memory_type": "episodic",
+        "content": "x",
+        "importance": 0.5,
+    })
+    assert resp.status_code == 422
+
+
 # ── MemoryService Direct Tests ──────────────────────────────────────────────
 
 
