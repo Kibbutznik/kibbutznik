@@ -77,6 +77,31 @@ class SupportService:
         )
 
     async def remove_proposal_support(self, proposal_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        # Refuse if the proposal has already landed. Pre-fix a user
+        # could DELETE their support AFTER the proposal was
+        # Accepted/Rejected/Canceled, which retroactively decremented
+        # support_count and corrupted the audit log snapshot
+        # (support_count_at_decide reads from the live column). Once
+        # the verdict is in, the support row is part of the
+        # historical record — withdrawal makes no governance sense.
+        proposal = (
+            await self.db.execute(
+                select(Proposal).where(Proposal.id == proposal_id)
+            )
+        ).scalar_one_or_none()
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if proposal.proposal_status not in (
+            ProposalStatus.OUT_THERE, ProposalStatus.ON_THE_AIR,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot withdraw support — proposal is "
+                    f"{proposal.proposal_status}"
+                ),
+            )
+
         result = await self.db.execute(
             select(Support).where(Support.user_id == user_id, Support.proposal_id == proposal_id)
         )
@@ -92,17 +117,10 @@ class SupportService:
             .where(Proposal.id == proposal_id)
             .values(support_count=Proposal.support_count - 1)
         )
-        # Fetch community_id for the event (we already deleted support, but
-        # the proposal row still exists).
-        prop = (
-            await self.db.execute(
-                select(Proposal.community_id).where(Proposal.id == proposal_id)
-            )
-        ).scalar_one_or_none()
         await self.db.commit()
         await event_bus.emit(
             "support.withdrawn",
-            community_id=prop,
+            community_id=proposal.community_id,
             user_id=user_id,
             proposal_id=proposal_id,
         )

@@ -728,6 +728,46 @@ async def test_remove_support(client):
 
 
 @pytest.mark.asyncio
+async def test_cannot_remove_support_after_decision(client):
+    """Once a proposal lands (Accepted / Rejected / Canceled) the
+    support row is part of the historical record. Pre-fix a user
+    could DELETE their support after the decision, retroactively
+    decrementing support_count and corrupting the audit log
+    snapshot (support_count_at_decide reads from the live column)."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # File + support + accept the proposal.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "lock me in",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user["id"]},
+        )
+
+    # Sanity: proposal is Accepted and support_count was 1 at decide.
+    resp = await client.get(f"/proposals/{pid}")
+    assert resp.json()["proposal_status"] == "Accepted"
+    assert resp.json()["support_count"] == 1
+
+    # Withdrawing support post-decision must 400 — the audit log's
+    # support_count_at_decide depends on this number staying frozen.
+    r = await client.delete(f"/proposals/{pid}/support/{user['id']}")
+    assert r.status_code == 400, r.text
+
+    # And the count is unchanged.
+    resp = await client.get(f"/proposals/{pid}")
+    assert resp.json()["support_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_cannot_support_draft(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
