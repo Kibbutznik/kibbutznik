@@ -576,10 +576,8 @@ async def test_extractor_edit_artifact_creates_goal(db):
 @pytest.mark.asyncio
 async def test_extractor_deduplicates_outcomes(db):
     """Extractor doesn't record the same proposal outcome twice."""
-    from datetime import datetime, timezone
     from kbz.services.memory_service import MemoryService
     from agents.memory_extractor import MemoryExtractor
-    from agents.agent import ActionLog
     from dataclasses import dataclass, field
 
     uid = uuid.uuid4()

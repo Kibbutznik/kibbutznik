@@ -18,7 +18,6 @@ def _ensure_venv():
     try:
         import kbz  # noqa: F401
     except ModuleNotFoundError:
-        import subprocess
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         venv_python = os.path.join(root, ".venv", "bin", "python")
         if os.path.isfile(venv_python):
@@ -43,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from agents.orchestrator import Orchestrator
-from agents.persona import load_all_personas, build_persona_list, MAX_MEMBERS
+from agents.persona import build_persona_list, MAX_MEMBERS
 from agents.simulation_api import (
     router as sim_router,
     set_orchestrator,
@@ -99,7 +98,7 @@ async def run_simulation(orch: Orchestrator, rounds: int, delay: float):
         await orch.setup()
         logger.info(f"Community '{orch.community_name}' ready with {len(orch.agents)} agents")
         logger.info(f"Community ID: {orch.community_id}")
-        logger.info(f"Viewer: http://localhost:8000/viewer/")
+        logger.info("Viewer: http://localhost:8000/viewer/")
         await orch.run(rounds=rounds, delay=delay)
 
         status = await orch.get_status()
@@ -215,7 +214,6 @@ Examples:
     if args.rounds == 0:
         log.info("Running in CONTINUOUS mode (rounds=0). Press Ctrl+C to stop.")
 
-    personas = build_persona_list(args.members)
     mission = args.mission if args.mission is not None else DEFAULT_MISSION
 
     def _make_orchestrator(n_members: int) -> Orchestrator:
@@ -312,7 +310,6 @@ Examples:
     # TKG ingestor — owns a subscription to the event_bus and writes
     # nodes/edges/embeddings as governance events happen. Started inside the
     # lifespan so it dies cleanly with the app.
-    from kbz.database import async_session
     from kbz.services.tkg_ingestor import TKGIngestor
     from agents.bot_runner import BotRunner
 

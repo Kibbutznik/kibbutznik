@@ -11,8 +11,7 @@ Each agent has:
 """
 import logging
 import re
-import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from agents.api_client import KBZClient
@@ -247,8 +246,6 @@ class Agent:
         logs: list[ActionLog] = []
         best_eagerness = 5
         best_eager_front = "observe"
-        did_support_pulse = False
-        did_support_or_create = False
 
         for decision in decisions:
             decision = self._apply_guards(decision, snapshot)
@@ -259,12 +256,6 @@ class Agent:
 
             self.action_history.append(log)
             logs.append(log)
-
-            if log.success:
-                if decision.action_type == "support_pulse":
-                    did_support_pulse = True
-                if decision.action_type in ("support_proposal", "create_proposal"):
-                    did_support_or_create = True
 
             logger.info(
                 f"[{self.persona.name}] {log.action_type}: {log.details} "

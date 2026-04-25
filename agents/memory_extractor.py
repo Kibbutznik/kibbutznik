@@ -249,12 +249,9 @@ class MemoryExtractor:
             # Track who we support — build relationship memory
             proposal_author = self._find_proposal_author(log.ref_id, snapshot)
             if proposal_author and proposal_author != user_id:
-                author_name = self._name(proposal_author)
                 ptype = self._find_proposal_type(log.ref_id, snapshot)
                 existing = await self.store.get_relationship_with(user_id, proposal_author)
                 if existing:
-                    # Update: increment support count in content
-                    old_content = existing["content"]
                     old_importance = existing.get("importance", 0.3)
                     new_importance = min(0.9, old_importance + 0.05)
                     await self.store.update(

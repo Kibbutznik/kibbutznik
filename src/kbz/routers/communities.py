@@ -49,6 +49,11 @@ async def list_communities(
         description="include child action-communities (parent_id != ZERO_UUID). "
                     "Default false — the human product only browses root communities.",
     ),
+    include_dead: bool = Query(
+        default=False,
+        description="include communities with no humans, no recent proposals, and "
+                    "not freshly created. Default false — operator/debug escape hatch.",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """List (root) communities for the /browse page.
@@ -60,8 +65,9 @@ async def list_communities(
     one of these is true:
       - has at least one human member (is_human=true)
       - has proposal activity in the last 48 hours
+      - was itself created in the last 48 hours
     Keeps the Browse page useful without needing a separate cleanup job.
-    The `include_dead=true` query param disables the filter.
+    Pass `include_dead=true` to disable the filter (operator/debug view).
     """
     where = []
     if not include_actions:
@@ -69,19 +75,20 @@ async def list_communities(
     if q:
         where.append(func.lower(Community.name).like(f"%{q.lower()}%"))
 
-    has_human_member = exists().where(
-        Member.community_id == Community.id,
-        Member.user_id == User.id,
-        User.is_human.is_(True),
-    )
-    has_recent_activity = exists().where(
-        Proposal.community_id == Community.id,
-        Proposal.created_at > func.now() - text("interval '48 hours'"),
-    )
-    # A freshly-created kibbutz with no activity yet also counts as alive
-    # so the founder sees it on Browse immediately.
-    recently_created = Community.created_at > func.now() - text("interval '48 hours'")
-    where.append(or_(has_human_member, has_recent_activity, recently_created))
+    if not include_dead:
+        has_human_member = exists().where(
+            Member.community_id == Community.id,
+            Member.user_id == User.id,
+            User.is_human.is_(True),
+        )
+        has_recent_activity = exists().where(
+            Proposal.community_id == Community.id,
+            Proposal.created_at > func.now() - text("interval '48 hours'"),
+        )
+        # A freshly-created kibbutz with no activity yet also counts as alive
+        # so the founder sees it on Browse immediately.
+        recently_created = Community.created_at > func.now() - text("interval '48 hours'")
+        where.append(or_(has_human_member, has_recent_activity, recently_created))
 
     stmt = (
         select(Community)
@@ -91,6 +98,17 @@ async def list_communities(
         .offset(offset)
     )
     rows = (await db.execute(stmt)).scalars().all()
+    # Dedupe root communities by name — keep the most recent per name.
+    # Reason: the sim creates a fresh "AI Kibbutz" every run, which leaves
+    # visitors staring at N identically-named rows with no way to tell
+    # which one is the live demo. Older instances remain reachable via
+    # /communities/{id} direct link.
+    if not include_actions:
+        seen: dict[str, Community] = {}
+        for c in rows:
+            if c.name not in seen:
+                seen[c.name] = c
+        rows = list(seen.values())
     return rows
 
 

@@ -750,7 +750,7 @@ async def test_list_proposals_by_status(client):
     community = await create_test_community(client, user["id"])
 
     # Create two proposals, submit one
-    resp1 = await client.post(f"/communities/{community['id']}/proposals", json={
+    await client.post(f"/communities/{community['id']}/proposals", json={
         "user_id": user["id"],
         "proposal_type": "AddStatement",
         "proposal_text": "Draft one",

@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import uuid
 
 import pytest
 
@@ -30,7 +29,7 @@ async def _login(client, email: str) -> str:
 async def test_list_communities_default_shows_roots(client):
     # Create one root community
     user = await create_test_user(client)
-    c1 = await create_test_community(client, user["id"], name="First Kibbutz")
+    await create_test_community(client, user["id"], name="First Kibbutz")
     r = await client.get("/communities")
     assert r.status_code == 200
     names = [c["name"] for c in r.json()]
@@ -50,12 +49,41 @@ async def test_list_communities_with_search(client):
 
 
 @pytest.mark.asyncio
+async def test_list_communities_dedupes_same_name_root(client):
+    """Public browse should show one row per name, keeping the newest.
+    Sim re-runs create many 'AI Kibbutz' roots; visitors shouldn't see N copies."""
+    user = await create_test_user(client)
+    older = await create_test_community(client, user["id"], name="Same Kibbutz")
+    newer = await create_test_community(client, user["id"], name="Same Kibbutz")
+    r = await client.get("/communities")
+    assert r.status_code == 200
+    same_name = [c for c in r.json() if c["name"] == "Same Kibbutz"]
+    assert len(same_name) == 1, "expected dedupe to collapse same-name roots"
+    assert same_name[0]["id"] == newer["id"], "expected the newer community to win"
+
+
+@pytest.mark.asyncio
 async def test_list_communities_pagination(client):
     user = await create_test_user(client)
     for i in range(5):
         await create_test_community(client, user["id"], name=f"K{i}")
     r = await client.get("/communities", params={"limit": 2})
     assert len(r.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_communities_include_dead_accepts_param(client):
+    """include_dead is the documented operator/debug escape hatch — when
+    true, the alive-filter is skipped. For freshly-created communities
+    in tests, both modes return the same rows, but the endpoint must
+    accept the param and still succeed."""
+    user = await create_test_user(client)
+    await create_test_community(client, user["id"], name="IncDeadCheck")
+    r_default = await client.get("/communities", params={"q": "IncDeadCheck"})
+    r_all = await client.get("/communities", params={"q": "IncDeadCheck", "include_dead": "true"})
+    assert r_default.status_code == 200
+    assert r_all.status_code == 200
+    assert any(c["name"] == "IncDeadCheck" for c in r_all.json())
 
 
 # ── /users/me/memberships ─────────────────────────────────────────

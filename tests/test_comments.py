@@ -1,6 +1,6 @@
 import uuid
 import pytest
-from tests.conftest import create_test_user, create_test_community
+from tests.conftest import create_test_user
 
 
 @pytest.mark.asyncio

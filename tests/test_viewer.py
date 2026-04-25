@@ -1,8 +1,6 @@
 """Tests for the Big Brother viewer (Stage 3)."""
 import os
 
-import pytest
-from httpx import ASGITransport, AsyncClient
 
 from kbz.main import app
 from agents.simulation_api import router as sim_router
