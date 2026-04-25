@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, String, DateTime, text
+from sqlalchemy import Boolean, Index, String, DateTime, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,3 +23,17 @@ class User(Base):
         Boolean, nullable=False, server_default=text("false"), default=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+
+    __table_args__ = (
+        # Partial unique index on lower(email) — closes the
+        # magic-link race window where two concurrent get_or_create_human
+        # calls for the same address would land two User rows. Bot/test
+        # accounts have email IS NULL and are exempt. Indexed via LOWER()
+        # so "Alice@x.com" can't bypass the check by varying case.
+        Index(
+            "ix_users_email_lower_unique",
+            func.lower(email),
+            unique=True,
+            postgresql_where=email.is_not(None),
+        ),
+    )

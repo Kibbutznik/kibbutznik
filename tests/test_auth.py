@@ -115,6 +115,75 @@ async def test_magic_link_reuses_existing_user_by_email(client):
 
 
 @pytest.mark.asyncio
+async def test_get_or_create_human_race_returns_winner(client, monkeypatch):
+    """Two concurrent magic-link requests for the same email used to
+    both pass `find_user_by_email` (no row yet) and both INSERT,
+    leaving two User rows with the same email and different
+    user_names. The partial unique index on LOWER(email) now catches
+    the loser; AuthService.get_or_create_human handles the
+    IntegrityError and returns the winner's row.
+
+    Force the loser's path by monkey-patching find_user_by_email to
+    return None even after a real prior User exists, and confirm:
+    1) the second call doesn't 500 with IntegrityError
+    2) it returns the WINNER's user_id (not a fresh one)
+    """
+    from kbz.services import auth_service as _as
+
+    # First request — creates the winning row legitimately.
+    r1 = await client.post(
+        "/auth/request-magic-link", json={"email": "race@example.com"}
+    )
+    link1 = r1.json()["link"]
+    r = await client.get(link1)
+    winner_id = r.json()["user"]["user_id"]
+
+    client.cookies.clear()
+
+    # Now force the second request's get_or_create_human to think
+    # no user exists, by stubbing find_user_by_email to None.
+    real_find = _as.AuthService.find_user_by_email
+
+    async def find_returning_none(self, email: str):
+        return None
+
+    monkeypatch.setattr(_as.AuthService, "find_user_by_email", find_returning_none)
+
+    # The second magic-link request triggers get_or_create_human →
+    # tries to INSERT a duplicate-email User → unique index fires
+    # → service catches it and re-finds the winner. WITHOUT the
+    # fix this would 500 because monkey-patched re-find still
+    # returns None (we'd raise the IntegrityError).
+    # To get a deterministic test we need re-find to actually work.
+    # Restore real find for the second-pass lookup but keep the
+    # initial find stubbed: simplest is to swap the patch to a
+    # one-shot "first call None, then real".
+    call_count = {"n": 0}
+
+    async def find_once_then_real(self, email: str):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return None
+        return await real_find(self, email)
+
+    monkeypatch.setattr(
+        _as.AuthService, "find_user_by_email", find_once_then_real,
+    )
+
+    r2 = await client.post(
+        "/auth/request-magic-link", json={"email": "race@example.com"}
+    )
+    assert r2.status_code == 200, r2.text
+    link2 = r2.json()["link"]
+    r = await client.get(link2)
+    assert r.status_code == 200, r.text
+    second_id = r.json()["user"]["user_id"]
+    assert second_id == winner_id, (
+        f"expected winner {winner_id}, got {second_id} (race created a duplicate)"
+    )
+
+
+@pytest.mark.asyncio
 async def test_verify_with_next_redirects(client):
     """When the email-link handler passes `next=/app/#/dashboard`, the
     endpoint responds with a 303 redirect instead of raw JSON."""
