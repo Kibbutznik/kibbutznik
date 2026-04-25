@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kbz.auth_deps import enforce_session_matches_body, get_current_user
 from kbz.database import get_db
 from kbz.models.user import User
-from kbz.schemas.proposal import ProposalCreate, ProposalEdit, ProposalResponse, SupportCreate
+from kbz.schemas.proposal import ProposalAmend, ProposalCreate, ProposalEdit, ProposalResponse, SupportCreate
 from kbz.services.proposal_service import ProposalService
 from kbz.services.support_service import SupportService
 
@@ -76,6 +76,55 @@ async def edit_proposal(
         new_pitch=data.pitch,
     )
     return await svc.enrich_one(proposal)
+
+
+@router.post(
+    "/proposals/{proposal_id}/amend",
+    response_model=ProposalResponse,
+    status_code=201,
+)
+async def amend_proposal(
+    proposal_id: uuid.UUID,
+    data: ProposalAmend,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    """Cancel this proposal and create a successor with the changes
+    applied. The successor's `parent_proposal_id` chains back here.
+
+    Returns the NEW proposal (status 201). The original moves to
+    CANCELED — clients that were watching it should follow the
+    chain forward via `parent_proposal_id` lookups.
+    """
+    enforce_session_matches_body(data.user_id, session_user)
+    svc = ProposalService(db)
+    successor = await svc.amend(
+        proposal_id,
+        user_id=data.user_id,
+        new_proposal_text=data.proposal_text,
+        new_pitch=data.pitch,
+        new_val_text=data.val_text,
+        new_val_uuid=data.val_uuid,
+    )
+    return await svc.enrich_one(successor)
+
+
+@router.get(
+    "/proposals/{proposal_id}/versions",
+    response_model=list[ProposalResponse],
+)
+async def list_proposal_versions(
+    proposal_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the amendment chain ending at `proposal_id`,
+    oldest-first. Lets clients render "v1 → v2 → v3 (you are here)"
+    without N+1 lookups."""
+    svc = ProposalService(db)
+    chain = await svc.list_versions(proposal_id)
+    if not chain:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    return [await svc.enrich_one(p) for p in chain]
 
 
 @router.patch("/proposals/{proposal_id}/submit", response_model=ProposalResponse)

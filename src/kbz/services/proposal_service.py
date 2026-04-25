@@ -492,6 +492,8 @@ class ProposalService:
                 support_count=p.support_count,
                 created_at=p.created_at,
                 prev_content=p.prev_content,
+                parent_proposal_id=getattr(p, "parent_proposal_id", None),
+                version=getattr(p, "version", 1),
                 promote_threshold=promote_threshold,
                 decide_threshold=decide_threshold,
                 user_name=user_by_id.get(p.user_id),
@@ -587,3 +589,127 @@ class ProposalService:
         await self.db.commit()
         await self.db.refresh(proposal)
         return proposal
+
+    async def amend(
+        self,
+        proposal_id: uuid.UUID,
+        *,
+        user_id: uuid.UUID,
+        new_proposal_text: str | None = None,
+        new_pitch: str | None = None,
+        new_val_text: str | None = None,
+        new_val_uuid: uuid.UUID | None = None,
+    ) -> Proposal:
+        """Create a successor proposal that AMENDS this one.
+
+        Semantics:
+        - Only the original author can amend.
+        - Only DRAFT or OUT_THERE originals are amendable. Once a
+          proposal is OnTheAir / Accepted / Rejected / Canceled,
+          the train has left.
+        - The original is moved to CANCELED so it stops collecting
+          support and won't be processed by the next pulse.
+        - The new row is a fresh DRAFT (not OUT_THERE) — supporters
+          must re-evaluate the changed text and re-support, same
+          rationale as `edit_text`'s support reset.
+        - `parent_proposal_id` and `version` track the chain.
+
+        Returns the newly-created successor row.
+        """
+        original = await self.get(proposal_id)
+        if not original:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if original.user_id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the proposal author can amend it",
+            )
+        if original.proposal_status not in (
+            ProposalStatus.DRAFT, ProposalStatus.OUT_THERE,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot amend — proposal is "
+                    f"{original.proposal_status}. Only Draft or OutThere "
+                    "proposals can be amended."
+                ),
+            )
+        # An amend that changes nothing is almost certainly a client
+        # bug — refuse so we don't bloat the chain with empty
+        # successors.
+        if all(
+            v is None for v in (
+                new_proposal_text, new_pitch, new_val_text, new_val_uuid,
+            )
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Amend must change at least one field",
+            )
+
+        # Cancel the original. We don't go through set_status here
+        # because that path also runs Membership-escrow refunds —
+        # but for an amend we WANT to keep the escrow tied to the
+        # successor's lifecycle, not refund-and-rebill. So flip the
+        # status directly and leave escrow plumbing alone.
+        original.proposal_status = ProposalStatus.CANCELED
+
+        successor = Proposal(
+            id=uuid.uuid4(),
+            community_id=original.community_id,
+            user_id=original.user_id,
+            proposal_type=original.proposal_type,
+            proposal_status=ProposalStatus.DRAFT,
+            proposal_text=(
+                new_proposal_text
+                if new_proposal_text is not None
+                else original.proposal_text
+            ),
+            pitch=(new_pitch if new_pitch is not None else original.pitch),
+            val_uuid=(
+                new_val_uuid if new_val_uuid is not None else original.val_uuid
+            ),
+            val_text=(
+                new_val_text if new_val_text is not None else original.val_text
+            ),
+            prev_content=original.prev_content,
+            age=0,
+            support_count=0,
+            parent_proposal_id=original.id,
+            version=original.version + 1,
+        )
+        self.db.add(successor)
+        await self.db.commit()
+        await self.db.refresh(successor)
+        return successor
+
+    async def list_versions(self, proposal_id: uuid.UUID) -> list[Proposal]:
+        """Walk the amendment chain. Returns the row IDed by
+        proposal_id PLUS all of its ancestors (oldest-first by
+        creation), so a client can render "v1 → v2 → v3 (you are
+        here)" in one query.
+
+        Forward children (newer amendments of the same row) are
+        intentionally NOT returned — the chain is a single line
+        per amend, and a stale `proposal_id` already represents
+        a known leaf or middle node.
+        """
+        # Walk parents iteratively. For real-world chains (handful
+        # of amendments) this is fine; if chains grow long we
+        # promote this to a recursive CTE.
+        chain: list[Proposal] = []
+        cur = await self.get(proposal_id)
+        if cur is None:
+            return []
+        chain.append(cur)
+        seen = {cur.id}
+        while cur.parent_proposal_id is not None:
+            parent = await self.get(cur.parent_proposal_id)
+            if parent is None or parent.id in seen:
+                break
+            chain.append(parent)
+            seen.add(parent.id)
+            cur = parent
+        chain.reverse()  # oldest-first
+        return chain

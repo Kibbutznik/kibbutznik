@@ -39,6 +39,12 @@ class ProposalResponse(BaseModel):
     support_count: int
     created_at: datetime
     prev_content: str | None = None
+    # Amendment chain. When a proposal is amended, the new row's
+    # `parent_proposal_id` points back at the predecessor and
+    # `version` is incremented. Top-level rows have parent=None and
+    # version=1.
+    parent_proposal_id: uuid.UUID | None = None
+    version: int = 1
     # Computed enrichment fields. `promote_threshold` is the member
     # count needed to move OutThere → OnTheAir (ProposalSupport %).
     # `decide_threshold` is the per-type threshold for execution
@@ -57,6 +63,25 @@ class ProposalEdit(BaseModel):
     proposal_text: str | None = Field(default=None, max_length=_TEXT_MAX)
     pitch: str | None = Field(default=None, max_length=_TEXT_MAX)
     val_text: str | None = Field(default=None, max_length=_TEXT_MAX)
+
+
+class ProposalAmend(BaseModel):
+    """Body for POST /proposals/{id}/amend.
+
+    Only the author can amend, and only while the original is still
+    DRAFT or OUT_THERE. The amend creates a NEW proposal whose
+    parent_proposal_id is the original; the original is moved to
+    CANCELED so it stops collecting support and pulse processing.
+
+    All edit fields are optional, but at least one must be provided
+    or the amend is rejected (an amend that changes nothing is
+    almost certainly a client bug).
+    """
+    user_id: uuid.UUID
+    proposal_text: str | None = None
+    pitch: str | None = None
+    val_text: str | None = None
+    val_uuid: uuid.UUID | None = None
 
 
 class SupportCreate(BaseModel):
