@@ -136,6 +136,20 @@ class InviteService:
         auth_svc = AuthService(self.db)
         user = await auth_svc.get_or_create_human(email)
 
+        # Already-member guard: if this user is already an ACTIVE member
+        # of the target community (joined directly, accepted via prior
+        # proposal, or reactivated after a throw-out), refuse the claim
+        # with a clear error. Without this, we'd file a redundant ghost
+        # Membership proposal that wastes a pulse slot and — when
+        # accepted/rejected — perturbs the closeness EMA for everyone
+        # else. The invite stays UNclaimed so the issuer can hand it to
+        # someone who actually needs it.
+        from kbz.services.member_service import MemberService
+        if await MemberService(self.db).is_active_member(
+            invite.community_id, user.id,
+        ):
+            raise ValueError("user is already a member of this community")
+
         # Dedupe: if this user already has an in-flight Membership
         # proposal in this community (filed directly via /proposals
         # OR via a previous invite claim), reuse it instead of

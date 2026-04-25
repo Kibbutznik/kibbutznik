@@ -187,6 +187,39 @@ async def test_claim_dedupes_existing_in_flight_membership(client):
 
 
 @pytest.mark.asyncio
+async def test_claim_rejects_already_active_member(client):
+    """If the email maps to a user who is ALREADY an active member of
+    the community the invite is for, the claim must fail with 409 and
+    NOT mint a duplicate Membership proposal. Without this guard,
+    accepting/rejecting that ghost proposal would also perturb the
+    closeness graph for everyone else for no reason."""
+    # Founder creates community and gets an invite for the same community.
+    founder_email = "already-member@example.com"
+    founder_id = await _login(client, founder_email)
+    community = await create_test_community(client, founder_id)
+    code = (await client.post(f"/communities/{community['id']}/invites")).json()["code"]
+    client.cookies.clear()
+
+    # Founder claims the invite for their OWN community.
+    r = await client.post(
+        "/invites/claim",
+        json={"invite_code": code, "email": founder_email},
+    )
+    assert r.status_code == 409
+    assert "already a member" in r.json()["detail"]
+
+    # No duplicate Membership proposal was minted — the founder is
+    # already a member, no Membership proposal exists for them.
+    listing = (
+        await client.get(
+            f"/communities/{community['id']}/proposals",
+            params={"proposal_type": "Membership"},
+        )
+    ).json()
+    assert listing == []
+
+
+@pytest.mark.asyncio
 async def test_claim_bogus_code_404s(client):
     r = await client.post(
         "/invites/claim",
