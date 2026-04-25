@@ -149,6 +149,30 @@ class ProposalService:
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid proposal type: {data.proposal_type}")
 
+        # Required-field gates per type. Pre-fix, several handlers
+        # silently no-op'd on missing val_uuid / val_text:
+        #   _exec_throw_out: `if proposal.val_uuid:` — no val_uuid
+        #     → ACCEPTED proposal that didn't actually throw anyone out.
+        #   _exec_end_action / _exec_join_action / etc. — same shape.
+        # Result: an agent files ThrowOut without a target, the
+        # community votes Accept, the audit log shows it landed, and
+        # nothing happened. Surface the error at create time so the
+        # author sees it BEFORE wasting a pulse cycle.
+        ptype = ProposalType(data.proposal_type)
+        if ptype in (
+            ProposalType.THROW_OUT,
+            ProposalType.END_ACTION,
+            ProposalType.JOIN_ACTION,
+            ProposalType.REMOVE_STATEMENT,
+            ProposalType.REMOVE_ARTIFACT,
+            ProposalType.SET_MEMBERSHIP_HANDLER,
+            ProposalType.EDIT_ARTIFACT,
+        ) and data.val_uuid is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{data.proposal_type} proposals require val_uuid",
+            )
+
         # Reject mutations against INACTIVE communities. Once a community
         # is ended (via accepted EndAction → status=INACTIVE on both
         # Action and Community rows), no fresh proposals should land there.
