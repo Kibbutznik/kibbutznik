@@ -64,6 +64,42 @@ async def test_proposal_pitch_optional(client):
 
 
 @pytest.mark.asyncio
+async def test_list_proposals_respects_limit_and_offset(client):
+    """The list endpoint was unbounded — a community with thousands of
+    proposals would dump them all plus run enrichment per row. Paginate
+    with limit/offset, defaulting to a generous cap but never unlimited."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    for i in range(5):
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"statement {i}",
+        })
+
+    # limit=2 returns only 2 of the 5
+    r = await client.get(
+        f"/communities/{community['id']}/proposals", params={"limit": 2},
+    )
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+
+    # offset slides the window; limit=2 offset=2 returns the next 2
+    r = await client.get(
+        f"/communities/{community['id']}/proposals",
+        params={"limit": 2, "offset": 2},
+    )
+    assert len(r.json()) == 2
+
+    # Over-the-top limits are rejected rather than silently letting
+    # callers pin the db with one request.
+    r = await client.get(
+        f"/communities/{community['id']}/proposals", params={"limit": 10000},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
