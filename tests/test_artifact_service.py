@@ -241,6 +241,48 @@ async def test_delegate_requires_direct_child_action(db):
 
 
 @pytest.mark.asyncio
+async def test_exec_commit_artifact_refuses_cross_community_container(db):
+    """An accepted CommitArtifact in community A whose val_uuid
+    points at a container in community B must NOT mark B's
+    container committed or wipe B's committed_content. Without
+    the executor's per-community guard, A could empty B's
+    deliverables just by accepting a proposal that carried a
+    foreign val_uuid + an empty val_text."""
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha-c")
+    b_comm = await _mk_community(db, "Bravo-c")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+    b_proposal = await _mk_proposal(db, b_comm.id, user)
+    await svc.create_artifact(
+        b_container.id, "B's content", "B title", user, b_proposal.id,
+    )
+
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.COMMIT_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="",
+        val_text="[]",  # valid JSON empty list — wipes content if reached
+        val_uuid=b_container.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    await db.refresh(b_container)
+    # B's container is untouched: status still OPEN, no committed_content set.
+    assert b_container.status == ContainerStatus.OPEN
+    assert b_container.committed_content in (None, "")
+
+
+@pytest.mark.asyncio
 async def test_commit_root_container_seals_directly(db):
     community = await _mk_community(db)
     svc = ArtifactService(db)
