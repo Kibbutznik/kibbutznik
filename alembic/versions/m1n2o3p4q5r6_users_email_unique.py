@@ -16,7 +16,7 @@ That's a deliberate trade — silent automatic dedupe risks losing
 a user's data.
 
 Revision ID: m1n2o3p4q5r6
-Revises: b5c6d7e8f9a0
+Revises: n2o3p4q5r6s7
 Create Date: 2026-04-25 22:00:00.000000
 
 """
@@ -26,7 +26,11 @@ from alembic import op
 
 
 revision: str = 'm1n2o3p4q5r6'
-down_revision: Union[str, None] = 'b5c6d7e8f9a0'
+# Chain after n2o3p4q5r6s7 (pulses-one-per-status) so the alembic
+# graph stays single-headed. The original `b5c6d7e8f9a0` parent
+# pre-dated the audit-log + reasons + pulses-one-per-status
+# migrations and would create a sibling branch in the chain.
+down_revision: Union[str, None] = 'n2o3p4q5r6s7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
