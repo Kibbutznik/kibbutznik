@@ -70,6 +70,27 @@ class ProposalService:
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid proposal type: {data.proposal_type}")
 
+        # Reject mutations against INACTIVE communities. Once a community
+        # is ended (via accepted EndAction → status=INACTIVE on both
+        # Action and Community rows), no fresh proposals should land there.
+        # Without this check, members of a closed sub-action could keep
+        # filing proposals indefinitely; pulses would still process them
+        # and (if accepted) execute against a community everyone agreed
+        # was over.
+        from kbz.enums import CommunityStatus
+        community = (
+            await self.db.execute(
+                select(Community).where(Community.id == community_id)
+            )
+        ).scalar_one_or_none()
+        if community is None:
+            raise HTTPException(status_code=404, detail="Community not found")
+        if community.status != CommunityStatus.ACTIVE:
+            raise HTTPException(
+                status_code=400,
+                detail="Community is not active — cannot file new proposals",
+            )
+
         # Validate user is active member (except for Membership proposals)
         if data.proposal_type != ProposalType.MEMBERSHIP:
             member_svc = MemberService(self.db)

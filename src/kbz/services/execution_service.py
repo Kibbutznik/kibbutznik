@@ -222,6 +222,26 @@ class ExecutionService:
                 orphan.proposal_type, orphan.id, ended_action_id,
             )
 
+        # Also cancel any in-flight proposals INSIDE the now-ended
+        # community. Without this, those proposals would sit in
+        # OutThere/OnTheAir forever — the new ProposalService.create
+        # gate prevents NEW filings, and pulse_service stops
+        # processing INACTIVE communities, so they have no path to
+        # resolve. Cancel them here to keep state consistent and
+        # let the audit log reflect that EndAction terminated them.
+        inside_result = await self.db.execute(
+            select(Proposal).where(
+                Proposal.community_id == proposal.val_uuid,
+                Proposal.proposal_status.in_(active_statuses),
+            )
+        )
+        for inside in inside_result.scalars().all():
+            inside.proposal_status = ProposalStatus.CANCELED.value
+            logger.info(
+                "Auto-canceled %s proposal %s inside ended community %s",
+                inside.proposal_type, inside.id, ended_action_id,
+            )
+
         await self.db.flush()
 
     async def _exec_join_action(self, proposal: Proposal) -> None:

@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import (
+    CommunityStatus,
     ProposalStatus,
     PulseStatus,
     PROPOSAL_TYPE_THRESHOLDS,
@@ -66,6 +67,15 @@ class PulseService:
         result = await self.db.execute(select(Community).where(Community.id == community_id))
         community = result.scalar_one_or_none()
         if not community:
+            return
+        # INACTIVE communities (closed via accepted EndAction) are
+        # frozen — no new pulses cycle, no proposals process. The
+        # ProposalService.create + add_pulse_support gates already
+        # block new mutations from landing here; this short-circuit
+        # ensures any leftover pulse-support row that was committed
+        # just before EndAction finalized doesn't trigger a stale
+        # cycle.
+        if community.status != CommunityStatus.ACTIVE:
             return
 
         member_count = community.member_count

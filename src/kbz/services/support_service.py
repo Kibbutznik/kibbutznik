@@ -95,6 +95,24 @@ class SupportService:
         )
 
     async def add_pulse_support(self, community_id: uuid.UUID, user_id: uuid.UUID) -> dict:
+        # Refuse pulse-support against INACTIVE communities. Same
+        # reasoning as ProposalService.create's status gate — once
+        # the community is ended, the pulse cycle should stop.
+        from kbz.enums import CommunityStatus
+        from kbz.models.community import Community
+        community = (
+            await self.db.execute(
+                select(Community).where(Community.id == community_id)
+            )
+        ).scalar_one_or_none()
+        if community is None:
+            raise HTTPException(status_code=404, detail="Community not found")
+        if community.status != CommunityStatus.ACTIVE:
+            raise HTTPException(
+                status_code=400,
+                detail="Community is not active — cannot support pulses",
+            )
+
         # Check user is active member
         member_svc = MemberService(self.db)
         if not await member_svc.is_active_member(community_id, user_id):

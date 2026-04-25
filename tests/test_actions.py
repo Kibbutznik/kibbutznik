@@ -70,6 +70,52 @@ async def test_end_action_via_proposal(client):
 
 
 @pytest.mark.asyncio
+async def test_inactive_community_rejects_new_proposals_and_pulses(client):
+    """Once an action is ENDED (its child community goes INACTIVE),
+    members shouldn't be able to file fresh proposals there or
+    drive its pulse cycle. Without the gate, the closed community
+    keeps accepting work indefinitely."""
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+
+    # Create an action — that mints a child community we'll end.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddAction",
+        "proposal_text": "Working group",
+        "val_text": "WG",
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+    actions = (await client.get(f"/communities/{parent['id']}/actions")).json()
+    action_id = actions[0]["action_id"]
+
+    # End the action.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EndAction",
+        "proposal_text": "wrap up",
+        "val_uuid": action_id,
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+
+    # Filing in the now-INACTIVE child community must 400.
+    resp = await client.post(f"/communities/{action_id}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "ghost",
+    })
+    assert resp.status_code == 400
+    assert "not active" in resp.json()["detail"].lower()
+
+    # And pulse-support against it must 400 too.
+    resp = await client.post(
+        f"/communities/{action_id}/pulses/support",
+        json={"user_id": user["id"]},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_end_action_refuses_foreign_action(client):
     """An accepted EndAction in community A whose val_uuid points at
     an action under community B must NOT mark B's action inactive.
