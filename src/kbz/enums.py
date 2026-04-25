@@ -113,6 +113,14 @@ DEFAULT_VARIABLES: dict[str, str] = {
     "CommitArtifact": "60",
     "MinCommittee": "2",
     "MaxAge": "2",
+    # Per-member in-flight proposal cap (DRAFT/OUT_THERE/ON_THE_AIR
+    # in this community). Default 5 — a community can vote it up
+    # or down via ChangeVariable. Setting it to "0" or any value
+    # ≤0 disables the cap entirely. The cap is intentionally
+    # bypassed by ChangeVariable proposals that target THIS
+    # variable, so a member who hit the cap can always file the
+    # one proposal that lets the community raise it.
+    "ProposalRateLimit": "5",
     "Name": "No Name",
     "seniorityWeight": "1",
     "membershipFee": "0",

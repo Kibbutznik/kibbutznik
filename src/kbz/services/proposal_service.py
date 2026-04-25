@@ -65,16 +65,59 @@ _ACTIVE_DEDUPE_STATUSES = (
 # overwhelm the queue or repeatedly target the same victim with
 # ThrowOut. Two simple in-process gates handle the worst cases:
 #
-#   - PROPOSAL_CAP_PER_PULSE: how many proposals a single member can
-#     have in-flight (DRAFT/OUT_THERE/ON_THE_AIR) inside a single
-#     community at once. Keeps the queue from getting buried under
-#     one user's output.
+#   - In-flight cap: how many proposals (DRAFT/OUT_THERE/ON_THE_AIR)
+#     a single member can have in one community at once. Lives in
+#     the community variable `ProposalRateLimit` so each kibbutz
+#     can vote it up or down. Default 5; ≤0 disables the cap.
+#     ChangeVariable proposals targeting ProposalRateLimit ITSELF
+#     bypass the cap — without that escape hatch a single-member
+#     community that hit its own limit would be permanently
+#     deadlocked, unable to file the very proposal it needs to
+#     unstick itself.
 #   - THROW_OUT_COOLDOWN_HOURS: how long after a ThrowOut against
 #     user X is decided (Accepted / Rejected / Canceled) before a
 #     fresh ThrowOut against the same X can be filed. Stops the
 #     repeated-pitchfork pattern.
-PROPOSAL_CAP_PER_PULSE = 5
+PROPOSAL_RATE_LIMIT_VAR = "ProposalRateLimit"
+PROPOSAL_RATE_LIMIT_DEFAULT = 5
 THROW_OUT_COOLDOWN_HOURS = 24
+
+
+def _is_rate_limit_change_proposal(data: ProposalCreate) -> bool:
+    """True iff this is the one ChangeVariable case that bypasses
+    the cap: proposal_text's first line names ProposalRateLimit.
+    The executor parses proposal_text the same way (split on the
+    first newline) so agents can append a reason on later lines."""
+    if data.proposal_type != ProposalType.CHANGE_VARIABLE:
+        return False
+    if not data.proposal_text:
+        return False
+    var_name = data.proposal_text.split("\n", 1)[0].strip()
+    return var_name == PROPOSAL_RATE_LIMIT_VAR
+
+
+async def _resolve_rate_limit(db: AsyncSession, community_id: uuid.UUID) -> int:
+    """Read ProposalRateLimit for this community. Falls back to
+    DEFAULT_VARIABLES if the row is missing (which it will be for
+    communities created before this feature shipped — they get the
+    new default via this fallback rather than via a backfill
+    migration). Non-positive value disables the cap."""
+    raw = (
+        await db.execute(
+            select(Variable.value).where(
+                Variable.community_id == community_id,
+                Variable.name == PROPOSAL_RATE_LIMIT_VAR,
+            )
+        )
+    ).scalar_one_or_none()
+    if raw is None:
+        raw = DEFAULT_VARIABLES.get(
+            PROPOSAL_RATE_LIMIT_VAR, str(PROPOSAL_RATE_LIMIT_DEFAULT),
+        )
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return PROPOSAL_RATE_LIMIT_DEFAULT
 
 
 class ProposalService:
@@ -96,30 +139,40 @@ class ProposalService:
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
-        # this community. Membership proposals are exempt — they're
-        # filed by non-members and don't compete for the queue
-        # alongside governance work — but everything else is gated.
-        if data.proposal_type != ProposalType.MEMBERSHIP:
-            in_flight = (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Proposal)
-                    .where(
-                        Proposal.community_id == community_id,
-                        Proposal.user_id == data.user_id,
-                        Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+        # this community. Two exemptions:
+        #   1. Membership proposals — filed by non-members, don't
+        #      compete with governance work.
+        #   2. ChangeVariable proposals targeting ProposalRateLimit
+        #      itself — without this escape hatch a stuck single-
+        #      member community can't ever file the proposal that
+        #      would unstick it.
+        if (
+            data.proposal_type != ProposalType.MEMBERSHIP
+            and not _is_rate_limit_change_proposal(data)
+        ):
+            cap = await _resolve_rate_limit(self.db, community_id)
+            if cap > 0:
+                in_flight = (
+                    await self.db.execute(
+                        select(func.count())
+                        .select_from(Proposal)
+                        .where(
+                            Proposal.community_id == community_id,
+                            Proposal.user_id == data.user_id,
+                            Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+                        )
                     )
-                )
-            ).scalar_one()
-            if in_flight >= PROPOSAL_CAP_PER_PULSE:
-                raise HTTPException(
-                    status_code=429,
-                    detail=(
-                        f"Proposal cap: you already have {in_flight} in-flight "
-                        f"proposals in this community (max {PROPOSAL_CAP_PER_PULSE}). "
-                        f"Wait for some to land or be canceled before filing more."
-                    ),
-                )
+                ).scalar_one()
+                if in_flight >= cap:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=(
+                            f"Proposal cap: you already have {in_flight} in-flight "
+                            f"proposals in this community (max {cap}). Wait for some "
+                            f"to land or be canceled, or file a ChangeVariable "
+                            f"proposal to raise '{PROPOSAL_RATE_LIMIT_VAR}'."
+                        ),
+                    )
 
         # ThrowOut cooldown: per (community, target) pair. After a
         # ThrowOut against user X is decided (Accepted / Rejected /

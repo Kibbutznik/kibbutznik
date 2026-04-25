@@ -101,9 +101,8 @@ async def test_list_proposals_respects_limit_and_offset(client):
 
 @pytest.mark.asyncio
 async def test_per_member_proposal_cap_blocks_sixth_in_flight(client):
-    """A member can't have more than PROPOSAL_CAP_PER_PULSE (5)
-    in-flight proposals at once in one community. The 6th 429s
-    until earlier ones land or get canceled."""
+    """Default ProposalRateLimit is 5 — the 6th in-flight proposal
+    by the same author 429s until earlier ones land or get canceled."""
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
     for i in range(5):
@@ -121,6 +120,111 @@ async def test_per_member_proposal_cap_blocks_sixth_in_flight(client):
     })
     assert resp.status_code == 429
     assert "in-flight" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_change_variable_for_rate_limit_bypasses_cap(client):
+    """A capped member must always be able to file the ONE proposal
+    that would unstick the community — ChangeVariable targeting
+    ProposalRateLimit itself. Without this escape hatch, a single-
+    member community that hits its own cap is permanently stuck."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    # Fill the cap with 5 in-flight AddStatements.
+    for i in range(5):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"capper #{i}",
+        })
+        assert resp.status_code == 201
+
+    # A regular ChangeVariable still 429s.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "MaxAge",
+        "val_text": "10",
+    })
+    assert resp.status_code == 429
+
+    # ChangeVariable targeting ProposalRateLimit goes through.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "ProposalRateLimit\nbumping the cap so we can move",
+        "val_text": "20",
+    })
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_proposal_rate_limit_can_be_voted_higher(client):
+    """A community can change ProposalRateLimit through the normal
+    governance flow; once the new value lands the cap moves. We
+    verify by voting the limit to 10 and then filing a 6th proposal
+    that would have been refused under the default."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # Land a ChangeVariable that bumps the cap to 10.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "ProposalRateLimit",
+        "val_text": "10",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user["id"]},
+        )
+
+    # Cap is now 10. File 6 AddStatements — all succeed.
+    for i in range(6):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"under-the-new-cap #{i}",
+        })
+        assert resp.status_code == 201, f"#{i}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_proposal_rate_limit_zero_disables_cap(client):
+    """Setting ProposalRateLimit to '0' disables the cap entirely.
+    Useful for trusted bot-driven communities that intentionally
+    want unbounded queueing."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # Vote the limit to 0.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "ProposalRateLimit",
+        "val_text": "0",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user["id"]},
+        )
+
+    # File 12 — none get capped.
+    for i in range(12):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": f"unbounded #{i}",
+        })
+        assert resp.status_code == 201, f"#{i}: {resp.text}"
 
 
 @pytest.mark.asyncio
