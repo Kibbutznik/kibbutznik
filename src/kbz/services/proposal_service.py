@@ -732,6 +732,23 @@ class ProposalService:
         _amend_canceled_user = original.user_id
         _amend_canceled_community = original.community_id
 
+        # INACTIVE community gate. The general /proposals path
+        # refuses new proposals into ENDED communities; amend has
+        # to mirror that or it silently keeps minting v2/v3/...
+        # successors after EndAction.
+        from kbz.enums import CommunityStatus as _CommunityStatus
+        from kbz.models.community import Community as _Community
+        community = (
+            await self.db.execute(
+                select(_Community).where(_Community.id == original.community_id)
+            )
+        ).scalar_one_or_none()
+        if community is None or community.status != _CommunityStatus.ACTIVE:
+            raise HTTPException(
+                status_code=400,
+                detail="Community is not active — cannot amend",
+            )
+
         successor = Proposal(
             id=uuid.uuid4(),
             community_id=original.community_id,
@@ -757,6 +774,39 @@ class ProposalService:
             version=original.version + 1,
         )
         self.db.add(successor)
+        await self.db.flush()
+        # Inbox + TKG fanout. Without these, the v2 row lands in DRAFT
+        # silently — members don't know the proposal text changed
+        # and the TKG ingestor never opens the AUTHORED edge for the
+        # successor. ProposalService.create does this for fresh
+        # proposals; amend has to mirror it.
+        from kbz.services.notification_service import NotificationService
+        notif_svc = NotificationService(self.db)
+        await notif_svc.fanout_proposal_created(
+            community_id=successor.community_id,
+            proposal_id=successor.id,
+            proposal_type=str(successor.proposal_type),
+            proposal_text=successor.proposal_text or successor.val_text or "",
+            author_user_id=successor.user_id,
+        )
+        # Targeted-user heads-up: an amended ThrowOut against a
+        # different victim, or a Membership-by-someone-else amended
+        # to a different applicant, deserves the same per-target
+        # ping the original create path fires.
+        if (
+            successor.proposal_type in (
+                ProposalType.THROW_OUT, ProposalType.MEMBERSHIP,
+            )
+            and successor.val_uuid is not None
+        ):
+            await notif_svc.fanout_proposal_targets_you(
+                community_id=successor.community_id,
+                proposal_id=successor.id,
+                proposal_type=str(successor.proposal_type),
+                proposal_text=successor.proposal_text or successor.val_text or "",
+                target_user_id=successor.val_uuid,
+                author_user_id=successor.user_id,
+            )
         await self.db.commit()
         await self.db.refresh(successor)
         # Emit proposal.canceled for the original AFTER commit so
@@ -770,6 +820,14 @@ class ProposalService:
             user_id=_amend_canceled_user,
             proposal_id=_amend_canceled_id,
             proposal_type=_amend_canceled_type,
+        )
+        await event_bus.emit(
+            "proposal.created",
+            community_id=successor.community_id,
+            user_id=successor.user_id,
+            proposal_id=successor.id,
+            proposal_type=str(successor.proposal_type),
+            proposal_text=successor.proposal_text or successor.val_text or "",
         )
         return successor
 

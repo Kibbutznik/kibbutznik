@@ -246,6 +246,70 @@ async def test_self_reply_still_notifies_proposal_author(client):
 
 
 @pytest.mark.asyncio
+async def test_amend_notifies_other_members_of_successor(client):
+    """When an author amends a proposal, the v2 successor must fan
+    out to other members. Pre-fix amend bypassed the create-path
+    side effects entirely — members never heard the proposal text
+    changed and the TKG missed the AUTHORED edge for the successor."""
+    founder_id = await _login(client, "amend-notif-founder@example.com")
+    community = await create_test_community(client, founder_id)
+
+    # Land a second member.
+    client.cookies.clear()
+    other_id = await _login(client, "amend-notif-other@example.com")
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": other_id,
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": other_id,
+    })
+    mid = resp.json()["id"]
+    await client.patch(f"/proposals/{mid}/submit")
+    client.cookies.clear()
+    await _login(client, "amend-notif-founder@example.com")
+    await client.post(
+        f"/proposals/{mid}/support", json={"user_id": founder_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+
+    # Founder files an AddStatement and the other member is now in.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder_id,
+        "proposal_type": "AddStatement",
+        "proposal_text": "v1 text",
+    })
+    original_id = resp.json()["id"]
+
+    # Founder amends to v2.
+    resp = await client.post(f"/proposals/{original_id}/amend", json={
+        "user_id": founder_id,
+        "proposal_text": "v2 amended text",
+    })
+    assert resp.status_code == 201, resp.text
+    successor_id = resp.json()["id"]
+    assert successor_id != original_id
+
+    # The OTHER member's inbox must carry a proposal.created
+    # pointing at the successor — not just at the original.
+    client.cookies.clear()
+    await _login(client, "amend-notif-other@example.com")
+    notes = (await client.get("/users/me/notifications")).json()
+    successor_notes = [
+        n for n in notes
+        if n["kind"] == "proposal.created"
+        and n["payload"].get("proposal_id") == successor_id
+    ]
+    assert len(successor_notes) == 1, (
+        "amend() must fan out a proposal.created for the v2 successor; "
+        f"got: {[n.get('payload', {}).get('proposal_id') for n in notes if n['kind']=='proposal.created']}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_mark_read_and_unread_count(client):
     """unread-count, mark-one-read and mark-all-read all flip read_at."""
     founder_id = await _login(client, "reader-notif@example.com")
