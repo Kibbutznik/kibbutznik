@@ -184,14 +184,24 @@ class TKGIngestor:
             if ptext:
                 self._enqueue_embed(proposal_id, ptext, round_num)
 
-        elif et in ("proposal.accepted", "proposal.rejected"):
+        elif et in ("proposal.accepted", "proposal.rejected", "proposal.canceled"):
             proposal_id = _to_uuid(data.get("proposal_id"))
             if not proposal_id:
                 return
-            status_key = "accepted_at_round" if et.endswith("accepted") else "rejected_at_round"
+            # Stamp the matching attribute so semantic queries can
+            # tell terminal-state proposals apart. Without the
+            # canceled branch, withdraw + age-out cancellations were
+            # invisible to the knowledge graph — search results
+            # ranked them indistinguishably from in-flight proposals.
+            status_key_map = {
+                "proposal.accepted": "accepted_at_round",
+                "proposal.rejected": "rejected_at_round",
+                "proposal.canceled": "canceled_at_round",
+            }
             await svc.upsert_node(
                 proposal_id, TKGNodeKind.PROPOSAL, community_id=community_id,
-                round_num=round_num, attrs={status_key: round_num},
+                round_num=round_num,
+                attrs={status_key_map[et]: round_num},
             )
 
         elif et == "support.cast":

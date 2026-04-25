@@ -118,6 +118,53 @@ async def test_support_cast_and_withdrawn(db_engine):
 
 
 @pytest.mark.asyncio
+async def test_proposal_canceled_stamps_node(db_engine):
+    """proposal.canceled events must stamp `canceled_at_round` on
+    the proposal node — pre-fix only accepted/rejected were handled
+    so withdraw + age-out cancellations were invisible to semantic
+    search and rank-by-status TKG queries."""
+    sf = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    ingestor = TKGIngestor(sf)
+
+    community_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    proposal_id = uuid.uuid4()
+
+    # Seed the proposal node first via proposal.created.
+    await _dispatch(ingestor, db_engine, Event(
+        event_type="proposal.created",
+        community_id=community_id,
+        user_id=user_id,
+        data={
+            "proposal_id": str(proposal_id),
+            "proposal_type": "AddStatement",
+            "proposal_text": "wither away",
+            "round_num": 1,
+        },
+    ))
+
+    # Then cancel it.
+    await _dispatch(ingestor, db_engine, Event(
+        event_type="proposal.canceled",
+        community_id=community_id,
+        user_id=user_id,
+        data={
+            "proposal_id": str(proposal_id),
+            "proposal_type": "AddStatement",
+            "round_num": 4,
+        },
+    ))
+
+    async with sf() as db:
+        node = (await db.execute(select(TKGNode).where(TKGNode.id == proposal_id))).scalar_one()
+        attrs = node.attrs or {}
+        assert attrs.get("canceled_at_round") == 4
+        # Other status fields stay unset.
+        assert "accepted_at_round" not in attrs
+        assert "rejected_at_round" not in attrs
+
+
+@pytest.mark.asyncio
 async def test_unknown_event_type_is_noop(db_engine):
     sf = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     ingestor = TKGIngestor(sf)
