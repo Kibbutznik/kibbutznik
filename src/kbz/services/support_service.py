@@ -43,17 +43,30 @@ class SupportService:
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Already supporting this proposal")
 
-        # Add support
-        support = Support(user_id=user_id, proposal_id=proposal_id, support_value=1)
-        self.db.add(support)
+        # Add support + increment counter inside one try/except. The
+        # IntegrityError on the (user_id, proposal_id) primary key can
+        # fire on either autoflush (the next UPDATE forces the pending
+        # Support INSERT) or on the explicit commit. Both paths now
+        # land here. Race-window safety net: two concurrent same-user
+        # supporters can both pass the existence check above, both
+        # `db.add(support)`, and only get caught by the PK on commit.
+        # Without this guard the loser sees a 500 instead of a clean
+        # 409 — symmetric to the pulse-support race fix.
+        try:
+            support = Support(user_id=user_id, proposal_id=proposal_id, support_value=1)
+            self.db.add(support)
 
-        # Increment counter
-        await self.db.execute(
-            update(Proposal)
-            .where(Proposal.id == proposal_id)
-            .values(support_count=Proposal.support_count + 1)
-        )
-        await self.db.commit()
+            await self.db.execute(
+                update(Proposal)
+                .where(Proposal.id == proposal_id)
+                .values(support_count=Proposal.support_count + 1)
+            )
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=409, detail="Already supporting this proposal",
+            )
         # Emit so the TKG ingestor can open SUPPORTED + ALLIED_WITH edges.
         await event_bus.emit(
             "support.cast",

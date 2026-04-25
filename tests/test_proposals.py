@@ -351,6 +351,61 @@ async def test_throw_out_cooldown_anchors_on_decision_time_not_creation(client, 
 
 
 @pytest.mark.asyncio
+async def test_proposal_support_race_returns_409_not_500(client, monkeypatch):
+    """Race-window safety net: if two concurrent same-user supports
+    of the same proposal both pass the dedupe SELECT before either
+    commits, the loser must see 409 (not a 500 IntegrityError
+    crash). Force the loser's path by monkey-patching the dedupe
+    SELECT inside the service to always return None, while keeping
+    a real prior Support row in the DB. Symmetric to the
+    pulse-support race fix already shipped."""
+    from kbz.services import support_service as _ss
+
+    user = await create_test_user(client, "race-prop-mp")
+    community = await create_test_community(client, user["id"])
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "race-target",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+
+    # Legitimate first support; row lands in `supports`.
+    resp = await client.post(
+        f"/proposals/{pid}/support", json={"user_id": user["id"]},
+    )
+    assert resp.status_code == 201
+
+    # Monkey-patch the dedupe SELECT so the second request thinks no
+    # prior Support exists — the INSERT then violates the (user_id,
+    # proposal_id) PK on autoflush/commit.
+    real_execute = _ss.AsyncSession.execute
+
+    async def execute_skipping_dupcheck(self, stmt, *args, **kwargs):
+        s = str(stmt)
+        if (
+            "FROM supports" in s
+            and "WHERE" in s
+            and "supports.user_id" in s
+        ):
+            class _Empty:
+                def scalar_one_or_none(self):
+                    return None
+            return _Empty()
+        return await real_execute(self, stmt, *args, **kwargs)
+
+    monkeypatch.setattr(_ss.AsyncSession, "execute", execute_skipping_dupcheck)
+
+    resp = await client.post(
+        f"/proposals/{pid}/support", json={"user_id": user["id"]},
+    )
+    assert resp.status_code == 409, (
+        f"expected 409, got {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
