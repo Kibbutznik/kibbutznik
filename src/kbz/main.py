@@ -19,6 +19,7 @@ from kbz.routers import (
     members,
     memory,
     metrics,
+    notifications,
     proposals,
     pulses,
     reasons,
@@ -69,6 +70,7 @@ app.include_router(search.router, tags=["search"])
 app.include_router(auth.router)
 app.include_router(invites.router)
 app.include_router(me.router)
+app.include_router(notifications.router)
 app.include_router(wallets.router)
 app.include_router(wallet_webhook.router)
 app.include_router(ws.router, tags=["websocket"])
