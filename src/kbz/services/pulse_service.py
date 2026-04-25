@@ -195,6 +195,21 @@ class PulseService:
                 if proposal.proposal_type == ProposalType.MEMBERSHIP:
                     from kbz.services.wallet_service import WalletService
                     await WalletService(self.db).escrow_refund(proposal.id)
+                # Inbox: tell the author their proposal aged out.
+                # Accepted / Rejected both fire fanout_proposal_outcome
+                # on the OnTheAir branch above; without this, the
+                # author of an aged-out proposal silently sees it
+                # disappear from in-flight with no signal.
+                from kbz.services.notification_service import NotificationService
+                from kbz.models.notification import KIND_PROPOSAL_CANCELED
+                await NotificationService(self.db).fanout_proposal_outcome(
+                    community_id=community_id,
+                    proposal_id=proposal.id,
+                    proposal_type=str(proposal.proposal_type),
+                    proposal_text=proposal.proposal_text or "",
+                    author_user_id=proposal.user_id,
+                    outcome_kind=KIND_PROPOSAL_CANCELED,
+                )
                 await self.db.flush()
                 continue
 

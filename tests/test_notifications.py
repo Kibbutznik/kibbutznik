@@ -121,6 +121,50 @@ async def test_proposal_outcome_notifies_author(client):
 
 
 @pytest.mark.asyncio
+async def test_age_out_cancellation_notifies_author(client):
+    """A proposal that ages out (age > MaxAge → CANCELED) must fire a
+    proposal.canceled notification to the author. Pre-fix the
+    Accepted/Rejected branch fanned out but the age-cancellation
+    branch silently flushed and continued — authors saw their
+    proposal disappear from in-flight with no inbox signal."""
+    user_id = await _login(client, "ageout-author@example.com")
+    community = await create_test_community(client, user_id)
+
+    # Submit a proposal but never support it so it can't promote.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user_id,
+        "proposal_type": "AddStatement",
+        "proposal_text": "this will be left to wither",
+    })
+    proposal_id = resp.json()["id"]
+    await client.patch(f"/proposals/{proposal_id}/submit")
+
+    # Trigger 3 pulses (default MaxAge=2; age > 2 → canceled).
+    for _ in range(3):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": user_id},
+        )
+
+    # Sanity: proposal landed in Canceled.
+    resp = await client.get(f"/proposals/{proposal_id}")
+    assert resp.json()["proposal_status"] == "Canceled"
+
+    # Inbox should now carry exactly one proposal.canceled for it.
+    resp = await client.get("/users/me/notifications")
+    assert resp.status_code == 200
+    canceled = [
+        n for n in resp.json()
+        if n["kind"] == "proposal.canceled"
+        and n["payload"].get("proposal_id") == proposal_id
+    ]
+    assert len(canceled) == 1, (
+        f"expected one proposal.canceled notification, got: "
+        f"{[n['kind'] for n in resp.json()]}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_mark_read_and_unread_count(client):
     """unread-count, mark-one-read and mark-all-read all flip read_at."""
     founder_id = await _login(client, "reader-notif@example.com")
