@@ -620,6 +620,41 @@ async def test_change_variable_accepts_numeric_for_numeric_var(client):
 
 
 @pytest.mark.asyncio
+async def test_change_variable_unknown_var_rejected(client):
+    """A ChangeVariable proposal naming a variable that isn't in
+    DEFAULT_VARIABLES used to silently no-op at execute time
+    (UPDATE 0 rows). Now refused at create time so the author
+    sees their typo immediately."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "TotallyMadeUpVariable",
+        "val_text": "42",
+    })
+    assert r.status_code == 422
+    assert "TotallyMadeUpVariable" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_change_variable_empty_text_rejected(client):
+    """proposal_text is parsed to extract the var name (first line);
+    empty text → no name → silent no-op. Refuse at create time."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "",
+        "val_text": "42",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
