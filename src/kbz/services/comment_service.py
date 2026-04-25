@@ -92,6 +92,53 @@ class CommentService:
             score=0,
         )
         self.db.add(comment)
+
+        # Inbox: notify the relevant user. For a top-level comment on
+        # a proposal that's the proposal author. For a reply we also
+        # bubble up to the parent comment's author. Self-comments are
+        # filtered out inside NotificationService.
+        notify_user_id: uuid.UUID | None = None
+        notify_community_id: uuid.UUID | None = None
+        if data.parent_comment_id is not None:
+            parent = (
+                await self.db.execute(
+                    select(Comment).where(Comment.id == data.parent_comment_id)
+                )
+            ).scalar_one_or_none()
+            if parent is not None:
+                notify_user_id = parent.user_id
+        if notify_user_id is None and entity_type == "proposal":
+            prop_row = (
+                await self.db.execute(
+                    select(Proposal.user_id, Proposal.community_id).where(
+                        Proposal.id == entity_id
+                    )
+                )
+            ).first()
+            if prop_row is not None:
+                notify_user_id = prop_row[0]
+                notify_community_id = prop_row[1]
+        elif entity_type == "proposal":
+            # Already filled notify_user_id via parent_comment_id;
+            # still grab community_id for scoping.
+            prop_cid = (
+                await self.db.execute(
+                    select(Proposal.community_id).where(Proposal.id == entity_id)
+                )
+            ).scalar_one_or_none()
+            notify_community_id = prop_cid
+        if notify_user_id is not None:
+            from kbz.services.notification_service import NotificationService
+            await NotificationService(self.db).fanout_comment_posted(
+                community_id=notify_community_id,
+                comment_id=comment.id,
+                commenter_user_id=data.user_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                comment_text=data.comment_text,
+                notify_user_id=notify_user_id,
+            )
+
         await self.db.commit()
         await self.db.refresh(comment)
         # Emit for the TKG ingestor — open COMMENTED_ON edge + embed text.
