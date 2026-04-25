@@ -653,7 +653,15 @@ class ProposalService:
         # but for an amend we WANT to keep the escrow tied to the
         # successor's lifecycle, not refund-and-rebill. So flip the
         # status directly and leave escrow plumbing alone.
+        # Stamp decided_at so the audit log orders this row by the
+        # actual moment the amend happened — every other terminal
+        # transition (pulse accept/reject/age-cancel, withdraw,
+        # end-action cleanup, container-commit cleanup) sets this
+        # column. Without it the canceled-by-amend row sorts to the
+        # bottom of /audit with NULL decided_at.
+        from datetime import datetime as _dt, timezone as _tz
         original.proposal_status = ProposalStatus.CANCELED
+        original.decided_at = _dt.now(_tz.utc)
 
         successor = Proposal(
             id=uuid.uuid4(),

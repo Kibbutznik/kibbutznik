@@ -441,6 +441,20 @@ async def test_amend_proposal_creates_successor_and_cancels_original(client):
     resp = await client.get(f"/proposals/{original['id']}")
     assert resp.json()["proposal_status"] == "Canceled"
 
+    # The canceled-by-amend row must show up in /audit with a
+    # non-NULL decided_at — every other terminal transition stamps
+    # it; pre-fix amend was the odd one out so the row sorted to
+    # the bottom of the audit log with NULL decision time.
+    audit = (await client.get(f"/communities/{community['id']}/audit")).json()
+    matching = [e for e in audit if e["proposal_id"] == original["id"]]
+    assert len(matching) == 1
+    assert matching[0]["proposal_status"] == "Canceled"
+    assert matching[0]["decided_at"] is not None, (
+        "amend() must stamp decided_at on the canceled original — "
+        "audit log sorts by decided_at desc nullslast and the row "
+        "would otherwise sink to the bottom."
+    )
+
 
 @pytest.mark.asyncio
 async def test_amend_only_by_author(client):
