@@ -142,6 +142,8 @@ async def claim_invite(
         code = status.HTTP_400_BAD_REQUEST
         if msg == "invite not found":
             code = status.HTTP_404_NOT_FOUND
+        elif msg == "user is already a member of this community":
+            code = status.HTTP_409_CONFLICT
         raise HTTPException(status_code=code, detail=msg)
 
     # Issue a magic link so the user can sign in immediately
