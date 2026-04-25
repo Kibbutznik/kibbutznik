@@ -283,6 +283,41 @@ async def test_exec_commit_artifact_refuses_cross_community_container(db):
 
 
 @pytest.mark.asyncio
+async def test_exec_create_artifact_refuses_cross_community_container(db):
+    """An accepted CreateArtifact in community A whose val_uuid
+    points at a container in community B must NOT inject a new
+    artifact into B's container."""
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha-cr")
+    b_comm = await _mk_community(db, "Bravo-cr")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.CREATE_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="Alpha sneak attack",
+        val_text="Hijacked Title",
+        val_uuid=b_container.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    artifacts_in_b = await svc.list_artifacts(b_container.id)
+    # B's container must contain ZERO artifacts — nothing got
+    # injected by A's accepted proposal.
+    assert artifacts_in_b == []
+
+
+@pytest.mark.asyncio
 async def test_commit_root_container_seals_directly(db):
     community = await _mk_community(db)
     svc = ArtifactService(db)

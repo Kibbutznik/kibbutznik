@@ -433,6 +433,26 @@ class ExecutionService:
         if not proposal.val_uuid:
             logger.warning("CreateArtifact %s missing val_uuid (container_id)", proposal.id)
             return
+        # Same per-community guard as Edit/Remove/CommitArtifact.
+        # Without it, an accepted CreateArtifact in community A
+        # whose val_uuid pointed at a container in B would let A
+        # inject an Artifact into B's container. The new Artifact
+        # row would carry container.community_id (i.e. B's id),
+        # but B never authorized it.
+        from kbz.models.artifact_container import ArtifactContainer
+        container_cid = (
+            await self.db.execute(
+                select(ArtifactContainer.community_id).where(
+                    ArtifactContainer.id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if container_cid is None or container_cid != proposal.community_id:
+            logger.warning(
+                "CreateArtifact %s val_uuid %s targets a foreign or missing container — refused",
+                proposal.id, proposal.val_uuid,
+            )
+            return
         try:
             await ArtifactService(self.db).create_artifact(
                 container_id=proposal.val_uuid,
