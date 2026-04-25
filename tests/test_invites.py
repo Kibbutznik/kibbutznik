@@ -122,6 +122,56 @@ async def test_claim_twice_rejects_second(client):
 
 
 @pytest.mark.asyncio
+async def test_claim_dedupes_existing_in_flight_membership(client):
+    """A user who already has an in-flight Membership proposal in
+    a community must NOT get a second one created when they
+    consume an invite for the same community. The invite still
+    goes claimed (it's been used), but the returned proposal_id
+    points at the existing row and no duplicate appears in the
+    community's proposal listing."""
+    founder_id = await _login(client, "dedupe-founder@example.com")
+    community = await create_test_community(client, founder_id)
+
+    # Create TWO invites for the same community.
+    code1 = (await client.post(f"/communities/{community['id']}/invites")).json()["code"]
+    code2 = (await client.post(f"/communities/{community['id']}/invites")).json()["code"]
+    client.cookies.clear()
+
+    # Same email claims both.
+    r1 = await client.post(
+        "/invites/claim",
+        json={"invite_code": code1, "email": "twice@example.com"},
+    )
+    assert r1.status_code == 200
+    first_pid = r1.json()["membership_proposal_id"]
+
+    r2 = await client.post(
+        "/invites/claim",
+        json={"invite_code": code2, "email": "twice@example.com"},
+    )
+    assert r2.status_code == 200
+    second_pid = r2.json()["membership_proposal_id"]
+
+    # The second claim must have RETURNED THE SAME proposal id —
+    # not minted a new ghost row.
+    assert second_pid == first_pid
+
+    # The community must show exactly ONE Membership proposal for
+    # this applicant.
+    listing = (
+        await client.get(
+            f"/communities/{community['id']}/proposals",
+            params={"proposal_type": "Membership"},
+        )
+    ).json()
+    membership_for_applicant = [
+        p for p in listing if p["proposal_text"].startswith("twice")
+        or "twice@example.com" in (p.get("proposal_text") or "")
+    ]
+    assert len(membership_for_applicant) == 1
+
+
+@pytest.mark.asyncio
 async def test_claim_bogus_code_404s(client):
     r = await client.post(
         "/invites/claim",

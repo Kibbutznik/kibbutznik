@@ -136,6 +136,49 @@ class InviteService:
         auth_svc = AuthService(self.db)
         user = await auth_svc.get_or_create_human(email)
 
+        # Dedupe: if this user already has an in-flight Membership
+        # proposal in this community (filed directly via /proposals
+        # OR via a previous invite claim), reuse it instead of
+        # creating a second ghost row. ProposalService.create enforces
+        # this through DEDUPE_RULES, but we built the Proposal by hand
+        # below — so the same gate has to live here.
+        from kbz.services.proposal_service import _ACTIVE_DEDUPE_STATUSES
+        from sqlalchemy import or_ as _or
+        existing = (
+            await self.db.execute(
+                select(Proposal).where(
+                    Proposal.community_id == invite.community_id,
+                    Proposal.proposal_type == ProposalType.MEMBERSHIP,
+                    Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+                    # Membership proposals can carry the applicant in
+                    # `val_uuid` (somebody-proposed-X) OR `user_id`
+                    # (self-application). Match either, same as
+                    # DEDUPE_RULES["applicant"].
+                    _or(
+                        Proposal.val_uuid == user.id,
+                        Proposal.user_id == user.id,
+                    ),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            # Mark the invite consumed so it can't be re-used, but
+            # return the EXISTING proposal id rather than minting a
+            # second one. The user lands in the same in-flight
+            # state either way.
+            await self.db.execute(
+                update(Invite)
+                .where(Invite.id == invite.id, Invite.claimed_by_user_id.is_(None))
+                .values(claimed_by_user_id=user.id, claimed_at=now)
+            )
+            await self.db.flush()
+            return ClaimedInvite(
+                user=user,
+                membership_proposal_id=existing.id,
+                community_id=invite.community_id,
+            )
+
         # Draft + submit a Membership proposal so the existing pulse machinery
         # handles the vote. Agents will see it in their next snapshot and
         # vote on it like any other proposal.
