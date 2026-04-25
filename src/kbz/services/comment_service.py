@@ -49,9 +49,17 @@ class CommentService:
         self, entity_id: uuid.UUID, entity_type: str, data: CommentCreate
     ) -> Comment:
         # Anti-hallucination guard for EditArtifact proposal comments:
-        # the comment must literally quote at least 5 consecutive words from
-        # the proposal text, otherwise the agent is making it up.
-        if entity_type == "proposal":
+        # a TOP-LEVEL comment must literally quote at least 5 consecutive
+        # words from the proposal text, otherwise the agent is making it
+        # up.
+        #
+        # REPLIES (parent_comment_id set) are exempt: they're responding
+        # to another comment, not making fresh claims about the proposal,
+        # so requiring them to quote the proposal makes the conversation
+        # nonsensical ("I disagree" can't quote a 5-word run). Same goes
+        # for the dashboard's natural threading flow — a reply that
+        # quotes its own parent stays legible.
+        if entity_type == "proposal" and data.parent_comment_id is None:
             prop = (
                 await self.db.execute(select(Proposal).where(Proposal.id == entity_id))
             ).scalar_one_or_none()
@@ -135,10 +143,26 @@ class CommentService:
         )
         return list(result.scalars().all())
 
-    async def update_score(self, comment_id: uuid.UUID, delta: int) -> None:
-        await self.db.execute(
+    async def update_score(self, comment_id: uuid.UUID, delta: int) -> int:
+        """Bump the comment's score by `delta` and return the new value.
+
+        Returning the new score (rather than just `{"status": "updated"}`)
+        lets clients update the in-memory comment in place without
+        re-fetching the whole proposal — the prior shape forced a full
+        page refresh on every up/down vote because the UI had no source
+        of truth for the new count.
+
+        Raises 404 when the comment doesn't exist (UPDATE on a missing
+        row would otherwise silently affect zero rows).
+        """
+        result = await self.db.execute(
             update(Comment)
             .where(Comment.id == comment_id)
             .values(score=Comment.score + delta)
+            .returning(Comment.score)
         )
+        new_score = result.scalar_one_or_none()
+        if new_score is None:
+            raise HTTPException(status_code=404, detail="Comment not found")
         await self.db.commit()
+        return int(new_score)

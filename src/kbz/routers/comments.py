@@ -38,8 +38,29 @@ async def get_comments(
     return await svc.get_comments(entity_id, entity_type, limit=limit, after=after)
 
 
-@router.post("/comments/{comment_id}/score")
-async def update_score(comment_id: uuid.UUID, data: ScoreUpdate, db: AsyncSession = Depends(get_db)):
+@router.get("/comments/{comment_id}/replies", response_model=list[CommentResponse])
+async def get_replies(
+    comment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return direct child comments of `comment_id`. Without this
+    endpoint replies posted via `parent_comment_id` were invisible —
+    the entity-comments listing only returns top-level rows, so a
+    threaded UI had no way to fetch the children at all.
+    """
     svc = CommentService(db)
-    await svc.update_score(comment_id, data.delta)
-    return {"status": "updated"}
+    return await svc.get_replies(comment_id)
+
+
+@router.post("/comments/{comment_id}/score")
+async def update_score(
+    comment_id: uuid.UUID,
+    data: ScoreUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Score a comment by ±delta. Returns the new score so clients
+    can update the in-place number without re-fetching the entire
+    proposal/comment tree."""
+    svc = CommentService(db)
+    new_score = await svc.update_score(comment_id, data.delta)
+    return {"id": str(comment_id), "score": new_score}
