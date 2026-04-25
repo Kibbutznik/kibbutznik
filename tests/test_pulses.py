@@ -3,6 +3,15 @@ from tests.conftest import create_test_user, create_test_community
 
 
 @pytest.mark.asyncio
+async def test_pulse_supporters_404_on_unknown_pulse(client):
+    """`GET /pulses/{id}/supporters` used to return [] for a bogus
+    pulse id, hiding stale-link bugs in clients. Must 404 instead."""
+    bogus = "00000000-0000-0000-0000-000000000099"
+    resp = await client.get(f"/pulses/{bogus}/supporters")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_pulse_support(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

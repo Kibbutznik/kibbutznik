@@ -145,6 +145,16 @@ async def test_support_proposal(client):
 
 
 @pytest.mark.asyncio
+async def test_supporters_404_on_unknown_proposal(client):
+    """`GET /proposals/{id}/supporters` used to return 200 + [] for a
+    bogus proposal id. That's indistinguishable from a real proposal
+    nobody has supported, so a typo silently looks like success."""
+    bogus = "00000000-0000-0000-0000-000000000099"
+    resp = await client.get(f"/proposals/{bogus}/supporters")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_duplicate_support_rejected(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
