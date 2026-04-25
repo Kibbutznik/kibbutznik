@@ -59,6 +59,24 @@ _ACTIVE_DEDUPE_STATUSES = (
 )
 
 
+# ── Per-member rate limits ──────────────────────────────────────────
+# Sybil-resistant member identity is a separate (large) feature; in
+# the meantime, even a legitimate member can spam-propose enough to
+# overwhelm the queue or repeatedly target the same victim with
+# ThrowOut. Two simple in-process gates handle the worst cases:
+#
+#   - PROPOSAL_CAP_PER_PULSE: how many proposals a single member can
+#     have in-flight (DRAFT/OUT_THERE/ON_THE_AIR) inside a single
+#     community at once. Keeps the queue from getting buried under
+#     one user's output.
+#   - THROW_OUT_COOLDOWN_HOURS: how long after a ThrowOut against
+#     user X is decided (Accepted / Rejected / Canceled) before a
+#     fresh ThrowOut against the same X can be filed. Stops the
+#     repeated-pitchfork pattern.
+PROPOSAL_CAP_PER_PULSE = 5
+THROW_OUT_COOLDOWN_HOURS = 24
+
+
 class ProposalService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -75,6 +93,74 @@ class ProposalService:
             member_svc = MemberService(self.db)
             if not await member_svc.is_active_member(community_id, data.user_id):
                 raise HTTPException(status_code=403, detail="User is not an active member")
+
+        # Per-member proposal cap. Counts in-flight proposals
+        # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
+        # this community. Membership proposals are exempt — they're
+        # filed by non-members and don't compete for the queue
+        # alongside governance work — but everything else is gated.
+        if data.proposal_type != ProposalType.MEMBERSHIP:
+            in_flight = (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(Proposal)
+                    .where(
+                        Proposal.community_id == community_id,
+                        Proposal.user_id == data.user_id,
+                        Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+                    )
+                )
+            ).scalar_one()
+            if in_flight >= PROPOSAL_CAP_PER_PULSE:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Proposal cap: you already have {in_flight} in-flight "
+                        f"proposals in this community (max {PROPOSAL_CAP_PER_PULSE}). "
+                        f"Wait for some to land or be canceled before filing more."
+                    ),
+                )
+
+        # ThrowOut cooldown: per (community, target) pair. After a
+        # ThrowOut against user X is decided (Accepted / Rejected /
+        # Canceled), block fresh ThrowOuts against X here for
+        # THROW_OUT_COOLDOWN_HOURS hours. Stops repeated-pitchfork
+        # spam where one user keeps re-filing the same removal.
+        # Open / in-flight ThrowOuts are caught by the existing
+        # DEDUPE_RULES path (one in-flight at a time per target).
+        if (
+            data.proposal_type == ProposalType.THROW_OUT
+            and data.val_uuid is not None
+        ):
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(
+                hours=THROW_OUT_COOLDOWN_HOURS,
+            )
+            recent = (
+                await self.db.execute(
+                    select(Proposal).where(
+                        Proposal.community_id == community_id,
+                        Proposal.proposal_type == ProposalType.THROW_OUT,
+                        Proposal.val_uuid == data.val_uuid,
+                        Proposal.proposal_status.in_((
+                            ProposalStatus.ACCEPTED,
+                            ProposalStatus.REJECTED,
+                            ProposalStatus.CANCELED,
+                        )),
+                        Proposal.created_at >= cutoff,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if recent is not None:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"ThrowOut cooldown: a previous ThrowOut against this "
+                        f"member was decided in the last {THROW_OUT_COOLDOWN_HOURS}h. "
+                        f"Wait before filing another."
+                    ),
+                )
 
         # Block duplicate proposals (see DEDUPE_RULES for the per-type matrix).
         try:
