@@ -57,8 +57,18 @@ async def list_proposals(
 
 
 @router.patch("/proposals/{proposal_id}/edit", response_model=ProposalResponse)
-async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSession = Depends(get_db)):
+async def edit_proposal(
+    proposal_id: uuid.UUID,
+    data: ProposalEdit,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
     """Edit a proposal's text. Resets ALL support — supporters must re-evaluate."""
+    # Without this, a logged-in user could POST body `user_id=<author_id>`
+    # and edit someone else's proposal — the service-level check only
+    # validates that `data.user_id` matches the author, not that the
+    # caller IS that author.
+    enforce_session_matches_body(data.user_id, session_user)
     svc = ProposalService(db)
     proposal = await svc.edit_text(
         proposal_id, data.user_id,
@@ -69,11 +79,27 @@ async def edit_proposal(proposal_id: uuid.UUID, data: ProposalEdit, db: AsyncSes
 
 
 @router.patch("/proposals/{proposal_id}/submit", response_model=ProposalResponse)
-async def submit_proposal(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def submit_proposal(
+    proposal_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    """Promote a draft proposal to OutThere.
+
+    Agents (no session) pass straight through — same as other write paths.
+    Logged-in users must be the proposal's author; otherwise one user
+    could promote another user's in-progress draft before they were ready.
+    """
     svc = ProposalService(db)
+    proposal = await svc.get(proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if session_user is not None and proposal.user_id != session_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the proposal's author can submit it",
+        )
     proposal = await svc.submit(proposal_id)
-    if not proposal:
-        raise HTTPException(status_code=400, detail="Cannot submit proposal")
     return await svc.enrich_one(proposal)
 
 
@@ -82,6 +108,7 @@ async def withdraw_proposal(
     proposal_id: uuid.UUID,
     data: SupportCreate,  # reused: body = {"user_id": "..."}
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
     """Author cancels their own proposal before quorum.
 
@@ -94,6 +121,10 @@ async def withdraw_proposal(
     from kbz.enums import ProposalStatus
     from kbz.models.proposal import Proposal
 
+    # Block session-user spoofing BEFORE the ownership check, otherwise a
+    # logged-in Mallory could POST {user_id: alice} and pass the
+    # proposal.user_id == data.user_id test simply by echoing Alice's id.
+    enforce_session_matches_body(data.user_id, session_user)
     proposal = (
         await db.execute(select(Proposal).where(Proposal.id == proposal_id))
     ).scalar_one_or_none()
@@ -176,7 +207,16 @@ async def get_supporters(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_
 
 
 @router.delete("/proposals/{proposal_id}/support/{user_id}", status_code=200)
-async def remove_support(proposal_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def remove_support(
+    proposal_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    # Without the session check, a logged-in user could DELETE any other
+    # member's support row purely by URL — a one-shot way to shave points
+    # off a rival proposal before a pulse.
+    enforce_session_matches_body(user_id, session_user)
     svc = SupportService(db)
     await svc.remove_proposal_support(proposal_id, user_id)
     return {"status": "unsupported"}

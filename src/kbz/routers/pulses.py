@@ -53,7 +53,16 @@ async def get_pulse_supporters(pulse_id: uuid.UUID, db: AsyncSession = Depends(g
 
 
 @router.delete("/communities/{community_id}/pulses/support/{user_id}", status_code=200)
-async def remove_pulse_support(community_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def remove_pulse_support(
+    community_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    # Same reasoning as proposal remove_support: a DELETE that mutates
+    # someone else's governance vote must not be reachable without being
+    # that user.
+    enforce_session_matches_body(user_id, session_user)
     svc = SupportService(db)
     await svc.remove_pulse_support(community_id, user_id)
     return {"status": "unsupported"}

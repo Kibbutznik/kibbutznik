@@ -234,6 +234,37 @@ async def test_withdraw_rejects_non_author(client):
     assert r.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_withdraw_blocks_session_spoof(client):
+    """A logged-in stranger must not be able to pass `{user_id: author}`
+    to slip past the proposal.user_id == data.user_id ownership check.
+    That's exactly what enforce_session_matches_body is for."""
+    author_id = await _login(client, "withdraw-victim@example.com")
+    community = await create_test_community(client, author_id)
+    proposal_resp = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "Stays up.",
+        },
+    )
+    pid = proposal_resp.json()["id"]
+
+    client.cookies.clear()
+    await _login(client, "withdraw-spoofer@example.com")
+    # Spoof the author id in the body — old code passed the ownership
+    # check (author == author) and cancelled the proposal.
+    r = await client.post(
+        f"/proposals/{pid}/withdraw",
+        json={"user_id": author_id},
+    )
+    assert r.status_code == 403
+    # And the proposal is still alive.
+    g = await client.get(f"/proposals/{pid}")
+    assert g.json()["proposal_status"] != "Canceled"
+
+
 # ── Session-enforcement on write endpoints ────────────────────────
 
 @pytest.mark.asyncio
@@ -252,6 +283,62 @@ async def test_create_proposal_blocks_when_session_mismatches_body(client):
     )
     assert r.status_code == 403
 
+
+@pytest.mark.asyncio
+async def test_edit_proposal_blocks_when_session_mismatches_body(client):
+    """Logged-in user A cannot edit user B's proposal by spoofing user_id=B
+    in the body. The service-level check only validates that body.user_id
+    matches the author — not that the caller IS that author."""
+    author_id = await _login(client, "edit-author@example.com")
+    community = await create_test_community(client, author_id)
+    proposal_resp = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": author_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "original",
+        },
+    )
+    pid = proposal_resp.json()["id"]
+
+    # Different logged-in user tries to edit using the author's id.
+    client.cookies.clear()
+    await _login(client, "edit-stranger@example.com")
+    r = await client.patch(
+        f"/proposals/{pid}/edit",
+        json={"user_id": author_id, "proposal_text": "hijacked"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_remove_support_blocks_when_session_mismatches_target(client):
+    """DELETE /proposals/{id}/support/{user_id} must enforce session:
+    without it, any logged-in user could shave supports off a rival
+    proposal by hitting the URL with another member's user_id."""
+    victim_id = await _login(client, "remove-victim@example.com")
+    community = await create_test_community(client, victim_id)
+    proposal_resp = await client.post(
+        f"/communities/{community['id']}/proposals",
+        json={
+            "user_id": victim_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": "victim's proposal",
+        },
+    )
+    pid = proposal_resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": victim_id})
+
+    # Attacker logs in and tries to drop the victim's support.
+    client.cookies.clear()
+    await _login(client, "remove-attacker@example.com")
+    r = await client.delete(f"/proposals/{pid}/support/{victim_id}")
+    assert r.status_code == 403
+
+    # Support count must still be 1.
+    resp = await client.get(f"/proposals/{pid}")
+    assert resp.json()["support_count"] == 1
 
 @pytest.mark.asyncio
 async def test_create_proposal_unauthenticated_still_works(client):
