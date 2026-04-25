@@ -333,16 +333,28 @@ class ExecutionService:
         await member_svc.create(proposal.val_uuid, proposal.user_id)
 
     async def _exec_set_membership_handler(self, proposal: Proposal) -> None:
-        if proposal.val_uuid:
-            await self.db.execute(
-                update(Variable)
-                .where(
-                    Variable.community_id == proposal.community_id,
-                    Variable.name == "membershipHandler",
-                )
-                .values(value=str(proposal.val_uuid))
+        if not proposal.val_uuid:
+            return
+        # Pre-fix this was a bare UPDATE — communities created before
+        # the membershipHandler default landed have no row, so the
+        # UPDATE affected zero rows and the proposal silently
+        # accomplished nothing. Use upsert so we either INSERT a fresh
+        # row or UPDATE the existing one.
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        stmt = (
+            pg_insert(Variable)
+            .values(
+                community_id=proposal.community_id,
+                name="membershipHandler",
+                value=str(proposal.val_uuid),
             )
-            await self.db.flush()
+            .on_conflict_do_update(
+                index_elements=["community_id", "name"],
+                set_={"value": str(proposal.val_uuid)},
+            )
+        )
+        await self.db.execute(stmt)
+        await self.db.flush()
 
     # ---------- Finance module handlers (opt-in via `Financial` var) ------
     #

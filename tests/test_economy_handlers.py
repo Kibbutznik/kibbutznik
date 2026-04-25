@@ -608,3 +608,81 @@ async def test_funding_refuses_inactive_action(sf):
             )
         ).scalar_one_or_none()
         assert action_w is None
+
+
+@pytest.mark.asyncio
+async def test_set_membership_handler_inserts_when_variable_missing(sf):
+    """SetMembershipHandler used a bare UPDATE; communities created
+    before the membershipHandler default landed have no row, so the
+    UPDATE affected 0 rows and the proposal silently accomplished
+    nothing. The fix upserts so a missing row gets INSERTed."""
+    async with sf() as db:
+        # Build a community WITHOUT the membershipHandler variable —
+        # mimics legacy rows from before the default shipped.
+        cid = uuid.uuid4()
+        db.add(Community(
+            id=cid,
+            parent_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            name="legacy", status=CommunityStatus.ACTIVE, member_count=1,
+        ))
+        await db.flush()
+        # Sanity: no membershipHandler variable exists.
+        existing = (await db.execute(
+            select(Variable).where(
+                Variable.community_id == cid,
+                Variable.name == "membershipHandler",
+            )
+        )).scalar_one_or_none()
+        assert existing is None
+
+        target = uuid.uuid4()
+        prop = await _mk_proposal(
+            db, community_id=cid, user_id=uuid.uuid4(),
+            ptype=ProposalType.SET_MEMBERSHIP_HANDLER,
+            val_uuid=target,
+        )
+        await ExecutionService(db)._exec_set_membership_handler(prop)
+        await db.commit()
+
+    async with sf() as db:
+        row = (await db.execute(
+            select(Variable).where(
+                Variable.community_id == cid,
+                Variable.name == "membershipHandler",
+            )
+        )).scalar_one()
+        assert row.value == str(target)
+
+
+@pytest.mark.asyncio
+async def test_set_membership_handler_updates_when_variable_exists(sf):
+    """The other half: when the variable row already exists (new
+    communities), the upsert path UPDATEs the existing row to the
+    new handler id."""
+    async with sf() as db:
+        cid = uuid.uuid4()
+        db.add(Community(
+            id=cid,
+            parent_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            name="modern", status=CommunityStatus.ACTIVE, member_count=1,
+        ))
+        db.add(Variable(community_id=cid, name="membershipHandler", value=""))
+        await db.flush()
+
+        target = uuid.uuid4()
+        prop = await _mk_proposal(
+            db, community_id=cid, user_id=uuid.uuid4(),
+            ptype=ProposalType.SET_MEMBERSHIP_HANDLER,
+            val_uuid=target,
+        )
+        await ExecutionService(db)._exec_set_membership_handler(prop)
+        await db.commit()
+
+    async with sf() as db:
+        row = (await db.execute(
+            select(Variable).where(
+                Variable.community_id == cid,
+                Variable.name == "membershipHandler",
+            )
+        )).scalar_one()
+        assert row.value == str(target)
