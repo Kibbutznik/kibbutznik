@@ -37,6 +37,16 @@ KIND_PROPOSAL_ACCEPTED = "proposal.accepted"
 KIND_PROPOSAL_REJECTED = "proposal.rejected"
 KIND_PROPOSAL_CANCELED = "proposal.canceled"
 KIND_COMMENT_POSTED = "comment.posted"
+# Sent to the proposal's TARGET (val_uuid) when a ThrowOut or
+# Membership-by-someone-else proposal is filed. The highest-stakes
+# inbox event — "while you were on vacation, the kibbutz voted on
+# whether you stay" should never come as a surprise.
+KIND_PROPOSAL_TARGETS_YOU = "proposal.targets_you"
+# Sent when a proposal moves OutThere → OnTheAir (cleared the
+# promote threshold; now in the next pulse's queue). Recipients:
+# every active member who hasn't supported it AND isn't the author.
+# Semantic: "this is about to be decided — weigh in if you care."
+KIND_PROPOSAL_VOTE_MISSING = "proposal.vote_missing"
 
 
 class Notification(Base):

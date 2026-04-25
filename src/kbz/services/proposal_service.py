@@ -208,13 +208,32 @@ class ProposalService:
         # atomically. A reader who sees the proposal in /communities
         # is guaranteed to see its notification too.
         from kbz.services.notification_service import NotificationService
-        await NotificationService(self.db).fanout_proposal_created(
+        notif_svc = NotificationService(self.db)
+        await notif_svc.fanout_proposal_created(
             community_id=community_id,
             proposal_id=proposal.id,
             proposal_type=str(proposal.proposal_type),
             proposal_text=proposal.proposal_text or proposal.val_text or "",
             author_user_id=proposal.user_id,
         )
+        # Targeted-user heads-up: ThrowOut (val_uuid = victim) and
+        # Membership-by-someone-else (val_uuid = applicant, but
+        # author isn't them) deserve a per-target row in addition to
+        # the broadcast. This is the "thrown out while on vacation"
+        # scenario — never let the vote happen without at least
+        # pinging the person.
+        if (
+            data.proposal_type in (ProposalType.THROW_OUT, ProposalType.MEMBERSHIP)
+            and data.val_uuid is not None
+        ):
+            await notif_svc.fanout_proposal_targets_you(
+                community_id=community_id,
+                proposal_id=proposal.id,
+                proposal_type=str(proposal.proposal_type),
+                proposal_text=proposal.proposal_text or proposal.val_text or "",
+                target_user_id=data.val_uuid,
+                author_user_id=proposal.user_id,
+            )
 
         await self.db.commit()
         await self.db.refresh(proposal)

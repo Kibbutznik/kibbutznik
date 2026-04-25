@@ -159,6 +159,18 @@ class PulseService:
             if proposal.support_count >= required_support:
                 proposal.proposal_status = ProposalStatus.ON_THE_AIR
                 proposal.pulse_id = next_pulse.id
+                # Vote-missing reminder for everyone who hasn't yet
+                # supported it. The proposal will be decided on the
+                # next pulse — this is the last cheap nudge before
+                # the verdict lands.
+                from kbz.services.notification_service import NotificationService
+                await NotificationService(self.db).fanout_proposal_vote_missing(
+                    community_id=community_id,
+                    proposal_id=proposal.id,
+                    proposal_type=str(proposal.proposal_type),
+                    proposal_text=proposal.proposal_text or "",
+                    author_user_id=proposal.user_id,
+                )
             await self.db.flush()
 
         # --- Step 4: Increment seniority for all active members ---
