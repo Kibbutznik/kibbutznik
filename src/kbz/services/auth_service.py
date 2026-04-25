@@ -91,7 +91,17 @@ class AuthService:
         The new user gets a unique `user_name` derived from the email's
         local part so the existing username-based viewer UI still works.
         We append a short random suffix to avoid collisions.
+
+        Race-window safety: two concurrent magic-link requests for the
+        same email both pass the `find_user_by_email` check before
+        either flushes. The DB partial unique index on `email` (added
+        in migration `m1n2o3p4q5r6`) catches the loser's INSERT;
+        we re-find and return the WINNER's row. Without this, two User
+        rows with the same email used to land — same email, different
+        user_names, inconsistent future logins.
         """
+        from sqlalchemy.exc import IntegrityError
+
         normalized = email.strip().lower()
         if not normalized or "@" not in normalized:
             raise ValueError("invalid email")
@@ -113,7 +123,17 @@ class AuthService:
             is_human=True,
         )
         self.db.add(user)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError:
+            await self.db.rollback()
+            # The winner of the race already wrote the row; find and
+            # return THAT one. If somehow re-find still misses, surface
+            # the error rather than spinning.
+            winner = await self.find_user_by_email(normalized)
+            if winner is None:
+                raise
+            return winner
         return user
 
     # ---- token issuance / verification ------------------------------
