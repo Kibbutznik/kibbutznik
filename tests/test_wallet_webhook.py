@@ -181,6 +181,30 @@ async def test_webhook_user_target_works_without_financial_community(client):
 
 
 @pytest.mark.asyncio
+async def test_webhook_rejects_non_finite_amounts(client):
+    """Decimal('Infinity') is > 0, so the old `amount <= 0` check
+    passed it through straight to mint(). Reject Inf / -Inf / NaN
+    as a class before they reach the ledger."""
+    user = await create_test_user(client, name="inf-test")
+    for bad in ("Infinity", "-Infinity", "NaN", "0", "-1"):
+        body = {
+            "target_kind": "user",
+            "target_id": user["id"],
+            "amount": bad,
+            "event": "test.bad",
+            "external_ref": f"ref-{bad}",
+            "idempotency_key": f"idem-{bad}",
+        }
+        raw = json.dumps(body).encode()
+        r = await client.post(
+            "/webhooks/wallet-deposit",
+            content=raw,
+            headers={"X-KBZ-Signature": _sig(raw), "Content-Type": "application/json"},
+        )
+        assert r.status_code == 400, f"amount={bad!r} should 400, got {r.status_code}"
+
+
+@pytest.mark.asyncio
 async def test_webhook_503_when_secret_unset(client, monkeypatch):
     # Override the autouse fixture for this test
     monkeypatch.setattr(settings, "webhook_secret", "")

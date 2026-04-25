@@ -89,6 +89,29 @@ async def test_revoke_token_invalidates_it(client):
     assert r.json()["user"] is None
 
 
+@pytest.mark.asyncio
+async def test_revoke_unknown_token_returns_404(client):
+    """Revoking a nonexistent token id should 404, not silently 204."""
+    await _login(client, "revoke-unknown@example.com")
+    r = await client.delete(f"/users/me/tokens/{uuid.uuid4()}")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_revoke_other_users_token_returns_404(client):
+    """Revoking someone else's token id returns 404 — callers must not be
+    able to probe which token ids exist on other accounts, and must not
+    receive a false-success 204."""
+    await _login(client, "owner-revoke@example.com")
+    created = (await client.post("/users/me/tokens", json={"name": "t"})).json()
+    token_id = created["id"]
+    # Switch user
+    client.cookies.clear()
+    await _login(client, "stranger-revoke@example.com")
+    r = await client.delete(f"/users/me/tokens/{token_id}")
+    assert r.status_code == 404
+
+
 # ── Bearer auth ─────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

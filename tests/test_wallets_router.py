@@ -58,7 +58,7 @@ async def test_create_community_without_enable_financial_stays_off(client):
 
 @pytest.mark.asyncio
 async def test_community_wallet_404_when_not_financial(client):
-    founder = await create_test_user(client, name="f3")
+    founder = await create_test_user(client, name="founder3")
     community = (
         await client.post("/communities", json={
             "name": "Generic", "founder_user_id": founder["id"],
@@ -70,7 +70,7 @@ async def test_community_wallet_404_when_not_financial(client):
 
 @pytest.mark.asyncio
 async def test_community_wallet_200_when_financial(client):
-    founder = await create_test_user(client, name="f4")
+    founder = await create_test_user(client, name="founder4")
     community = (
         await client.post("/communities", json={
             "name": "Financial",
@@ -140,3 +140,25 @@ async def test_payment_request_409s_on_non_leaf(client):
     )
     assert r.status_code == 409
     assert "Financial module" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_payment_request_rejects_bad_amounts(client):
+    """A bare Decimal() accepts '-5' and 'Infinity' — letting either
+    through writes a bogus Payment proposal that the executor will
+    later refuse, burning a round slot and polluting support state."""
+    user_id = await _login(client, "bad-amt@example.com")
+    c = (
+        await client.post("/communities", json={
+            "name": "bad-amt", "founder_user_id": user_id,
+            "enable_financial": True,
+        })
+    ).json()
+    for bad in ("-5", "0", "Infinity", "NaN", "not-a-number"):
+        r = await client.post(
+            f"/communities/{c['id']}/payment-request",
+            json={"amount": bad},
+        )
+        assert r.status_code == 400, f"amount={bad!r} should 400, got {r.status_code}"
+
+

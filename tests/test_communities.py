@@ -28,6 +28,18 @@ async def test_community_has_variables(client):
 
 
 @pytest.mark.asyncio
+async def test_variables_and_children_404_on_unknown_community(client):
+    """/variables and /children on a bogus community used to return 200
+    with empty payloads, making missing communities look identical to
+    real-but-empty ones. Both must 404 instead."""
+    bogus = "11111111-1111-1111-1111-111111111111"
+    resp = await client.get(f"/communities/{bogus}/variables")
+    assert resp.status_code == 404
+    resp = await client.get(f"/communities/{bogus}/children")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_community_has_initial_pulse(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
@@ -64,3 +76,26 @@ async def test_get_community(client):
 async def test_community_not_found(client):
     resp = await client.get("/communities/00000000-0000-0000-0000-000000000001")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_community_rejects_empty_name(client):
+    """communities.name is NOT NULL String(255); empty string should
+    422 at the edge, not end up as a blank row or fall back to the
+    server-side default."""
+    user = await create_test_user(client)
+    resp = await client.post("/communities", json={
+        "name": "", "founder_user_id": user["id"],
+    })
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_community_rejects_oversized_name(client):
+    """Names over the String(255) column used to surface as a 500 via
+    DataError; the schema cap turns that into a clean 422."""
+    user = await create_test_user(client)
+    resp = await client.post("/communities", json={
+        "name": "x" * 300, "founder_user_id": user["id"],
+    })
+    assert resp.status_code == 422

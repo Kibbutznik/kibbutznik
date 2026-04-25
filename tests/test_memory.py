@@ -48,6 +48,34 @@ async def test_create_and_get_memory(client):
 
 
 @pytest.mark.asyncio
+async def test_create_memory_rejects_out_of_range_importance(client):
+    """The list endpoint bounds min_importance to [0, 1]; write endpoints
+    must match, otherwise an agent can write importance=10 and break the
+    ordering/threshold semantics downstream."""
+    user = await create_test_user(client)
+    uid = user["id"]
+    for bad in (1.5, -0.1, 99.0):
+        resp = await client.post("/memories", json={
+            "user_id": uid, "memory_type": "episodic",
+            "content": "out of range", "importance": bad,
+        })
+        assert resp.status_code == 422, f"importance={bad} should 422"
+
+
+@pytest.mark.asyncio
+async def test_update_memory_rejects_out_of_range_importance(client):
+    user = await create_test_user(client)
+    uid = user["id"]
+    created = await client.post("/memories", json={
+        "user_id": uid, "memory_type": "episodic",
+        "content": "baseline", "importance": 0.5,
+    })
+    mem_id = created.json()["id"]
+    resp = await client.put(f"/memories/{mem_id}", json={"importance": 2.0})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_get_memories_by_type(client):
     user = await create_test_user(client)
     uid = user["id"]
@@ -134,6 +162,42 @@ async def test_update_memory(client):
     updated = resp.json()
     assert updated["importance"] == 0.0
     assert updated["content"] == "COMPLETED: Write artifact"
+
+
+@pytest.mark.asyncio
+async def test_update_memory_not_found_returns_404(client):
+    """Updating a memory that doesn't exist returns 404, not 200."""
+    fake_id = str(uuid.uuid4())
+    resp = await client.put(f"/memories/{fake_id}", json={"importance": 0.5})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_memory_no_fields_returns_400(client):
+    """Updating with an empty body returns 400, not 200."""
+    user = await create_test_user(client)
+    resp = await client.post("/memories", json={
+        "user_id": user["id"], "memory_type": "goal",
+        "content": "x", "importance": 0.5,
+    })
+    mem_id = resp.json()["id"]
+    resp = await client.put(f"/memories/{mem_id}", json={})
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_memory_rejects_unknown_memory_type(client):
+    """Typos like `episodc` produce dead rows that no filter retrieves —
+    the service only queries against the four canonical types. Schema
+    should reject unknowns before they hit the DB."""
+    user = await create_test_user(client)
+    resp = await client.post("/memories", json={
+        "user_id": user["id"],
+        "memory_type": "episodc",  # typo
+        "content": "lost forever",
+        "importance": 0.5,
+    })
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -241,6 +305,36 @@ async def test_memories_isolated_per_user(client):
     assert resp1.json()[0]["content"] == "User1 event"
     assert len(resp2.json()) == 1
     assert resp2.json()[0]["content"] == "User2 event"
+
+
+@pytest.mark.asyncio
+async def test_memory_routes_reject_malformed_uuid_with_422(client):
+    """Memory routes used to take `user_id` / `memory_id` as plain str
+    and call `uuid.UUID(...)` inside the handler — which raises
+    ValueError on a malformed value and surfaces as a 500. The
+    endpoints now declare those params as `uuid.UUID`, so FastAPI
+    rejects the bad request cleanly with a 422.
+    """
+    # Path-param UUID: GET /memories/{user_id}
+    resp = await client.get("/memories/not-a-uuid")
+    assert resp.status_code == 422
+
+    # Path-param UUID: PUT /memories/{memory_id}
+    resp = await client.put("/memories/not-a-uuid", json={"importance": 0.3})
+    assert resp.status_code == 422
+
+    # Path-param UUID: DELETE /memories/prune/{user_id}
+    resp = await client.delete("/memories/prune/not-a-uuid?current_round=1")
+    assert resp.status_code == 422
+
+    # Body-field UUID: POST /memories
+    resp = await client.post("/memories", json={
+        "user_id": "definitely-not-a-uuid",
+        "memory_type": "episodic",
+        "content": "x",
+        "importance": 0.5,
+    })
+    assert resp.status_code == 422
 
 
 # ── MemoryService Direct Tests ──────────────────────────────────────────────

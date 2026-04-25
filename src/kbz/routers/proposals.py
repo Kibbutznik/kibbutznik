@@ -166,6 +166,11 @@ async def add_ghost_support(proposal_id: uuid.UUID, db: AsyncSession = Depends(g
 
 @router.get("/proposals/{proposal_id}/supporters")
 async def get_supporters(proposal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    # Without this gate, a typo'd or stale proposal_id returns 200 with
+    # an empty list — indistinguishable from a real proposal nobody
+    # has supported yet. 404 makes the difference visible to clients.
+    if await ProposalService(db).get(proposal_id) is None:
+        raise HTTPException(status_code=404, detail="Proposal not found")
     svc = SupportService(db)
     return await svc.get_proposal_supporters(proposal_id)
 

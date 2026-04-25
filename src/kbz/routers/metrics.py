@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
+from kbz.services.community_service import CommunityService
 from kbz.services.metrics_service import MetricsService
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -22,5 +23,10 @@ async def community_metrics(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Return a `CommunityMetrics` record as JSON."""
+    # Without this gate, a typo'd or stale community id returns
+    # 200 with all-zero metrics — indistinguishable from a real
+    # but inactive community. Make the difference visible.
+    if await CommunityService(db).get(community_id) is None:
+        raise HTTPException(status_code=404, detail="Community not found")
     svc = MetricsService(db)
     return (await svc.compute(community_id)).as_dict()

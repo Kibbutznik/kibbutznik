@@ -181,6 +181,16 @@ async def test_support_proposal(client):
 
 
 @pytest.mark.asyncio
+async def test_supporters_404_on_unknown_proposal(client):
+    """`GET /proposals/{id}/supporters` used to return 200 + [] for a
+    bogus proposal id. That's indistinguishable from a real proposal
+    nobody has supported, so a typo silently looks like success."""
+    bogus = "00000000-0000-0000-0000-000000000099"
+    resp = await client.get(f"/proposals/{bogus}/supporters")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_duplicate_support_rejected(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
@@ -315,3 +325,26 @@ async def test_membership_proposal_by_non_member(client):
         "val_uuid": user2["id"],
     })
     assert dup.status_code == 409, dup.text
+
+
+@pytest.mark.asyncio
+async def test_create_proposal_rejects_megabyte_text(client):
+    """Proposal free-text columns are TEXT (unbounded) at the DB layer;
+    without an upstream cap, any anonymous caller can bloat the
+    proposals table with multi-MB rows, and the EditArtifact quote-
+    check goes O(N*M) on oversized text."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    # Just over the 10,000-char limit defined in schemas/proposal.py.
+    too_long = "x" * 10_001
+    for field in ("proposal_text", "pitch", "val_text"):
+        body = {
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": "fine",
+        }
+        body[field] = too_long
+        r = await client.post(
+            f"/communities/{community['id']}/proposals", json=body,
+        )
+        assert r.status_code == 422, f"{field}: {r.status_code} {r.text}"
