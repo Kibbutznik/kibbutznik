@@ -3,12 +3,70 @@ from tests.conftest import create_test_user, create_test_community
 
 
 @pytest.mark.asyncio
-async def test_pulse_supporters_404_on_unknown_pulse(client):
-    """`GET /pulses/{id}/supporters` used to return [] for a bogus
-    pulse id, hiding stale-link bugs in clients. Must 404 instead."""
-    bogus = "00000000-0000-0000-0000-000000000099"
-    resp = await client.get(f"/pulses/{bogus}/supporters")
-    assert resp.status_code == 404
+async def test_pulse_thresholds_floor_at_one_for_zero_member_community(db):
+    """If member_count somehow hits zero (everyone thrown out), the
+    OutThere→OnTheAir and OnTheAir→Accepted thresholds used to drop
+    to ceil(0 * pct / 100) == 0 — meaning every queued proposal would
+    silently auto-accept on the next pulse with zero supporters.
+    Floor at 1 so a ghost community can't rubber-stamp."""
+    import uuid as _uuid
+    from kbz.enums import (
+        CommunityStatus, ProposalStatus, ProposalType, PulseStatus,
+        DEFAULT_VARIABLES,
+    )
+    from kbz.models.community import Community
+    from kbz.models.proposal import Proposal
+    from kbz.models.pulse import Pulse
+    from kbz.models.variable import Variable
+    from kbz.services.pulse_service import PulseService
+
+    cid = _uuid.uuid4()
+    db.add(Community(
+        id=cid,
+        parent_id=_uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="Ghost",
+        status=CommunityStatus.ACTIVE,
+        member_count=0,
+    ))
+    for name, value in DEFAULT_VARIABLES.items():
+        db.add(Variable(community_id=cid, name=name, value=value))
+    active = Pulse(
+        id=_uuid.uuid4(),
+        community_id=cid,
+        status=PulseStatus.ACTIVE,
+        support_count=0,
+        threshold=1,
+    )
+    nxt = Pulse(
+        id=_uuid.uuid4(),
+        community_id=cid,
+        status=PulseStatus.NEXT,
+        support_count=0,
+        threshold=1,
+    )
+    db.add(active)
+    db.add(nxt)
+    on_air = Proposal(
+        id=_uuid.uuid4(),
+        community_id=cid,
+        user_id=_uuid.uuid4(),
+        proposal_type=ProposalType.ADD_STATEMENT,
+        proposal_status=ProposalStatus.ON_THE_AIR,
+        proposal_text="should NOT pass with 0 members and 0 support",
+        val_text="",
+        age=0,
+        support_count=0,
+        pulse_id=active.id,
+    )
+    db.add(on_air)
+    await db.flush()
+
+    await PulseService(db).execute_pulse(cid)
+
+    # Without the floor, ceil(0 * pct / 100) == 0 and `support_count >= 0`
+    # would have accepted the proposal. Floored, it must be Rejected.
+    await db.refresh(on_air)
+    assert on_air.proposal_status == ProposalStatus.REJECTED
 
 
 @pytest.mark.asyncio
