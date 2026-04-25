@@ -116,6 +116,61 @@ async def test_inactive_community_rejects_new_proposals_and_pulses(client):
 
 
 @pytest.mark.asyncio
+async def test_end_action_stamps_decided_at_on_auto_canceled_inside_proposals(client):
+    """When EndAction lands and the executor auto-cancels in-flight
+    proposals INSIDE the now-ended community, those proposals must
+    have decided_at stamped — otherwise they show up in the audit log
+    with NULL decision time and sort wrong (or get treated as legacy
+    rows by downstream consumers like the deadlock-pulses metric).
+    """
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+
+    # Create an action.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddAction",
+        "proposal_text": "Working group",
+        "val_text": "WG",
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+    actions = (await client.get(f"/communities/{parent['id']}/actions")).json()
+    action_id = actions[0]["action_id"]
+
+    # File an OutThere proposal INSIDE the action community.
+    inside = await client.post(f"/communities/{action_id}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "soon to be auto-canceled",
+    })
+    inside_pid = inside.json()["id"]
+    await client.patch(f"/proposals/{inside_pid}/submit")
+
+    # End the parent's action — executor should auto-cancel the inside proposal.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EndAction",
+        "proposal_text": "wrap up",
+        "val_uuid": action_id,
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+
+    # The inside proposal must now show up in the action community's
+    # audit log as Canceled WITH a non-NULL decided_at.
+    audit = (await client.get(f"/communities/{action_id}/audit")).json()
+    assert isinstance(audit, list)
+    matching = [e for e in audit if e["proposal_id"] == inside_pid]
+    assert len(matching) == 1, f"expected the canceled proposal in audit, got: {audit}"
+    entry = matching[0]
+    assert entry["proposal_status"] == "Canceled"
+    assert entry["decided_at"] is not None, (
+        "decided_at must be stamped when the executor auto-cancels in-flight "
+        "proposals inside an ended community — otherwise the audit log "
+        "shows them with NULL decision time."
+    )
+
+
+@pytest.mark.asyncio
 async def test_end_action_refuses_foreign_action(client):
     """An accepted EndAction in community A whose val_uuid points at
     an action under community B must NOT mark B's action inactive.

@@ -473,6 +473,13 @@ class ArtifactService:
         if not artifact_ids:
             return
 
+        # Single decision-time stamp shared across both cancellation
+        # batches below — keeps audit-log ordering coherent and lets
+        # readers see "this whole batch was cleaned up at the same
+        # moment as the upstream commit".
+        from datetime import datetime as _dt, timezone as _tz
+        _decided_now = _dt.now(_tz.utc)
+
         # 2. Cancel active proposals referencing these artifacts
         #    (EditArtifact, RemoveArtifact, DelegateArtifact use val_uuid = artifact_id)
         orphan_result = await self.db.execute(
@@ -489,6 +496,7 @@ class ArtifactService:
         )
         for orphan in orphan_result.scalars().all():
             orphan.proposal_status = ProposalStatus.CANCELED.value
+            orphan.decided_at = _decided_now
             logger.info("Auto-canceled %s proposal %s (container %s committed upstream)",
                         orphan.proposal_type, orphan.id, container.id)
 
@@ -506,6 +514,7 @@ class ArtifactService:
         )
         for orphan in container_result.scalars().all():
             orphan.proposal_status = ProposalStatus.CANCELED.value
+            orphan.decided_at = _decided_now
             logger.info("Auto-canceled %s proposal %s (container %s committed)",
                         orphan.proposal_type, orphan.id, container.id)
 
