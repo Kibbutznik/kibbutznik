@@ -5,7 +5,7 @@ walk pulse history. NULL while DRAFT/OUT_THERE/ON_THE_AIR; set to
 NOW() when status flips to ACCEPTED/REJECTED/CANCELED.
 
 Revision ID: g1a2b3c4d5e6
-Revises: c6d7e8f9a0b1
+Revises: b5c6d7e8f9a0
 Create Date: 2026-04-25 16:00:00.000000
 
 """
@@ -16,7 +16,11 @@ import sqlalchemy as sa
 
 
 revision: str = 'g1a2b3c4d5e6'
-down_revision: Union[str, None] = 'c6d7e8f9a0b1'
+# Re-pointed from the never-merged c6d7e8f9a0b1 (community charter, PR
+# #10) to b5c6d7e8f9a0 (add_proposal_pitch — the actual prior head on
+# main). The audit-log PR was branched from a charter-feature-aware
+# main and slipped through review with the dangling reference.
+down_revision: Union[str, None] = 'b5c6d7e8f9a0'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
