@@ -241,6 +241,24 @@ class ExecutionService:
         if not proposal.val_uuid or not (proposal.val_text or "").strip():
             logger.warning("Funding %s missing val_uuid or val_text", proposal.id)
             return
+        # Funding is parent → child-action only. Without this guard,
+        # an accepted Funding in community A whose val_uuid pointed at
+        # an action under community B would transfer A's credits into
+        # B's action wallet, bypassing B's governance over its own
+        # action tree. Refuse if val_uuid isn't a direct child of A.
+        action_row = (
+            await self.db.execute(
+                select(Action.parent_community_id).where(
+                    Action.action_id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if action_row is None or action_row != proposal.community_id:
+            logger.warning(
+                "Funding %s val_uuid %s is not a direct child action of community %s — refused",
+                proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
         svc = WalletService(self.db)
         if not await svc.is_financial(proposal.community_id):
             logger.info(
