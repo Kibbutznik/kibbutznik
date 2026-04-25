@@ -34,8 +34,11 @@ from kbz.models.notification import (
     KIND_PROPOSAL_CANCELED,
     KIND_PROPOSAL_CREATED,
     KIND_PROPOSAL_REJECTED,
+    KIND_PROPOSAL_TARGETS_YOU,
+    KIND_PROPOSAL_VOTE_MISSING,
     Notification,
 )
+from kbz.models.support import Support
 
 
 # Per-notification text-snippet cap. Keeps the JSONB blob small so
@@ -116,6 +119,78 @@ class NotificationService:
         }
         return await self._insert_many(
             [author_user_id], outcome_kind, community_id, payload,
+        )
+
+    async def fanout_proposal_targets_you(
+        self,
+        *,
+        community_id: uuid.UUID,
+        proposal_id: uuid.UUID,
+        proposal_type: str,
+        proposal_text: str | None,
+        target_user_id: uuid.UUID,
+        author_user_id: uuid.UUID,
+    ) -> int:
+        """A `proposal.targets_you` row for the user named in val_uuid.
+        Self-targets (the typical Membership-self case) are NOT
+        notified — they filed the proposal themselves."""
+        if target_user_id == author_user_id:
+            return 0
+        payload = {
+            "proposal_id": str(proposal_id),
+            "proposal_type": proposal_type,
+            "proposal_text": _snip(proposal_text),
+            "author_user_id": str(author_user_id),
+        }
+        return await self._insert_many(
+            [target_user_id], KIND_PROPOSAL_TARGETS_YOU, community_id, payload,
+        )
+
+    async def fanout_proposal_vote_missing(
+        self,
+        *,
+        community_id: uuid.UUID,
+        proposal_id: uuid.UUID,
+        proposal_type: str,
+        proposal_text: str | None,
+        author_user_id: uuid.UUID,
+    ) -> int:
+        """Sent when a proposal lands on the air. Recipients = every
+        active member EXCEPT the author and anyone who already
+        supported the OutThere version. The semantic is "you haven't
+        weighed in and the pulse is going to decide this soon."
+
+        Notifying current supporters too would be noise — they
+        already cast a vote. The author is implicitly the strongest
+        supporter. Both filtered out.
+        """
+        # Existing supporters of this proposal — exclude them.
+        supporter_rows = await self.db.execute(
+            select(Support.user_id).where(Support.proposal_id == proposal_id)
+        )
+        supporter_ids = {row[0] for row in supporter_rows.all()}
+        supporter_ids.add(author_user_id)
+
+        # Active members.
+        member_rows = await self.db.execute(
+            select(Member.user_id).where(
+                Member.community_id == community_id,
+                Member.status == MemberStatus.ACTIVE,
+            )
+        )
+        recipients = [
+            row[0] for row in member_rows.all() if row[0] not in supporter_ids
+        ]
+        if not recipients:
+            return 0
+        payload = {
+            "proposal_id": str(proposal_id),
+            "proposal_type": proposal_type,
+            "proposal_text": _snip(proposal_text),
+            "author_user_id": str(author_user_id),
+        }
+        return await self._insert_many(
+            recipients, KIND_PROPOSAL_VOTE_MISSING, community_id, payload,
         )
 
     async def fanout_comment_posted(

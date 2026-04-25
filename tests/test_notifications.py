@@ -200,6 +200,146 @@ async def test_mark_read_404_for_foreign_or_unknown(client):
 
 
 @pytest.mark.asyncio
+async def test_throw_out_target_gets_targets_you_notification(client):
+    """A ThrowOut proposal naming user X drops a `proposal.targets_you`
+    row in X's inbox the moment it's filed — separate from the
+    broadcast `proposal.created` row everyone else gets. This is the
+    "thrown out while on vacation" defense."""
+    founder_id = await _login(client, "to-founder@example.com")
+    community = await create_test_community(client, founder_id)
+
+    client.cookies.clear()
+    target_id = await _login(client, "to-target@example.com")
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": target_id,
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": target_id,
+    })
+    membership_id = resp.json()["id"]
+    await client.patch(f"/proposals/{membership_id}/submit")
+
+    client.cookies.clear()
+    await _login(client, "to-founder@example.com")
+    await client.post(
+        f"/proposals/{membership_id}/support", json={"user_id": founder_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+
+    # Founder files a ThrowOut targeting `target`.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder_id,
+        "proposal_type": "ThrowOut",
+        "proposal_text": "they broke the rules",
+        "val_uuid": target_id,
+    })
+    assert resp.status_code == 201
+
+    client.cookies.clear()
+    await _login(client, "to-target@example.com")
+    resp = await client.get("/users/me/notifications")
+    targeted = [n for n in resp.json() if n["kind"] == "proposal.targets_you"]
+    assert len(targeted) >= 1
+    assert targeted[0]["payload"]["proposal_type"] == "ThrowOut"
+
+
+@pytest.mark.asyncio
+async def test_self_membership_does_not_self_notify(client):
+    """A user filing their own Membership shouldn't get a
+    `proposal.targets_you` for themselves — that's noise."""
+    founder_id = await _login(client, "self-mem-f@example.com")
+    community = await create_test_community(client, founder_id)
+
+    client.cookies.clear()
+    user_id = await _login(client, "self-mem-u@example.com")
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user_id,
+        "proposal_type": "Membership",
+        "proposal_text": "letting myself in",
+        "val_uuid": user_id,
+    })
+    assert resp.status_code == 201
+    resp = await client.get("/users/me/notifications")
+    assert all(n["kind"] != "proposal.targets_you" for n in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_proposal_promoted_to_on_the_air_notifies_non_supporters(client):
+    """When OutThere → OnTheAir, every active member who hasn't
+    supported it (and isn't the author) gets a `proposal.vote_missing`
+    row. Existing supporters and the author are filtered out."""
+    founder_id = await _login(client, "vm-founder@example.com")
+    community = await create_test_community(client, founder_id)
+
+    client.cookies.clear()
+    other_id = await _login(client, "vm-other@example.com")
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": other_id,
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": other_id,
+    })
+    membership_id = resp.json()["id"]
+    await client.patch(f"/proposals/{membership_id}/submit")
+    client.cookies.clear()
+    await _login(client, "vm-founder@example.com")
+    await client.post(
+        f"/proposals/{membership_id}/support", json={"user_id": founder_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+
+    # Other files AddStatement and supports their own to drive promote.
+    client.cookies.clear()
+    await _login(client, "vm-other@example.com")
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": other_id,
+        "proposal_type": "AddStatement",
+        "proposal_text": "we keep things tidy",
+    })
+    proposal_id = resp.json()["id"]
+    await client.patch(f"/proposals/{proposal_id}/submit")
+    await client.post(
+        f"/proposals/{proposal_id}/support", json={"user_id": other_id},
+    )
+
+    # Founder triggers the pulse — promotes OutThere → OnTheAir.
+    client.cookies.clear()
+    await _login(client, "vm-founder@example.com")
+    await client.post(
+        f"/communities/{community['id']}/pulses/support",
+        json={"user_id": founder_id},
+    )
+
+    # Founder didn't support the proposal → must have a vote_missing.
+    resp = await client.get("/users/me/notifications")
+    vm = [
+        n for n in resp.json()
+        if n["kind"] == "proposal.vote_missing"
+        and n["payload"].get("proposal_id") == proposal_id
+    ]
+    assert len(vm) == 1
+
+    # The author (other) supported it → must NOT get one.
+    client.cookies.clear()
+    await _login(client, "vm-other@example.com")
+    resp = await client.get("/users/me/notifications")
+    own = [
+        n for n in resp.json()
+        if n["kind"] == "proposal.vote_missing"
+        and n["payload"].get("proposal_id") == proposal_id
+    ]
+    assert own == []
+
+
+@pytest.mark.asyncio
 async def test_notifications_require_session(client):
     """No anonymous inbox."""
     bogus = "00000000-0000-0000-0000-000000000099"
