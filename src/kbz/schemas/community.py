@@ -19,6 +19,10 @@ class CommunityCreate(BaseModel):
     # proposal against themselves at t=0. Default False keeps
     # existing API callers (simulation, agents) non-financial.
     enable_financial: bool = False
+    # Optional kibbutz "charter" markdown — who we are, how we decide,
+    # our norms. Capped at 20k chars so a runaway client can't dump a
+    # novel into the row.
+    charter_md: str | None = None
 
 
 class CommunityResponse(BaseModel):
@@ -27,6 +31,7 @@ class CommunityResponse(BaseModel):
     name: str
     status: int
     member_count: int
+    charter_md: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

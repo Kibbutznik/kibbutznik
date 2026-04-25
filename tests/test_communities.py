@@ -40,6 +40,58 @@ async def test_variables_and_children_404_on_unknown_community(client):
 
 
 @pytest.mark.asyncio
+async def test_community_charter_round_trip(client):
+    """charter_md is the optional kibbutz "README" — markdown set at
+    creation that the dashboard renders so new members aren't landing
+    cold. It must come back on GET /communities/{id} verbatim, and
+    creating without one must keep the field null (legacy rows)."""
+    user = await create_test_user(client)
+    charter = (
+        "# Kibbutz Acme\n\n"
+        "We make things together.\n\n"
+        "## How we decide\n"
+        "- AddStatement proposals get 25% support.\n"
+        "- A pulse runs every 24h.\n"
+        "## Norms\n- Be kind. Quote sources."
+    )
+    resp = await client.post("/communities", json={
+        "name": "Acme",
+        "founder_user_id": user["id"],
+        "charter_md": charter,
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["charter_md"] == charter
+
+    # Round-trip on GET.
+    resp = await client.get(f"/communities/{body['id']}")
+    assert resp.json()["charter_md"] == charter
+
+    # Creating without one keeps the field null.
+    resp2 = await client.post("/communities", json={
+        "name": "NoCharter",
+        "founder_user_id": user["id"],
+    })
+    assert resp2.status_code == 201
+    assert resp2.json()["charter_md"] is None
+
+
+@pytest.mark.asyncio
+async def test_community_charter_capped_at_20k(client):
+    """The DB column is Text, but a runaway client shouldn't be able
+    to dump a novel. Service layer truncates at 20k characters."""
+    user = await create_test_user(client)
+    huge = "x" * 30_000
+    resp = await client.post("/communities", json={
+        "name": "Huge",
+        "founder_user_id": user["id"],
+        "charter_md": huge,
+    })
+    assert resp.status_code == 201
+    assert len(resp.json()["charter_md"]) == 20_000
+
+
+@pytest.mark.asyncio
 async def test_community_has_initial_pulse(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

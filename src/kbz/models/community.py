@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Index, Integer, String, DateTime, text
+from sqlalchemy import Index, Integer, String, Text, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,12 @@ class Community(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, default="No Name")
     status: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     member_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The kibbutz "README" — markdown that explains who we are, how we
+    # decide, and our norms. Distinct from Statements (those are voted
+    # rules) and from artifacts (the productive output). Populated at
+    # creation time; edits will move through a ChangeCharter proposal
+    # in a follow-up. Nullable so legacy rows keep working.
+    charter_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
     __table_args__ = (

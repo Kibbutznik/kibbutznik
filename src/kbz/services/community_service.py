@@ -33,12 +33,19 @@ class CommunityService:
                 raise ValueError(f"parent_id {data.parent_id} does not exist")
 
         # 1. Create community
+        # Charter is capped at 20k chars defensively — `data.charter_md`
+        # came in via Pydantic, but the column is just `Text`, so the
+        # cap lives here.
+        charter = data.charter_md
+        if charter is not None:
+            charter = charter[:20_000]
         community = Community(
             id=community_id,
             parent_id=data.parent_id,
             name=data.name,
             status=CommunityStatus.ACTIVE,
             member_count=1,
+            charter_md=charter,
         )
         self.db.add(community)
 
