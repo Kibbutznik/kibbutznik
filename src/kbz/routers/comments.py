@@ -56,25 +56,70 @@ async def get_comments(
         ),
     ),
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
     _require_entity_type(entity_type)
     svc = CommentService(db)
-    return await svc.get_comments(
+    rows = await svc.get_comments(
         entity_id, entity_type,
         limit=limit, after=after, include_replies=include_replies,
     )
+    # Stamp each row with the viewer's own vote so the dashboard
+    # can highlight the up/down arrow they already cast. Bulk lookup
+    # so a 100-comment thread is one extra query, not 100.
+    if session_user is not None and rows:
+        my_votes = await svc.get_my_votes_bulk(
+            [r.id for r in rows], session_user.id,
+        )
+    else:
+        my_votes = {}
+    return [
+        CommentResponse(
+            id=r.id,
+            entity_id=r.entity_id,
+            entity_type=r.entity_type,
+            user_id=r.user_id,
+            comment_text=r.comment_text,
+            parent_comment_id=r.parent_comment_id,
+            score=r.score,
+            created_at=r.created_at,
+            my_value=my_votes.get(r.id),
+        )
+        for r in rows
+    ]
 
 
 @router.post("/comments/{comment_id}/score")
-async def update_score(comment_id: uuid.UUID, data: ScoreUpdate, db: AsyncSession = Depends(get_db)):
-    """Bump a comment's score by ±1. Returns the comment id and its
-    NEW score so the client can update only the up/down counter
-    instead of re-fetching the entire proposal modal (which used to
-    flicker the whole widget on every vote)."""
+async def update_score(
+    comment_id: uuid.UUID,
+    data: ScoreUpdate,
+    db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
+):
+    """Toggle-aware vote on a comment.
+
+    Behavior is per-user (\\`comment_votes\\` table, one row per (user,
+    comment)). Pre-fix this endpoint was anonymous and blindly added
+    the delta to comments.score, so a single user pressing up 20
+    times added 20 points. Now:
+
+    - Click in a new direction → INSERT, score moves by 1.
+    - Click in the same direction as your prior vote → DELETE
+      (toggle off), score moves by -1 in that direction.
+    - Click the opposite direction → flip, score moves by 2.
+
+    Response carries the comment id, the NEW total score, and your
+    new vote value (or null if you toggled off). The client updates
+    only the up/down arrow + counter — no modal re-fetch.
+    """
+    enforce_session_matches_body(data.user_id, session_user)
     svc = CommentService(db)
-    new_score = await svc.update_score(comment_id, data.delta)
+    new_score, my_value = await svc.cast_vote(
+        comment_id, data.user_id, data.delta,
+    )
     return {
         "status": "updated",
         "id": str(comment_id),
         "score": new_score,
+        "my_value": my_value,
     }
