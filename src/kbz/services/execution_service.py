@@ -217,9 +217,16 @@ class ExecutionService:
         orphans = orphan_result.scalars().all()
         from datetime import datetime as _dt, timezone as _tz
         _decided_now = _dt.now(_tz.utc)
+        # Track every row we cancel so the proposal.canceled emits
+        # land AFTER the loops (and the eventual flush) have stamped
+        # all status fields. The TKG ingestor needs these events to
+        # mark canceled_at_round; without them the orphans were
+        # invisible to semantic search.
+        canceled_for_emit: list[Proposal] = []
         for orphan in orphans:
             orphan.proposal_status = ProposalStatus.CANCELED.value
             orphan.decided_at = _decided_now
+            canceled_for_emit.append(orphan)
             logger.info(
                 "Auto-canceled %s proposal %s targeting ended action %s",
                 orphan.proposal_type, orphan.id, ended_action_id,
@@ -254,12 +261,26 @@ class ExecutionService:
             if inside.proposal_type == ProposalType.MEMBERSHIP.value:
                 from kbz.services.wallet_service import WalletService
                 await WalletService(self.db).escrow_refund(inside.id)
+            canceled_for_emit.append(inside)
             logger.info(
                 "Auto-canceled %s proposal %s inside ended community %s",
                 inside.proposal_type, inside.id, ended_action_id,
             )
 
         await self.db.flush()
+        # Emit proposal.canceled for every row above. event_bus is
+        # in-process pub/sub; subscribers race the outer pulse_service
+        # commit but only mutate TKG state, so the worst case is an
+        # eventually-consistent TKG row.
+        from kbz.services.event_bus import event_bus as _event_bus
+        for canceled in canceled_for_emit:
+            await _event_bus.emit(
+                "proposal.canceled",
+                community_id=canceled.community_id,
+                user_id=canceled.user_id,
+                proposal_id=canceled.id,
+                proposal_type=str(canceled.proposal_type),
+            )
 
     async def _exec_join_action(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:

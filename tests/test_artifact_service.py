@@ -476,6 +476,66 @@ async def test_commit_delegated_container_creates_parent_proposal(db):
 
 
 @pytest.mark.asyncio
+async def test_committed_container_cleanup_emits_proposal_canceled(db):
+    """When _cleanup_committed_container cancels orphan proposals
+    (other EditArtifact / RemoveArtifact / etc. targeting the same
+    artifacts, plus CreateArtifact / CommitArtifact targeting the
+    container itself), each row must fire proposal.canceled so the
+    TKG ingestor stamps canceled_at_round on the proposal node.
+    Pre-fix (PR #44 added the handler but no emitter at this site)
+    these orphans were silently flipped to CANCELED in the DB but
+    invisible to the knowledge graph.
+    """
+    from kbz.services.event_bus import event_bus
+
+    parent = await _mk_community(db, "ParentCleanup")
+    svc = ArtifactService(db)
+    parent_container = await svc.create_root_container(parent.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, parent.id, user)
+    artifact = await svc.create_artifact(
+        parent_container.id, "stub", "title", user, p.id,
+    )
+
+    # Seed an orphan EditArtifact targeting that artifact.
+    orphan_edit = Proposal(
+        id=uuid.uuid4(),
+        community_id=parent.id,
+        user_id=user,
+        proposal_type=ProposalType.EDIT_ARTIFACT.value,
+        proposal_status=ProposalStatus.OUT_THERE.value,
+        proposal_text="rewrite",
+        val_uuid=artifact.id,
+        val_text="",
+        age=0,
+        support_count=0,
+    )
+    db.add(orphan_edit)
+    await db.flush()
+
+    # Subscribe BEFORE the cleanup runs so we catch the emit.
+    q = event_bus.subscribe()
+    try:
+        await svc._cleanup_committed_container(parent_container)
+        await db.commit()
+        events = []
+        while not q.empty():
+            events.append(q.get_nowait())
+    finally:
+        event_bus.unsubscribe(q)
+
+    canceled_events = [
+        e for e in events
+        if e.event_type == "proposal.canceled"
+        and e.data.get("proposal_id") == str(orphan_edit.id)
+    ]
+    assert len(canceled_events) == 1, (
+        f"expected one proposal.canceled for orphan_edit; "
+        f"got events: {[(e.event_type, e.data) for e in events]}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_cascade_accept_seals_child_container(db):
     parent = await _mk_community(db, "Parent")
     child = await _mk_child_action(db, parent, "Child")

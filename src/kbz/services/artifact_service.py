@@ -505,9 +505,15 @@ class ArtifactService:
                 Proposal.val_uuid.in_(artifact_ids),
             )
         )
+        from kbz.services.event_bus import event_bus as _event_bus
+        # Track which rows we cancel so we can emit the events AFTER
+        # the orphan / container loops finish — keeps the inner loop
+        # focused on state mutation and the emit step separate.
+        canceled_for_emit: list[Proposal] = []
         for orphan in orphan_result.scalars().all():
             orphan.proposal_status = ProposalStatus.CANCELED.value
             orphan.decided_at = _decided_now
+            canceled_for_emit.append(orphan)
             logger.info("Auto-canceled %s proposal %s (container %s committed upstream)",
                         orphan.proposal_type, orphan.id, container.id)
 
@@ -526,8 +532,21 @@ class ArtifactService:
         for orphan in container_result.scalars().all():
             orphan.proposal_status = ProposalStatus.CANCELED.value
             orphan.decided_at = _decided_now
+            canceled_for_emit.append(orphan)
             logger.info("Auto-canceled %s proposal %s (container %s committed)",
                         orphan.proposal_type, orphan.id, container.id)
+
+        # Emit proposal.canceled for every row we just flipped — without
+        # this, the TKG ingestor never stamps canceled_at_round on these
+        # orphans (PR #44 added the handler but there was no emitter).
+        for orphan in canceled_for_emit:
+            await _event_bus.emit(
+                "proposal.canceled",
+                community_id=orphan.community_id,
+                user_id=orphan.user_id,
+                proposal_id=orphan.id,
+                proposal_type=str(orphan.proposal_type),
+            )
 
         # 3. Cascade to sub-containers (artifacts delegated further downstream)
         sub_result = await self.db.execute(
