@@ -240,6 +240,20 @@ async def file_funding_request(
             status_code=409,
             detail="Parent community doesn't have the Financial module enabled.",
         )
+    # Don't accept new proposals into INACTIVE communities. The
+    # general /communities/{id}/proposals path enforces this in
+    # ProposalService.create; this shortcut has to mirror it or it
+    # silently keeps minting proposals after EndAction.
+    from kbz.enums import CommunityStatus as _CommunityStatus
+    from kbz.models.community import Community as _Community
+    parent_community = (
+        await db.execute(select(_Community).where(_Community.id == parent))
+    ).scalar_one_or_none()
+    if parent_community is None or parent_community.status != _CommunityStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail="Parent community is not active — cannot file new proposals",
+        )
     from kbz.services.member_service import MemberService
     if not await MemberService(db).is_active_member(parent, user.id):
         raise HTTPException(status_code=403, detail="User is not an active member")
@@ -257,8 +271,30 @@ async def file_funding_request(
         support_count=0,
     )
     db.add(p)
+    # Inbox + TKG fanout. Without these, the shortcut silently
+    # creates a proposal that the rest of the platform never hears
+    # about — other members get no notification, the temporal
+    # knowledge graph never indexes the AUTHORED edge, and the
+    # viewer's WebSocket subscribers don't see it pop up.
+    from kbz.services.event_bus import event_bus
+    from kbz.services.notification_service import NotificationService
+    await NotificationService(db).fanout_proposal_created(
+        community_id=parent,
+        proposal_id=p.id,
+        proposal_type=str(p.proposal_type),
+        proposal_text=p.proposal_text or p.val_text or "",
+        author_user_id=user.id,
+    )
     await db.commit()
     await db.refresh(p)
+    await event_bus.emit(
+        "proposal.created",
+        community_id=parent,
+        user_id=user.id,
+        proposal_id=p.id,
+        proposal_type=str(p.proposal_type),
+        proposal_text=p.proposal_text or p.val_text or "",
+    )
     return {"proposal_id": str(p.id)}
 
 
@@ -283,6 +319,20 @@ async def file_payment_request(
             status_code=409,
             detail="Community doesn't have the Financial module enabled.",
         )
+    # INACTIVE community gate — mirror ProposalService.create. Without
+    # this an EndAction'd community could keep accepting new Payment
+    # requests through the shortcut even though /communities/.../proposals
+    # would refuse them.
+    from kbz.enums import CommunityStatus as _CommunityStatus
+    from kbz.models.community import Community as _Community
+    community_row = (
+        await db.execute(select(_Community).where(_Community.id == community_id))
+    ).scalar_one_or_none()
+    if community_row is None or community_row.status != _CommunityStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail="Community is not active — cannot file new proposals",
+        )
     from kbz.services.member_service import MemberService
     if not await MemberService(db).is_active_member(community_id, user.id):
         raise HTTPException(status_code=403, detail="User is not an active member")
@@ -290,7 +340,6 @@ async def file_payment_request(
     # Match `status == ACTIVE` so an EndAction'd sub-Action (which
     # leaves an INACTIVE Action row behind for audit) doesn't
     # permanently block its parent from filing Payment again.
-    from kbz.enums import CommunityStatus as _CommunityStatus
     has_active_children = (
         await db.execute(
             select(Action).where(
@@ -317,6 +366,26 @@ async def file_payment_request(
         support_count=0,
     )
     db.add(p)
+    # Inbox + TKG fanout — see file_funding_request for the same
+    # rationale. Skipping these meant other members got no
+    # notification of payment requests filed via this shortcut.
+    from kbz.services.event_bus import event_bus
+    from kbz.services.notification_service import NotificationService
+    await NotificationService(db).fanout_proposal_created(
+        community_id=community_id,
+        proposal_id=p.id,
+        proposal_type=str(p.proposal_type),
+        proposal_text=p.proposal_text or p.val_text or "",
+        author_user_id=user.id,
+    )
     await db.commit()
     await db.refresh(p)
+    await event_bus.emit(
+        "proposal.created",
+        community_id=community_id,
+        user_id=user.id,
+        proposal_id=p.id,
+        proposal_type=str(p.proposal_type),
+        proposal_text=p.proposal_text or p.val_text or "",
+    )
     return {"proposal_id": str(p.id)}

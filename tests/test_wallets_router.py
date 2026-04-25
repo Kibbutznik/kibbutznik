@@ -166,6 +166,136 @@ async def test_payment_request_409s_on_non_leaf(client):
 
 
 @pytest.mark.asyncio
+async def test_payment_request_notifies_other_members(client):
+    """Filing a payment-request must drop a proposal.created
+    notification in every OTHER member's inbox — pre-fix the
+    shortcut bypassed ProposalService.create entirely so other
+    members never heard about payment requests."""
+    founder_id = await _login(client, "pay-notif-founder@example.com")
+    c = (
+        await client.post("/communities", json={
+            "name": "PayNotif",
+            "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+    # Land a second member so there's someone to notify.
+    client.cookies.clear()
+    other_id = await _login(client, "pay-notif-other@example.com")
+    resp = await client.post(f"/communities/{c['id']}/proposals", json={
+        "user_id": other_id,
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": other_id,
+    })
+    membership_id = resp.json()["id"]
+    await client.patch(f"/proposals/{membership_id}/submit")
+    client.cookies.clear()
+    await _login(client, "pay-notif-founder@example.com")
+    await client.post(
+        f"/proposals/{membership_id}/support", json={"user_id": founder_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{c['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+
+    # Founder files the payment-request.
+    r = await client.post(
+        f"/communities/{c['id']}/payment-request",
+        json={"amount": "25", "pitch": "supplies"},
+    )
+    assert r.status_code == 200, r.text
+    pid = r.json()["proposal_id"]
+
+    # Other member's inbox should carry the proposal.created row.
+    client.cookies.clear()
+    await _login(client, "pay-notif-other@example.com")
+    notes = (await client.get("/users/me/notifications")).json()
+    matching = [
+        n for n in notes
+        if n["kind"] == "proposal.created"
+        and n["payload"].get("proposal_id") == pid
+    ]
+    assert len(matching) == 1, (
+        "expected proposal.created in the other member's inbox; "
+        f"got: {[n['kind'] for n in notes]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_funding_request_notifies_other_members(client):
+    """Same gap as payment-request, on the parent-community side."""
+    founder_id = await _login(client, "fund-notif-founder@example.com")
+    parent = (
+        await client.post("/communities", json={
+            "name": "ParentFund",
+            "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+    # Land a second member.
+    client.cookies.clear()
+    other_id = await _login(client, "fund-notif-other@example.com")
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": other_id,
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": other_id,
+    })
+    mid = resp.json()["id"]
+    await client.patch(f"/proposals/{mid}/submit")
+    client.cookies.clear()
+    await _login(client, "fund-notif-founder@example.com")
+    await client.post(
+        f"/proposals/{mid}/support", json={"user_id": founder_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{parent['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+
+    # Founder lands an action under the parent.
+    add = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": founder_id,
+        "proposal_type": "AddAction",
+        "proposal_text": "side gig",
+        "val_text": "Side",
+    })
+    add_pid = add.json()["id"]
+    await client.patch(f"/proposals/{add_pid}/submit")
+    await client.post(f"/proposals/{add_pid}/support", json={"user_id": founder_id})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{parent['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+    actions = (await client.get(f"/communities/{parent['id']}/actions")).json()
+    action_id = actions[0]["action_id"]
+
+    # Founder files the funding-request.
+    r = await client.post(
+        f"/actions/{action_id}/funding-request",
+        json={"amount": "30", "pitch": "tools"},
+    )
+    assert r.status_code == 200, r.text
+    pid = r.json()["proposal_id"]
+
+    # Other member's inbox should carry the proposal.created.
+    client.cookies.clear()
+    await _login(client, "fund-notif-other@example.com")
+    notes = (await client.get("/users/me/notifications")).json()
+    matching = [
+        n for n in notes
+        if n["kind"] == "proposal.created"
+        and n["payload"].get("proposal_id") == pid
+    ]
+    assert len(matching) == 1
+
+
+@pytest.mark.asyncio
 async def test_payment_request_rejects_bad_amounts(client):
     """A bare Decimal() accepts '-5' and 'Infinity' — letting either
     through writes a bogus Payment proposal that the executor will
