@@ -269,15 +269,22 @@ async def file_payment_request(
             detail="Community doesn't have the Financial module enabled.",
         )
     # Early check that this is a leaf — saves a pointless proposal.
-    has_children = (
+    # Match `status == ACTIVE` so an EndAction'd sub-Action (which
+    # leaves an INACTIVE Action row behind for audit) doesn't
+    # permanently block its parent from filing Payment again.
+    from kbz.enums import CommunityStatus as _CommunityStatus
+    has_active_children = (
         await db.execute(
-            select(Action).where(Action.parent_community_id == community_id)
+            select(Action).where(
+                Action.parent_community_id == community_id,
+                Action.status == _CommunityStatus.ACTIVE,
+            )
         )
     ).first() is not None
-    if has_children:
+    if has_active_children:
         raise HTTPException(
             status_code=409,
-            detail="This community has sub-actions. Only leaf communities may file Payment.",
+            detail="This community has active sub-actions. Only leaf communities may file Payment.",
         )
     try:
         Decimal(body.amount)

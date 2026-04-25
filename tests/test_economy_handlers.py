@@ -221,6 +221,50 @@ async def test_payment_refused_when_community_has_children(sf):
         assert w.balance == Decimal("50")  # untouched
 
 
+@pytest.mark.asyncio
+async def test_payment_allowed_when_only_inactive_children(sf):
+    """An EndAction'd sub-Action leaves the Action row at
+    status=INACTIVE for audit. The leaf-only check on Payment must
+    ignore inactive children — otherwise closing the last child
+    permanently blocks the parent from filing further Payments.
+    """
+    async with sf() as db:
+        from kbz.enums import CommunityStatus
+        parent = await _mk_community(db, financial=True, name="now-leaf")
+        # Create an action and immediately mark it INACTIVE — the
+        # post-close audit residue.
+        action_id = uuid.uuid4()
+        db.add(
+            Action(
+                action_id=action_id,
+                parent_community_id=parent,
+                status=CommunityStatus.INACTIVE,
+            )
+        )
+        await db.commit()
+
+        svc = WalletService(db)
+        w = await svc.get_or_create(OWNER_COMMUNITY, parent)
+        await svc.mint(w, "50", webhook_event="seed", external_ref="r")
+        await db.commit()
+
+        prop = await _mk_proposal(
+            db,
+            community_id=parent,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.PAYMENT,
+            val_text="20",
+        )
+        await db.commit()
+
+        await ExecutionService(db)._exec_payment(prop)
+        await db.commit()
+        w = (await db.execute(select(Wallet).where(Wallet.id == w.id))).scalar_one()
+        # Burned 20 — payment was allowed because the only child is
+        # INACTIVE.
+        assert w.balance == Decimal("30")
+
+
 # ── PayBack: inverse of payment → mint into community ──────────────
 
 @pytest.mark.asyncio

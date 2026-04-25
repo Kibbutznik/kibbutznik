@@ -260,12 +260,21 @@ class ExecutionService:
         # community. But if this proposal was filed against the root
         # community (not inside an action tree), Payment is still
         # allowed — we burn from the root wallet.
-        has_children = (
+        #
+        # Filter on `status == ACTIVE` — an EndAction'd sub-action
+        # leaves its Action row in place at status=INACTIVE for audit.
+        # Without the status filter, closing the last child action
+        # would leave the parent permanently unable to file Payment
+        # because the dead-but-present row keeps tripping this check.
+        has_active_children = (
             await self.db.execute(
-                select(Action).where(Action.parent_community_id == proposal.community_id)
+                select(Action).where(
+                    Action.parent_community_id == proposal.community_id,
+                    Action.status == CommunityStatus.ACTIVE,
+                )
             )
         ).first() is not None
-        if has_children:
+        if has_active_children:
             logger.warning(
                 "Payment %s refused — community %s has active sub-actions "
                 "(leaf-only rule)", proposal.id, proposal.community_id,
