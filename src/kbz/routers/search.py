@@ -34,6 +34,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
+from kbz.enums import StatementStatus
 from kbz.models.community import Community
 from kbz.models.proposal import Proposal
 from kbz.models.statement import Statement
@@ -137,7 +138,12 @@ async def search(
             ))
 
     if kind in (None, "statement"):
+        # Mirror the canonical /communities/{id}/statements listing:
+        # REMOVED statements are hidden everywhere else, so showing
+        # them in search would surface text the community already
+        # voted to retract.
         stmt = select(Statement).where(
+            Statement.status == StatementStatus.ACTIVE,
             func.lower(Statement.statement_text).like(pattern, escape="\\"),
         )
         if community_id is not None:

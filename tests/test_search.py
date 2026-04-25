@@ -99,6 +99,48 @@ async def test_search_rejects_empty_query(client):
 
 
 @pytest.mark.asyncio
+async def test_search_excludes_removed_statements(client):
+    """A statement that has been REMOVED (via accepted RemoveStatement
+    or ReplaceStatement) must NOT appear in search results. The
+    canonical /communities/{id}/statements listing already filters by
+    StatementStatus.ACTIVE; search has to mirror that or it surfaces
+    text the community already voted to retract."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # Land an ACTIVE statement.
+    add = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "members publish weekly QQQzap digests",
+    })
+    add_pid = add.json()["id"]
+    await _accept(client, community["id"], user["id"], add_pid)
+
+    # Confirm the statement shows up in search before removal.
+    pre = await client.get("/search", params={"q": "QQQzap", "kind": "statement"})
+    pre_hits = pre.json()
+    assert any(h["kind"] == "statement" for h in pre_hits), pre.text
+
+    # Find the statement id and remove it via RemoveStatement proposal.
+    stmts = await client.get(f"/communities/{community['id']}/statements")
+    target = next(s for s in stmts.json() if "QQQzap" in s["statement_text"])
+    rem = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "RemoveStatement",
+        "proposal_text": "retract the digest commitment",
+        "val_uuid": target["id"],
+    })
+    rem_pid = rem.json()["id"]
+    await _accept(client, community["id"], user["id"], rem_pid)
+
+    # Statement is gone from /statements listing — and must also be
+    # gone from /search.
+    after = await client.get("/search", params={"q": "QQQzap", "kind": "statement"})
+    assert all(h["kind"] != "statement" for h in after.json()), after.text
+
+
+@pytest.mark.asyncio
 async def test_search_escapes_like_wildcards(client):
     """A query of '_' or '%' must NOT match every row; the
     wildcards are escaped before being passed to LIKE."""
