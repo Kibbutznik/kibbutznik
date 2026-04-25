@@ -140,6 +140,82 @@ async def test_remove_artifact_marks_retired(db):
 
 
 @pytest.mark.asyncio
+async def test_exec_edit_artifact_refuses_cross_community_target(db):
+    """An accepted EditArtifact in community A whose val_uuid points
+    at an artifact in community B must NOT mutate B's artifact.
+    Without the executor's per-community guard, A could rewrite B's
+    text just by accepting a proposal that carried a foreign val_uuid.
+    """
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha")
+    b_comm = await _mk_community(db, "Bravo")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+    b_proposal = await _mk_proposal(db, b_comm.id, user)
+    b_art = await svc.create_artifact(
+        b_container.id, "Bravo's text", "title", user, b_proposal.id,
+    )
+
+    # Forge an accepted EditArtifact in A whose val_uuid points at B's row.
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.EDIT_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="overwritten by Alpha",
+        val_text="hijacked title",
+        val_uuid=b_art.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    await db.refresh(b_art)
+    assert b_art.content == "Bravo's text"
+    assert b_art.title == "title"
+
+
+@pytest.mark.asyncio
+async def test_exec_remove_artifact_refuses_cross_community_target(db):
+    """Same guard for RemoveArtifact: A cannot retire B's artifact."""
+    from kbz.services.execution_service import ExecutionService
+    a_comm = await _mk_community(db, "Alpha2")
+    b_comm = await _mk_community(db, "Bravo2")
+    user = uuid.uuid4()
+
+    svc = ArtifactService(db)
+    b_container = await svc.create_root_container(b_comm.id)
+    b_proposal = await _mk_proposal(db, b_comm.id, user)
+    b_art = await svc.create_artifact(
+        b_container.id, "B content", "B title", user, b_proposal.id,
+    )
+
+    hijack = Proposal(
+        id=uuid.uuid4(),
+        community_id=a_comm.id,
+        user_id=user,
+        proposal_type=ProposalType.REMOVE_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="",
+        val_text="",
+        val_uuid=b_art.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(hijack)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(hijack)
+    await db.refresh(b_art)
+    assert b_art.status == ArtifactStatus.ACTIVE
+
+
+@pytest.mark.asyncio
 async def test_delegate_requires_direct_child_action(db):
     parent = await _mk_community(db, "Parent")
     child = await _mk_child_action(db, parent, "Child")

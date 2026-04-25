@@ -390,9 +390,32 @@ class ExecutionService:
         except ArtifactServiceError as e:
             logger.warning("CreateArtifact %s failed: %s", proposal.id, e)
 
+    async def _artifact_belongs_to(
+        self, artifact_id: uuid.UUID, community_id: uuid.UUID,
+    ) -> bool:
+        """Used by Edit/Remove artifact executors to refuse cross-community
+        targets — without this, an accepted EditArtifact in community A
+        whose val_uuid pointed at an artifact in community B would let A
+        rewrite B's text. The guard is here in the executor (rather than
+        deep inside ArtifactService) so the per-community-scope check
+        lives next to the proposal that authorized it."""
+        from kbz.models.artifact import Artifact
+        row = (
+            await self.db.execute(
+                select(Artifact.community_id).where(Artifact.id == artifact_id)
+            )
+        ).scalar_one_or_none()
+        return row is not None and row == community_id
+
     async def _exec_edit_artifact(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             logger.warning("EditArtifact %s missing val_uuid (artifact_id)", proposal.id)
+            return
+        if not await self._artifact_belongs_to(proposal.val_uuid, proposal.community_id):
+            logger.warning(
+                "EditArtifact %s val_uuid %s targets a foreign or missing artifact — refused",
+                proposal.id, proposal.val_uuid,
+            )
             return
         try:
             await ArtifactService(self.db).edit_artifact(
@@ -408,6 +431,12 @@ class ExecutionService:
     async def _exec_remove_artifact(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             logger.warning("RemoveArtifact %s missing val_uuid (artifact_id)", proposal.id)
+            return
+        if not await self._artifact_belongs_to(proposal.val_uuid, proposal.community_id):
+            logger.warning(
+                "RemoveArtifact %s val_uuid %s targets a foreign or missing artifact — refused",
+                proposal.id, proposal.val_uuid,
+            )
             return
         try:
             await ArtifactService(self.db).remove_artifact(proposal.val_uuid)
