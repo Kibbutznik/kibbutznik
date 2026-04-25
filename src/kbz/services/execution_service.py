@@ -156,6 +156,24 @@ class ExecutionService:
     async def _exec_end_action(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             return
+        # Parent → child-action only, same shape as the Funding guard.
+        # Without this, an accepted EndAction in community A whose
+        # val_uuid pointed at an action under community B would
+        # silently mark B's action + sub-community INACTIVE *and*
+        # sweep its wallet up to A. Refuse cross-tree targets.
+        action_parent = (
+            await self.db.execute(
+                select(Action.parent_community_id).where(
+                    Action.action_id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if action_parent is None or action_parent != proposal.community_id:
+            logger.warning(
+                "EndAction %s val_uuid %s is not a direct child action of community %s — refused",
+                proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
         ended_action_id = str(proposal.val_uuid)
 
         # Sweep the ending action's wallet balance up to its parent
@@ -207,9 +225,27 @@ class ExecutionService:
         await self.db.flush()
 
     async def _exec_join_action(self, proposal: Proposal) -> None:
-        if proposal.val_uuid:
-            member_svc = MemberService(self.db)
-            await member_svc.create(proposal.val_uuid, proposal.user_id)
+        if not proposal.val_uuid:
+            return
+        # Parent → child-action only. JoinAction in community A naming
+        # an action that belongs to B's tree would otherwise let A's
+        # vote add the proposer to one of B's actions — bypassing B's
+        # governance over its own membership.
+        action_parent = (
+            await self.db.execute(
+                select(Action.parent_community_id).where(
+                    Action.action_id == proposal.val_uuid
+                )
+            )
+        ).scalar_one_or_none()
+        if action_parent is None or action_parent != proposal.community_id:
+            logger.warning(
+                "JoinAction %s val_uuid %s is not a direct child action of community %s — refused",
+                proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
+        member_svc = MemberService(self.db)
+        await member_svc.create(proposal.val_uuid, proposal.user_id)
 
     async def _exec_set_membership_handler(self, proposal: Proposal) -> None:
         if proposal.val_uuid:
