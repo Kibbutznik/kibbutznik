@@ -21,7 +21,14 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = 'f0a1b2c3d4e5'
-down_revision: Union[str, None] = 'm1n2o3p4q5r6'
+# Chain after the flags head (p1q2r3s4t5u6) so alembic has a single
+# head. Originally pointed at m1n2o3p4q5r6 which created a sibling
+# branch alongside the d8e9f0a1b2c3 → p1q2r3s4t5u6 chain. Both
+# migrations are independent (this adds Proposal columns; flags
+# adds a separate table) so chain order doesn't matter
+# operationally — we just need a single head for `alembic upgrade
+# head` to work.
+down_revision: Union[str, None] = 'p1q2r3s4t5u6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

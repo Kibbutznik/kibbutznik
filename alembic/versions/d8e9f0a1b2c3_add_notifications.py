@@ -17,7 +17,14 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = 'd8e9f0a1b2c3'
-down_revision: Union[str, None] = 'e9f0a1b2c3d4'
+# Chain after m1n2o3p4q5r6 (users_email_unique) so the alembic
+# graph stays single-headed once flags + amendment chain land.
+# Originally pointed at e9f0a1b2c3d4 (reasons) which left
+# n2o3p4q5r6s7 → m1n2o3p4q5r6 as a sibling branch. Notifications
+# is independent of every migration between e9f0a1b2c3d4 and
+# m1n2o3p4q5r6 (separate tables / columns) so the order shift is
+# purely structural.
+down_revision: Union[str, None] = 'm1n2o3p4q5r6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
