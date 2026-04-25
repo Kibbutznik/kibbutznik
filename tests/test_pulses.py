@@ -3,6 +3,83 @@ from tests.conftest import create_test_user, create_test_community
 
 
 @pytest.mark.asyncio
+async def test_pulse_support_race_returns_409_not_500(client, monkeypatch):
+    """Race-window safety net: if two concurrent same-user
+    pulse_supports both pass the existence check before either
+    commits, the loser must see a 409 (not a 500 IntegrityError
+    crash). Force the loser's path by monkey-patching the dedupe
+    SELECT inside the service to always return "no duplicate",
+    while keeping a real prior support row in the DB."""
+    import uuid as _uuid
+    from kbz.services import support_service as _ss
+
+    # 3-member community so PulseSupport threshold is 2 — a single
+    # supporter doesn't trigger execute_pulse and doesn't churn
+    # the "next" pulse out from under us.
+    founder = await create_test_user(client, "race-mp-f")
+    a = await create_test_user(client, "race-mp-a")
+    b = await create_test_user(client, "race-mp-b")
+    community = await create_test_community(client, founder["id"])
+    for joiner in (a, b):
+        resp = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": joiner["id"],
+            "proposal_type": "Membership",
+            "proposal_text": "join",
+            "val_uuid": joiner["id"],
+        })
+        pid = resp.json()["id"]
+        await client.patch(f"/proposals/{pid}/submit")
+        await client.post(
+            f"/proposals/{pid}/support", json={"user_id": founder["id"]},
+        )
+        for _ in range(2):
+            await client.post(
+                f"/communities/{community['id']}/pulses/support",
+                json={"user_id": founder["id"]},
+            )
+
+    # Founder pulse-supports legitimately. With 3 members @ 50%
+    # threshold is 2 — this one support does NOT fire execute,
+    # so the (founder, pulse) row survives.
+    resp = await client.post(
+        f"/communities/{community['id']}/pulses/support",
+        json={"user_id": founder["id"]},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["pulse_triggered"] is False
+
+    # Now monkey-patch the dedupe SELECT to return None so the
+    # loser's-path code goes ahead and tries to insert again.
+    real_execute = _ss.AsyncSession.execute
+
+    async def execute_skipping_dupcheck(self, stmt, *args, **kwargs):
+        s = str(stmt)
+        if (
+            "FROM pulse_supports" in s
+            and "WHERE" in s
+            and "pulse_supports.user_id" in s
+        ):
+            class _Empty:
+                def scalar_one_or_none(self):
+                    return None
+            return _Empty()
+        return await real_execute(self, stmt, *args, **kwargs)
+
+    monkeypatch.setattr(_ss.AsyncSession, "execute", execute_skipping_dupcheck)
+
+    # Re-fire as the same founder. Without the IntegrityError
+    # catch, this would explode with a 500 on commit. With the
+    # catch, we get a clean 409.
+    resp = await client.post(
+        f"/communities/{community['id']}/pulses/support",
+        json={"user_id": founder["id"]},
+    )
+    assert resp.status_code == 409, (
+        f"expected 409, got {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_pulse_support(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

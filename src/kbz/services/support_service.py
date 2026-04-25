@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import HTTPException
 from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import MemberStatus, PulseStatus, ProposalStatus
@@ -120,35 +121,50 @@ class SupportService:
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Already supporting this pulse")
 
-        # Add support
-        ps = PulseSupport(user_id=user_id, pulse_id=pulse.id, community_id=community_id)
-        self.db.add(ps)
-
-        # Increment counter
-        await self.db.execute(
-            update(Pulse)
-            .where(Pulse.id == pulse.id)
-            .values(support_count=Pulse.support_count + 1)
-        )
-        # Recalculate threshold from current membership (may have changed since
-        # the pulse was created — e.g. members left or were thrown out).
-        member_result = await self.db.execute(
-            select(Member).where(
-                Member.community_id == community_id,
-                Member.status == MemberStatus.ACTIVE,
+        # Add support + increment counter + recalc threshold inside
+        # one try/except. The IntegrityError can fire on either
+        # autoflush (the next SELECT/UPDATE forces the pending
+        # PulseSupport INSERT) or on the explicit commit at the
+        # end. Both paths land here. Race-window safety net: two
+        # concurrent supporters from the SAME user can both pass
+        # the existence check above and only get caught by the
+        # (user_id, pulse_id) primary key. Without this guard the
+        # loser sees a 500 instead of a clean 409.
+        try:
+            ps = PulseSupport(
+                user_id=user_id, pulse_id=pulse.id, community_id=community_id,
             )
-        )
-        current_members = len(member_result.scalars().all())
-        if current_members > 0:
-            from kbz.services.community_service import CommunityService
-            csvc = CommunityService(self.db)
-            pct_str = await csvc.get_variable_value(community_id, "PulseSupport")
-            pulse_support_pct = int(float(pct_str)) if pct_str else 50
-            correct_threshold = max(1, math.ceil(current_members * pulse_support_pct / 100))
-            if pulse.threshold != correct_threshold:
-                pulse.threshold = correct_threshold
+            self.db.add(ps)
 
-        await self.db.commit()
+            await self.db.execute(
+                update(Pulse)
+                .where(Pulse.id == pulse.id)
+                .values(support_count=Pulse.support_count + 1)
+            )
+            # Recalculate threshold from current membership (may have changed since
+            # the pulse was created — e.g. members left or were thrown out).
+            member_result = await self.db.execute(
+                select(Member).where(
+                    Member.community_id == community_id,
+                    Member.status == MemberStatus.ACTIVE,
+                )
+            )
+            current_members = len(member_result.scalars().all())
+            if current_members > 0:
+                from kbz.services.community_service import CommunityService
+                csvc = CommunityService(self.db)
+                pct_str = await csvc.get_variable_value(community_id, "PulseSupport")
+                pulse_support_pct = int(float(pct_str)) if pct_str else 50
+                correct_threshold = max(1, math.ceil(current_members * pulse_support_pct / 100))
+                if pulse.threshold != correct_threshold:
+                    pulse.threshold = correct_threshold
+
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=409, detail="Already supporting this pulse",
+            )
 
         # Refresh and check threshold
         await self.db.refresh(pulse)
