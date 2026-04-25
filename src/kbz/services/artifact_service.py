@@ -284,6 +284,20 @@ class ArtifactService:
             raise ArtifactServiceError(
                 f"Source artifact {source_artifact_id} is a Plan — Plans cannot be delegated"
             )
+        # The source artifact must belong to the delegating
+        # community. Without this check, an accepted DelegateArtifact
+        # in community A could point its `val_uuid` at an artifact
+        # in B and a `val_text` at one of A's child actions; the
+        # resulting delegated container would carry
+        # `delegated_from_artifact_id == B's artifact`, and on
+        # commit, _exec_commit_artifact creates a Draft
+        # EditArtifact in `source.community_id` — i.e. B —
+        # without B ever authorizing the cross-tree linkage.
+        if source.community_id != delegating_proposal.community_id:
+            raise ArtifactServiceError(
+                "Source artifact must belong to the proposing community — "
+                "cross-community delegation is not allowed"
+            )
 
         # Validate target is a direct child Action of the proposing community.
         result = await self.db.execute(
