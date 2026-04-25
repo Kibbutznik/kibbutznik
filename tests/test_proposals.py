@@ -283,6 +283,74 @@ async def test_throw_out_cooldown_blocks_repeat_against_same_target(client):
 
 
 @pytest.mark.asyncio
+async def test_throw_out_cooldown_anchors_on_decision_time_not_creation(client, db):
+    """Repro for the cooldown anchoring bug: a ThrowOut filed long ago
+    that was decided MOMENTS ago must still trigger the cooldown.
+
+    The buggy implementation filtered on `Proposal.created_at >= cutoff`,
+    so a 25h-old proposal that decided 5 minutes ago slipped through —
+    the pitchfork could swing again instantly. Fix anchors on
+    coalesce(decided_at, created_at) so decision time wins when present.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select as _select
+
+    from kbz.enums import ProposalStatus, ProposalType
+    from kbz.models.member import Member
+    from kbz.models.proposal import Proposal
+
+    founder = await create_test_user(client, "cd-anchor-f")
+    target = await create_test_user(client, "cd-anchor-t")
+    community = await create_test_community(client, founder["id"])
+
+    # Land target as a member so a fresh ThrowOut against them is
+    # the right shape (existing-member target).
+    db.add(
+        Member(
+            community_id=_uuid.UUID(community["id"]),
+            user_id=_uuid.UUID(target["id"]),
+            seniority=0,
+        )
+    )
+    await db.commit()
+
+    # Inject a previously-decided ThrowOut directly: created 25h ago
+    # (before the cutoff window), but decided just now (inside it).
+    # Without the fix, the created_at check kicks it out of the
+    # cooldown query → fresh ThrowOut succeeds.
+    now = datetime.now(timezone.utc)
+    db.add(
+        Proposal(
+            id=_uuid.uuid4(),
+            community_id=_uuid.UUID(community["id"]),
+            user_id=_uuid.UUID(founder["id"]),
+            proposal_type=ProposalType.THROW_OUT,
+            proposal_status=ProposalStatus.REJECTED,
+            proposal_text="ancient grudge",
+            val_uuid=_uuid.UUID(target["id"]),
+            val_text="",
+            age=0,
+            support_count=0,
+            created_at=now - timedelta(hours=25),
+            decided_at=now - timedelta(minutes=5),
+        )
+    )
+    await db.commit()
+
+    # Fresh ThrowOut against the same target must 429 — decision was
+    # 5 minutes ago, well inside the 24h cooldown window.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "second swing same hour",
+        "val_uuid": target["id"],
+    })
+    assert resp.status_code == 429, resp.text
+    assert "cooldown" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])

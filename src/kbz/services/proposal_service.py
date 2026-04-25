@@ -189,6 +189,16 @@ class ProposalService:
             cutoff = datetime.now(timezone.utc) - timedelta(
                 hours=THROW_OUT_COOLDOWN_HOURS,
             )
+            # Anchor the cooldown on DECISION time, not creation. A
+            # ThrowOut filed 25h ago that decided 5min ago must still
+            # block a fresh ThrowOut against the same target — the
+            # whole point is to dampen pitchfork waves once the
+            # community has spoken. Old (pre-audit-log) rows with no
+            # decided_at fall back to created_at so we don't suddenly
+            # block ThrowOuts forever on legacy data.
+            decision_time = func.coalesce(
+                Proposal.decided_at, Proposal.created_at,
+            )
             recent = (
                 await self.db.execute(
                     select(Proposal).where(
@@ -200,7 +210,7 @@ class ProposalService:
                             ProposalStatus.REJECTED,
                             ProposalStatus.CANCELED,
                         )),
-                        Proposal.created_at >= cutoff,
+                        decision_time >= cutoff,
                     )
                     .limit(1)
                 )
