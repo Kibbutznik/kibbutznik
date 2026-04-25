@@ -552,3 +552,59 @@ async def test_end_action_refunds_inside_membership_escrows(sf):
             "EndAction auto-canceled the inside Membership proposal but "
             "did NOT refund its escrow — applicant's credits leaked."
         )
+
+
+@pytest.mark.asyncio
+async def test_funding_refuses_inactive_action(sf):
+    """An accepted Funding into an INACTIVE (already-ended) action
+    must NOT deposit to its wallet. Pre-fix the deposit landed
+    in the orphaned action wallet with no path to ever leave —
+    funds permanently stuck."""
+    async with sf() as db:
+        parent = await _mk_community(db, financial=True, name="parent-inactive")
+        action = await _mk_action(db, parent)
+        # Mark the Action row INACTIVE (mimics post-EndAction state).
+        await db.execute(
+            select(Action).where(Action.action_id == action)
+        )  # noqa: simulate state
+        from sqlalchemy import update as _update
+        await db.execute(
+            _update(Action)
+            .where(Action.action_id == action)
+            .values(status=CommunityStatus.INACTIVE)
+        )
+        await db.commit()
+
+        svc = WalletService(db)
+        parent_w = await svc.get_or_create(OWNER_COMMUNITY, parent)
+        await svc.mint(parent_w, "100", webhook_event="seed", external_ref="r")
+        await db.commit()
+
+        prop = await _mk_proposal(
+            db,
+            community_id=parent,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.FUNDING,
+            val_uuid=action,
+            val_text="30",
+        )
+        await db.commit()
+
+        await ExecutionService(db)._exec_funding(prop)
+        await db.commit()
+
+        # Parent wallet untouched — no transfer happened.
+        parent_w = (
+            await db.execute(select(Wallet).where(Wallet.id == parent_w.id))
+        ).scalar_one()
+        assert parent_w.balance == Decimal("100")
+        # No action wallet was created.
+        action_w = (
+            await db.execute(
+                select(Wallet).where(
+                    Wallet.owner_kind == OWNER_ACTION,
+                    Wallet.owner_id == action,
+                )
+            )
+        ).scalar_one_or_none()
+        assert action_w is None
