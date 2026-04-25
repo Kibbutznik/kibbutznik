@@ -22,6 +22,7 @@ from kbz.routers import (
     proposals,
     pulses,
     reasons,
+    reports,
     search,
     statements,
     tkg,
@@ -55,6 +56,7 @@ app.include_router(members.router, tags=["members"])
 app.include_router(proposals.router, tags=["proposals"])
 app.include_router(pulses.router, tags=["pulses"])
 app.include_router(reasons.router, tags=["reasons"])
+app.include_router(reports.router, tags=["reports"])
 app.include_router(statements.router, tags=["statements"])
 app.include_router(actions.router, tags=["actions"])
 app.include_router(comments.router, tags=["comments"])

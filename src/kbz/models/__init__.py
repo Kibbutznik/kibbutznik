@@ -18,6 +18,7 @@ from kbz.models.auth import AuthToken, Invite
 from kbz.models.bot_profile import BotProfile
 from kbz.models.wallet import LedgerEntry, Wallet, WalletWebhookEvent
 from kbz.models.reason import Reason
+from kbz.models.report import Report
 
 __all__ = [
     "Base",
@@ -48,4 +49,5 @@ __all__ = [
     "LedgerEntry",
     "WalletWebhookEvent",
     "Reason",
+    "Report",
 ]
