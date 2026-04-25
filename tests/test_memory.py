@@ -185,6 +185,69 @@ async def test_update_memory_no_fields_returns_400(client):
     assert resp.status_code == 400
 
 
+async def _login_email(client, email: str) -> str:
+    """Magic-link login. Returns user_id; leaves session cookie set."""
+    r = await client.post("/auth/request-magic-link", json={"email": email})
+    r = await client.get(r.json()["link"])
+    return r.json()["user"]["user_id"]
+
+
+@pytest.mark.asyncio
+async def test_create_memory_session_spoof_blocked(client):
+    """A logged-in human can't POST a memory with someone else's
+    user_id. Pre-fix the endpoint had ZERO ownership binding, so any
+    logged-in user could spam memories into another user's account."""
+    victim = await create_test_user(client)
+    await _login_email(client, "mem-attacker@example.com")
+    r = await client.post("/memories", json={
+        "user_id": victim["id"],
+        "memory_type": "episodic",
+        "content": "implanted memory",
+        "importance": 0.5,
+    })
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_memory_session_spoof_blocked(client):
+    """A logged-in human can't PUT changes to someone else's memory.
+    Pre-fix anyone could rewrite anyone's memories."""
+    victim = await create_test_user(client)
+    # Victim's memory is created without a session.
+    r = await client.post("/memories", json={
+        "user_id": victim["id"], "memory_type": "goal",
+        "content": "original", "importance": 0.5,
+    })
+    mem_id = r.json()["id"]
+    # Attacker logs in.
+    await _login_email(client, "mem-update-attacker@example.com")
+    r = await client.put(f"/memories/{mem_id}", json={"content": "hijacked"})
+    assert r.status_code == 403
+    # Victim's memory is unchanged. (Re-read via GET — public.)
+    r = await client.get(f"/memories/{victim['id']}")
+    assert r.json()[0]["content"] == "original"
+
+
+@pytest.mark.asyncio
+async def test_prune_session_spoof_blocked(client):
+    """DELETE /memories/prune/{user_id} for a foreign user must 403.
+    Pre-fix anyone could wipe anyone's memories with one curl."""
+    victim = await create_test_user(client)
+    await client.post("/memories", json={
+        "user_id": victim["id"], "memory_type": "goal",
+        "content": "do not delete me", "importance": 0.5,
+        "round_num": 0, "expires_at": 1,
+    })
+    await _login_email(client, "mem-prune-attacker@example.com")
+    r = await client.delete(
+        f"/memories/prune/{victim['id']}?current_round=99",
+    )
+    assert r.status_code == 403
+    # Victim's memory is unchanged.
+    r = await client.get(f"/memories/{victim['id']}")
+    assert len(r.json()) == 1
+
+
 @pytest.mark.asyncio
 async def test_create_memory_rejects_unknown_memory_type(client):
     """Typos like `episodc` produce dead rows that no filter retrieves —
