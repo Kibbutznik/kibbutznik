@@ -99,7 +99,6 @@ async def test_list_proposals_respects_limit_and_offset(client):
     assert r.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_per_member_proposal_cap_blocks_sixth_in_flight(client):
     """Default ProposalRateLimit is 5 — the 6th in-flight proposal
     by the same author 429s until earlier ones land or get canceled."""
@@ -403,6 +402,160 @@ async def test_proposal_support_race_returns_409_not_500(client, monkeypatch):
     assert resp.status_code == 409, (
         f"expected 409, got {resp.status_code}: {resp.text}"
     )
+
+
+@pytest.mark.asyncio
+async def test_amend_proposal_creates_successor_and_cancels_original(client):
+    """Amending a Draft/OutThere proposal moves the original to
+    CANCELED and creates a successor whose parent_proposal_id chains
+    back. Version increments. The successor lands as DRAFT — the
+    author has to re-submit and re-collect support, same way /edit
+    forces re-evaluation."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "we publish weekly digests",
+        "pitch": "transparency builds trust",
+    })
+    original = resp.json()
+    assert original["version"] == 1
+    assert original["parent_proposal_id"] is None
+
+    resp = await client.post(f"/proposals/{original['id']}/amend", json={
+        "user_id": user["id"],
+        "proposal_text": "we publish biweekly digests",
+        "pitch": "biweekly is more sustainable than weekly",
+    })
+    assert resp.status_code == 201, resp.text
+    successor = resp.json()
+    assert successor["proposal_text"] == "we publish biweekly digests"
+    assert successor["pitch"] == "biweekly is more sustainable than weekly"
+    assert successor["parent_proposal_id"] == original["id"]
+    assert successor["version"] == 2
+    assert successor["proposal_status"] == "Draft"
+
+    # Original got CANCELED.
+    resp = await client.get(f"/proposals/{original['id']}")
+    assert resp.json()["proposal_status"] == "Canceled"
+
+
+@pytest.mark.asyncio
+async def test_amend_only_by_author(client):
+    """Strangers can't amend — only the original author."""
+    founder = await create_test_user(client, "amend-author")
+    intruder = await create_test_user(client, "amend-intruder")
+    community = await create_test_community(client, founder["id"])
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "x",
+    })
+    pid = resp.json()["id"]
+
+    resp = await client.post(f"/proposals/{pid}/amend", json={
+        "user_id": intruder["id"],
+        "proposal_text": "y",
+    })
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_amend_rejected_after_on_the_air(client):
+    """Once a proposal is OnTheAir / Accepted / Rejected the train
+    has left — /amend must 400 with a clear reason."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "we move fast",
+    })
+    pid = resp.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(
+        f"/proposals/{pid}/support", json={"user_id": user["id"]},
+    )
+    # One pulse promotes OutThere → OnTheAir.
+    await client.post(
+        f"/communities/{community['id']}/pulses/support",
+        json={"user_id": user["id"]},
+    )
+
+    resp = await client.post(f"/proposals/{pid}/amend", json={
+        "user_id": user["id"],
+        "proposal_text": "we move slow",
+    })
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_amend_with_no_changes_rejected(client):
+    """An amend that touches nothing is almost certainly a client
+    bug. Refuse so we don't bloat the chain with empty successors."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "x",
+    })
+    pid = resp.json()["id"]
+    resp = await client.post(f"/proposals/{pid}/amend", json={
+        "user_id": user["id"],
+    })
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_amend_chain_returned_oldest_first(client):
+    """GET /proposals/{id}/versions returns the chain ending at the
+    given id, oldest-first. Useful for rendering "v1 → v2 → v3 (you
+    are here)" without N+1 walks."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "v1",
+    })
+    v1 = resp.json()
+
+    resp = await client.post(f"/proposals/{v1['id']}/amend", json={
+        "user_id": user["id"],
+        "proposal_text": "v2",
+    })
+    v2 = resp.json()
+
+    resp = await client.post(f"/proposals/{v2['id']}/amend", json={
+        "user_id": user["id"],
+        "proposal_text": "v3",
+    })
+    v3 = resp.json()
+
+    resp = await client.get(f"/proposals/{v3['id']}/versions")
+    assert resp.status_code == 200
+    chain = resp.json()
+    texts = [p["proposal_text"] for p in chain]
+    assert texts == ["v1", "v2", "v3"]
+    versions = [p["version"] for p in chain]
+    assert versions == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_amend_404_for_unknown(client):
+    user = await create_test_user(client)
+    bogus = "00000000-0000-0000-0000-000000000099"
+    resp = await client.post(f"/proposals/{bogus}/amend", json={
+        "user_id": user["id"],
+        "proposal_text": "into the void",
+    })
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio

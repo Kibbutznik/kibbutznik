@@ -39,10 +39,26 @@ class Proposal(Base):
     decided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
+    # Amendment chain. When a proposal is amended via /amend, we
+    # CANCEL the original and create a successor row whose
+    # parent_proposal_id points back here and whose version is
+    # original.version + 1. The chain is read-mostly: clients
+    # render "v2 of …" by walking back through parent ids. We
+    # keep `version` denormalized so the dashboard doesn't have
+    # to walk the whole chain every render.
+    parent_proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True,
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
     __table_args__ = (
         Index("idx_proposals_community_status", "community_id", "proposal_status"),
         Index("idx_proposals_type", "community_id", "proposal_type"),
         Index("idx_proposals_pulse", "pulse_id"),
+        # Amendment-chain lookups: "find the predecessor of this row"
+        # is a unique-ish parent walk; the index keeps it O(1).
+        Index("idx_proposals_parent", "parent_proposal_id"),
     )
