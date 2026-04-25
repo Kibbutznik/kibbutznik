@@ -14,6 +14,7 @@ from kbz.routers import (
     comments,
     export as export_router,
     communities,
+    flags,
     invites,
     me,
     members,
@@ -67,6 +68,7 @@ app.include_router(tkg.router)
 app.include_router(metrics.router)
 app.include_router(export_router.router, tags=["export"])
 app.include_router(search.router, tags=["search"])
+app.include_router(flags.router, tags=["flags"])
 app.include_router(auth.router)
 app.include_router(invites.router)
 app.include_router(me.router)
