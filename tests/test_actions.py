@@ -390,3 +390,119 @@ async def test_join_action_refuses_when_proposer_thrown_out_of_parent(client, db
         f"thrown-out parent member should not be added to action; "
         f"got Member rows: {[(r.community_id, r.status) for r in rows]}"
     )
+
+
+@pytest.mark.asyncio
+async def test_end_action_cancels_inside_draft_proposals(client):
+    """Pre-fix _exec_end_action only auto-canceled in-flight proposals
+    in OUT_THERE/ON_THE_AIR. DRAFT proposals filed inside the action
+    (but not yet submitted) were left stranded — the create-time gate
+    blocks NEW filings into the now-INACTIVE community, so the
+    author's existing Drafts had no path to terminal status, kept
+    counting against their ProposalRateLimit forever, and showed up
+    in the "your in-flight proposals" view as ghosts they couldn't
+    submit (the submit gate refuses INACTIVE communities) and
+    couldn't cleanly resolve. Now they're auto-canceled with
+    decided_at stamped, same as OUT_THERE/ON_THE_AIR siblings."""
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+
+    # Create an action under the parent.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddAction",
+        "proposal_text": "Working group",
+        "val_text": "WG",
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+    action_id = (await client.get(f"/communities/{parent['id']}/actions")).json()[0]["action_id"]
+
+    # File a Draft inside the action — never submit it.
+    inside = await client.post(f"/communities/{action_id}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "draft inside the action — to be stranded",
+    })
+    inside_pid = inside.json()["id"]
+    # Sanity: it's Draft.
+    assert (await client.get(f"/proposals/{inside_pid}")).json()["proposal_status"] == "Draft"
+
+    # End the action.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EndAction",
+        "proposal_text": "wrap up",
+        "val_uuid": action_id,
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+
+    # The inside Draft must now be Canceled with decided_at stamped.
+    after = (await client.get(f"/proposals/{inside_pid}")).json()
+    assert after["proposal_status"] == "Canceled", (
+        f"Draft inside ended community must be auto-canceled; "
+        f"got {after['proposal_status']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_refused_for_inactive_community(client):
+    """Defense-in-depth: even if a stale browser tab POSTs submit
+    AFTER an EndAction has fired, the submit endpoint must refuse
+    rather than promote the Draft to OUT_THERE in a now-dead
+    community. The general /communities/{id}/proposals create path
+    already enforces this — submit() must mirror it.
+
+    Repro shape: race between the executor's auto-cancel sweep and
+    the author's submit click. With the gate, even the loser of the
+    race surfaces a clean 400 instead of stranding the proposal."""
+    import uuid as _uuid
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+    from sqlalchemy import update as _update
+    from kbz.enums import CommunityStatus
+    from kbz.models.community import Community
+
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+
+    # Create an action.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddAction",
+        "proposal_text": "WG",
+        "val_text": "WG",
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+    action_id = (await client.get(f"/communities/{parent['id']}/actions")).json()[0]["action_id"]
+
+    # File a Draft inside the action.
+    inside = await client.post(f"/communities/{action_id}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "stale-tab draft",
+    })
+    inside_pid = inside.json()["id"]
+
+    # Simulate the race: directly mark the action's community
+    # INACTIVE (as if EndAction landed but its auto-cancel sweep
+    # raced with this submit). DON'T cancel the proposal — we want
+    # to test that submit() refuses to promote it.
+    from tests.conftest import db_engine  # noqa
+    # Use the same db config as the fixture by fetching directly.
+    import os
+    from kbz.config import settings
+    from sqlalchemy.ext.asyncio import create_async_engine
+    engine = create_async_engine(settings.test_database_url)
+    sf = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as s:
+        await s.execute(
+            _update(Community)
+            .where(Community.id == _uuid.UUID(action_id))
+            .values(status=CommunityStatus.INACTIVE)
+        )
+        await s.commit()
+    await engine.dispose()
+
+    # Now submit must refuse.
+    r = await client.patch(f"/proposals/{inside_pid}/submit")
+    assert r.status_code == 400, r.text
+    assert "not active" in r.json()["detail"].lower()

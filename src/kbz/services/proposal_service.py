@@ -700,6 +700,28 @@ class ProposalService:
             raise HTTPException(
                 status_code=400, detail="Only draft proposals can be submitted",
             )
+        # The author may have started a Draft inside an action that
+        # has since been EndAction'd. ProposalService.create blocks
+        # NEW filings into INACTIVE communities; the executor's
+        # auto-cancel sweeps existing Drafts when EndAction lands.
+        # But a stale browser tab can still POST submit between
+        # those two events. Mirror the create-time gate so a Draft
+        # can't be promoted into a community everyone agreed was
+        # over.
+        from kbz.enums import CommunityStatus
+        community = (
+            await self.db.execute(
+                select(Community).where(Community.id == proposal.community_id)
+            )
+        ).scalar_one_or_none()
+        if community is None or community.status != CommunityStatus.ACTIVE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Community is not active — cannot submit proposals "
+                    "into an ended community"
+                ),
+            )
         proposal.proposal_status = ProposalStatus.OUT_THERE
         await self.db.commit()
         await self.db.refresh(proposal)
