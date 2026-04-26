@@ -273,6 +273,24 @@ class ProposalService:
                             f"finite numeric val_text; got {data.val_text!r}"
                         ),
                     )
+                # Negative values make no sense for any of the numeric
+                # variables: percentage thresholds (0-100), counts
+                # (MinCommittee, MaxAge, ProposalRateLimit), weights
+                # (seniorityWeight), money (membershipFee). A negative
+                # MaxAge cancels every proposal before it ages in;
+                # negative percentage thresholds break the
+                # `support_count >= ceil(member_count * pct/100)` math
+                # and let proposals auto-pass with zero support.
+                # ProposalRateLimit's "off" sentinel is 0, not a
+                # negative — 0 is still permitted.
+                if parsed < 0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"ChangeVariable on '{var_name}' requires a "
+                            f"non-negative value; got {data.val_text!r}"
+                        ),
+                    )
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
