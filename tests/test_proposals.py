@@ -1237,3 +1237,91 @@ async def test_throw_out_against_real_member_still_works(client):
         "val_uuid": target["id"],
     })
     assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_edit_rejects_empty_text_for_add_statement(client):
+    """Edit re-runs the same content validation as create. Pre-fix
+    edit_text bypassed it entirely — an author could file a valid
+    Draft AddStatement and edit it down to "". The bad row would
+    then sail into pulse-time and land a blank Statement in the
+    rulebook if accepted."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    pid = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": "valid initial",
+        })
+    ).json()["id"]
+
+    r = await client.patch(f"/proposals/{pid}/edit", json={
+        "user_id": user["id"], "proposal_text": "",
+    })
+    assert r.status_code == 422, r.text
+    assert "non-empty" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_edit_rejects_unknown_change_variable_name(client):
+    """Same shape — edit must enforce the ChangeVariable name check
+    that PR #58 added at create time."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    pid = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "ChangeVariable",
+            "proposal_text": "PulseSupport",
+            "val_text": "60",
+        })
+    ).json()["id"]
+
+    r = await client.patch(f"/proposals/{pid}/edit", json={
+        "user_id": user["id"], "proposal_text": "NotARealVariable",
+    })
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_edit_rejects_negative_change_variable_value(client):
+    """Edit must enforce the negative-value check from PR #63."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    pid = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "ChangeVariable",
+            "proposal_text": "MaxAge",
+            "val_text": "5",
+        })
+    ).json()["id"]
+
+    r = await client.patch(f"/proposals/{pid}/edit", json={
+        "user_id": user["id"], "val_text": "-3",
+    })
+    assert r.status_code == 422, r.text
+    assert "non-negative" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_amend_rejects_empty_text_for_add_statement(client):
+    """Same defense, applied to amend (which builds a successor row).
+    Pre-fix amend skipped content validation, so an author could amend
+    a valid v1 down to "" and the v2 Draft would carry blank content."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    pid = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": "v1 valid",
+        })
+    ).json()["id"]
+
+    r = await client.post(f"/proposals/{pid}/amend", json={
+        "user_id": user["id"], "proposal_text": "",
+    })
+    assert r.status_code == 422, r.text
+    assert "non-empty" in r.json()["detail"].lower()

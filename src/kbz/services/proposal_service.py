@@ -138,72 +138,123 @@ async def _resolve_rate_limit(db: AsyncSession, community_id: uuid.UUID) -> int:
         return PROPOSAL_RATE_LIMIT_DEFAULT
 
 
+def _validate_proposal_content(
+    proposal_type: str,
+    proposal_text: str | None,
+    val_text: str | None,
+    val_uuid: uuid.UUID | None,
+) -> None:
+    """Type-content validation that must run on every state-changing
+    path (create, edit_text, amend). Pre-fix the create path checked
+    things like "AddStatement requires non-empty text" and
+    "ChangeVariable name must be in DEFAULT_VARIABLES" — but the
+    edit and amend paths skipped these entirely. An author could
+    file a valid Draft AddStatement and then edit it to "" with no
+    pushback, or amend a ChangeVariable("PulseSupport","60") into
+    ChangeVariable("PulseSupport","-5"). The bad data then sailed
+    into pulse-time and either landed an empty Statement row or
+    crashed the executor.
+
+    Pure function: all the checks here look only at the
+    {type, proposal_text, val_text, val_uuid} tuple. Community-
+    state, member-state, rate-limit, applicant-existence checks
+    stay in create() since edit/amend can't change those.
+    """
+    try:
+        ptype = ProposalType(proposal_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid proposal type: {proposal_type}",
+        )
+
+    if ptype in (
+        ProposalType.THROW_OUT,
+        ProposalType.END_ACTION,
+        ProposalType.JOIN_ACTION,
+        ProposalType.REMOVE_STATEMENT,
+        ProposalType.REMOVE_ARTIFACT,
+        ProposalType.SET_MEMBERSHIP_HANDLER,
+        ProposalType.EDIT_ARTIFACT,
+    ) and val_uuid is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{proposal_type} proposals require val_uuid",
+        )
+
+    if ptype == ProposalType.ADD_STATEMENT:
+        if not (proposal_text or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail="AddStatement requires non-empty proposal_text",
+            )
+    elif ptype == ProposalType.REPLACE_STATEMENT:
+        if not (val_text or "").strip() and not (proposal_text or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "ReplaceStatement requires non-empty val_text "
+                    "(the new statement) or proposal_text"
+                ),
+            )
+    elif ptype == ProposalType.CREATE_ARTIFACT:
+        if not (proposal_text or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail="CreateArtifact requires non-empty proposal_text (the content)",
+            )
+
+    if ptype == ProposalType.CHANGE_VARIABLE:
+        var_name = (proposal_text or "").split("\n", 1)[0].strip()
+        if not var_name:
+            raise HTTPException(
+                status_code=422,
+                detail="ChangeVariable proposal_text must name the variable on its first line",
+            )
+        if var_name not in DEFAULT_VARIABLES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Unknown variable '{var_name}'. ChangeVariable can "
+                    f"only target variables defined in DEFAULT_VARIABLES."
+                ),
+            )
+        if var_name in _NUMERIC_VARIABLES:
+            raw = (val_text or "").strip()
+            try:
+                parsed = float(raw)
+                if parsed != parsed:  # NaN check (NaN != NaN)
+                    raise ValueError("NaN")
+                if parsed in (float("inf"), float("-inf")):
+                    raise ValueError("infinite")
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"ChangeVariable on '{var_name}' requires a "
+                        f"finite numeric val_text; got {val_text!r}"
+                    ),
+                )
+            if parsed < 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"ChangeVariable on '{var_name}' requires a "
+                        f"non-negative value; got {val_text!r}"
+                    ),
+                )
+
+
 class ProposalService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, community_id: uuid.UUID, data: ProposalCreate) -> Proposal:
-        # Validate proposal type
-        try:
-            ProposalType(data.proposal_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid proposal type: {data.proposal_type}")
-
-        # Required-field gates per type. Pre-fix, several handlers
-        # silently no-op'd on missing val_uuid / val_text:
-        #   _exec_throw_out: `if proposal.val_uuid:` — no val_uuid
-        #     → ACCEPTED proposal that didn't actually throw anyone out.
-        #   _exec_end_action / _exec_join_action / etc. — same shape.
-        # Result: an agent files ThrowOut without a target, the
-        # community votes Accept, the audit log shows it landed, and
-        # nothing happened. Surface the error at create time so the
-        # author sees it BEFORE wasting a pulse cycle.
+        # Type-content validation (required-field gates, empty-text
+        # checks). Same helper now runs on edit_text and amend.
+        _validate_proposal_content(
+            data.proposal_type, data.proposal_text, data.val_text, data.val_uuid,
+        )
         ptype = ProposalType(data.proposal_type)
-        if ptype in (
-            ProposalType.THROW_OUT,
-            ProposalType.END_ACTION,
-            ProposalType.JOIN_ACTION,
-            ProposalType.REMOVE_STATEMENT,
-            ProposalType.REMOVE_ARTIFACT,
-            ProposalType.SET_MEMBERSHIP_HANDLER,
-            ProposalType.EDIT_ARTIFACT,
-        ) and data.val_uuid is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{data.proposal_type} proposals require val_uuid",
-            )
-
-        # Content-bearing types must carry actual content. Pre-fix, the
-        # schema only set max_length (no min), so:
-        #   AddStatement   "" → executor inserts a blank Statement row
-        #                       into the rulebook.
-        #   ReplaceStatement "" + val_text="" → blank successor.
-        #   CreateArtifact "" → blank artifact body.
-        # All three pollute the community's persistent state with rows
-        # nobody intended. Require the relevant text field to be
-        # non-empty (after strip) at create time so the bad data never
-        # gets a chance to land.
-        if ptype == ProposalType.ADD_STATEMENT:
-            if not (data.proposal_text or "").strip():
-                raise HTTPException(
-                    status_code=422,
-                    detail="AddStatement requires non-empty proposal_text",
-                )
-        elif ptype == ProposalType.REPLACE_STATEMENT:
-            if not (data.val_text or "").strip() and not (data.proposal_text or "").strip():
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        "ReplaceStatement requires non-empty val_text "
-                        "(the new statement) or proposal_text"
-                    ),
-                )
-        elif ptype == ProposalType.CREATE_ARTIFACT:
-            if not (data.proposal_text or "").strip():
-                raise HTTPException(
-                    status_code=422,
-                    detail="CreateArtifact requires non-empty proposal_text (the content)",
-                )
 
         # Reject mutations against INACTIVE communities. Once a community
         # is ended (via accepted EndAction → status=INACTIVE on both
@@ -259,16 +310,10 @@ class ProposalService:
                 )
 
         # ThrowOut: val_uuid must point at an active member of THIS
-        # community. Pre-fix the only required-field check was
-        # "val_uuid present"; the executor's `member_svc.throw_out`
-        # silently no-ops when the target isn't an active member,
-        # so a ThrowOut against a bogus user_id (or a non-member real
-        # user) would land Accepted but do nothing — meanwhile the
-        # create-time fanout already minted a `proposal.targets_you`
-        # notification for a recipient who can't even act on it
-        # (orphan row in `notifications` for non-existent users; or
-        # confusing inbox entry for a real user who isn't a member
-        # here). Refuse at create time.
+        # community. The pure content helper can't do this — it
+        # needs a DB lookup, and target-validity depends on which
+        # community we're filing in. Stays inline next to the
+        # Membership-applicant check above.
         if data.proposal_type == ProposalType.THROW_OUT:
             member_svc = MemberService(self.db)
             if not await member_svc.is_active_member(
@@ -282,65 +327,6 @@ class ProposalService:
                     ),
                 )
 
-        # ChangeVariable validation chain. Run cheapest checks first.
-        # 1) Name must be present and known — pre-fix the executor ran
-        #    a bare UPDATE against the variables table; an unknown
-        #    var_name (typo, invented value) hit zero rows and the
-        #    proposal silently accomplished nothing.
-        # 2) Numeric-typed variables (PulseSupport, MaxAge, etc.) are
-        #    parsed via int(float(value)) every pulse cycle. Letting a
-        #    non-numeric val_text land — e.g. ChangeVariable(
-        #    "PulseSupport", "soon") — crashes execute_pulse with
-        #    ValueError mid-cycle. Validate at create time.
-        if data.proposal_type == ProposalType.CHANGE_VARIABLE:
-            var_name = (data.proposal_text or "").split("\n", 1)[0].strip()
-            if not var_name:
-                raise HTTPException(
-                    status_code=422,
-                    detail="ChangeVariable proposal_text must name the variable on its first line",
-                )
-            if var_name not in DEFAULT_VARIABLES:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"Unknown variable '{var_name}'. ChangeVariable can "
-                        f"only target variables defined in DEFAULT_VARIABLES."
-                    ),
-                )
-            if var_name in _NUMERIC_VARIABLES:
-                raw = (data.val_text or "").strip()
-                try:
-                    parsed = float(raw)
-                    if parsed != parsed:  # NaN check (NaN != NaN)
-                        raise ValueError("NaN")
-                    if parsed in (float("inf"), float("-inf")):
-                        raise ValueError("infinite")
-                except (TypeError, ValueError):
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"ChangeVariable on '{var_name}' requires a "
-                            f"finite numeric val_text; got {data.val_text!r}"
-                        ),
-                    )
-                # Negative values make no sense for any of the numeric
-                # variables: percentage thresholds (0-100), counts
-                # (MinCommittee, MaxAge, ProposalRateLimit), weights
-                # (seniorityWeight), money (membershipFee). A negative
-                # MaxAge cancels every proposal before it ages in;
-                # negative percentage thresholds break the
-                # `support_count >= ceil(member_count * pct/100)` math
-                # and let proposals auto-pass with zero support.
-                # ProposalRateLimit's "off" sentinel is 0, not a
-                # negative — 0 is still permitted.
-                if parsed < 0:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"ChangeVariable on '{var_name}' requires a "
-                            f"non-negative value; got {data.val_text!r}"
-                        ),
-                    )
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
@@ -778,6 +764,19 @@ class ProposalService:
                 detail="Only Draft or OutThere proposals can be edited",
             )
 
+        # Re-run type-content validation against the FINAL (post-edit)
+        # state. Pre-fix the create path validated empty text +
+        # ChangeVariable name + numeric bounds, but edit_text skipped
+        # all of them — an author could file a valid Draft and then
+        # edit it to "" / unknown variable / negative value and the
+        # bad row would sail into pulse-time. Same defense, same
+        # 422s, applied to the values we're about to commit.
+        final_text = new_text if new_text is not None else proposal.proposal_text
+        final_val_text = new_val_text if new_val_text is not None else proposal.val_text
+        _validate_proposal_content(
+            str(proposal.proposal_type), final_text, final_val_text, proposal.val_uuid,
+        )
+
         # Update the text
         if new_text is not None:
             proposal.proposal_text = new_text
@@ -853,6 +852,28 @@ class ProposalService:
                 status_code=400,
                 detail="Amend must change at least one field",
             )
+
+        # Re-run type-content validation against the FINAL (post-amend)
+        # state. Pre-fix amend skipped this entirely, so an author could
+        # amend a valid AddStatement to "" or amend a ChangeVariable
+        # name to one that doesn't exist. The successor would be a
+        # fresh Draft with bad content; same downstream damage as the
+        # create-time bypass.
+        final_text = (
+            new_proposal_text
+            if new_proposal_text is not None
+            else original.proposal_text
+        )
+        final_val_text = (
+            new_val_text if new_val_text is not None else original.val_text
+        )
+        final_val_uuid = (
+            new_val_uuid if new_val_uuid is not None else original.val_uuid
+        )
+        _validate_proposal_content(
+            str(original.proposal_type),
+            final_text, final_val_text, final_val_uuid,
+        )
 
         # Cancel the original. We don't go through set_status here
         # because that path also runs Membership-escrow refunds —
