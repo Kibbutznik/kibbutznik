@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kbz.auth_deps import require_user
 from kbz.database import get_db
+from kbz.models.user import User
 from kbz.schemas.tkg import EdgeOut, NeighborOut, SemanticHit, SemanticSearchIn
 from kbz.services.embedding_service import EmbeddingService
 
@@ -293,9 +295,16 @@ async def semantic_search(
 @router.delete("/prune")
 async def prune(
     older_than_round: int = Query(..., ge=0),
+    user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
-    """Delete closed edges whose valid_to_round < `older_than_round`."""
+    """Delete closed edges whose valid_to_round < `older_than_round`.
+
+    Requires an authenticated session — pre-fix this was open to
+    anyone, so a single anonymous DELETE could wipe historical edges
+    from the temporal knowledge graph wholesale (anyone passing
+    older_than_round=999999 deletes every closed edge ever).
+    """
     from kbz.services.tkg_service import TKGService
 
     svc = TKGService(db)

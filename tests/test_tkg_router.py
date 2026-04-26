@@ -84,6 +84,23 @@ async def test_timeline_filters_window(client, db_engine):
 async def test_prune_endpoint(client, db_engine):
     await _seed(db_engine)
     # ALLIED_WITH is the only closed edge (closed at 7). Prune older_than=100.
+    # Prune now requires authentication — log in first.
+    r = await client.post(
+        "/auth/request-magic-link", json={"email": "tkg-pruner@example.com"},
+    )
+    await client.get(r.json()["link"])
     resp = await client.delete("/tkg/prune", params={"older_than_round": 100})
     assert resp.status_code == 200
     assert resp.json() == {"deleted": 1}
+
+
+@pytest.mark.asyncio
+async def test_prune_requires_auth(client, db_engine):
+    """Pre-fix /tkg/prune was open to anyone — a single anonymous
+    DELETE could wipe historical edges from the knowledge graph
+    wholesale (older_than_round=999999 deletes every closed edge)."""
+    await _seed(db_engine)
+    resp = await client.delete(
+        "/tkg/prune", params={"older_than_round": 999999},
+    )
+    assert resp.status_code == 401
