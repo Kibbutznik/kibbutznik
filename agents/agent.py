@@ -580,13 +580,31 @@ class Agent:
                 )
 
             elif decision.action_type == "comment":
-                pid = self._resolve_proposal_id(decision.params.get("proposal_id", ""), snapshot)
-                text = _truncate_comment(decision.params.get("comment_text", ""))
+                raw_pid = decision.params.get("proposal_id", "")
+                raw_text = decision.params.get("comment_text", "")
+                pid = self._resolve_proposal_id(raw_pid, snapshot)
+                text = _truncate_comment(raw_text)
                 if pid and text:
                     await self.client.add_comment("proposal", pid, self.user_id, text)
                     self.commented_proposals.add(pid)
                     return ActionLog(now, "comment", decision.reason, f"Commented on {pid[:8]}: \"{text[:60]}\"", True, ref_id=pid)
-                return ActionLog(now, "comment", decision.reason, "Missing proposal_id or text", False)
+                # Specific reason in the failure log so the LLM (via
+                # PR #72's recent_failures block) can learn which field
+                # to fix next turn. Pre-fix the message was always
+                # "Missing proposal_id or text" no matter which one
+                # was actually missing — 12+ silent comment failures
+                # in 6000 prod log lines for lunaris.
+                missing = []
+                if not raw_pid:
+                    missing.append("proposal_id (need a UUID prefix from the snapshot)")
+                elif not pid:
+                    missing.append(f"proposal_id (couldn't resolve {raw_pid[:30]!r} — pick one from Proposals You Have NOT Supported)")
+                if not raw_text:
+                    missing.append("comment_text")
+                elif not text:
+                    missing.append("comment_text (was all whitespace)")
+                detail = "Missing/invalid: " + "; ".join(missing) if missing else "comment failed"
+                return ActionLog(now, "comment", decision.reason, detail, False)
 
             elif decision.action_type == "reply_comment":
                 pid = self._resolve_proposal_id(decision.params.get("proposal_id", ""), snapshot)

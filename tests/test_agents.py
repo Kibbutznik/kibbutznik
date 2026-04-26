@@ -589,3 +589,41 @@ class TestLLMPresets:
             assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
                 f"{name} has unknown backend {cfg['backend']!r}"
             )
+
+
+@pytest.mark.asyncio
+async def test_comment_missing_proposal_id_explains_specifically(community_with_agent):
+    """Pre-fix comment failures all returned "Missing proposal_id
+    or text" no matter which was actually missing. PR #72 introduced
+    the recent_failures feedback block — it can only help if the
+    failure detail names which field is wrong."""
+    agent, _ = community_with_agent
+    agent.engine = MockDecisionEngine([
+        {"action": "comment", "comment_text": "great idea", "reason": "y"},
+    ])
+    logs = await agent.think_and_act()
+    assert logs[0].success is False
+    assert "proposal_id" in logs[0].details.lower()
+
+
+@pytest.mark.asyncio
+async def test_comment_missing_text_explains_specifically(community_with_agent):
+    agent, _ = community_with_agent
+    agent.engine = MockDecisionEngine([
+        {"action": "comment", "proposal_id": "abc12345", "reason": "y"},
+    ])
+    logs = await agent.think_and_act()
+    assert logs[0].success is False
+    assert "comment_text" in logs[0].details.lower()
+
+
+@pytest.mark.asyncio
+async def test_comment_unresolvable_proposal_id_explains(community_with_agent):
+    agent, _ = community_with_agent
+    agent.engine = MockDecisionEngine([
+        {"action": "comment", "proposal_id": "fffffffff",
+         "comment_text": "x", "reason": "y"},
+    ])
+    logs = await agent.think_and_act()
+    assert logs[0].success is False
+    assert "couldn't resolve" in logs[0].details.lower() or "proposal_id" in logs[0].details.lower()
