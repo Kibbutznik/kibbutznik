@@ -77,13 +77,16 @@ async def test_remove_statement_cannot_target_foreign_community(client):
     b_stmt_id = (await client.get(f"/communities/{b['id']}/statements")).json()[0]["id"]
 
     # File a RemoveStatement in A that points at B's statement.
+    # Validation refuses at create time (was 201 then silently
+    # no-op'd at execute time).
     resp = await client.post(f"/communities/{a['id']}/proposals", json={
         "user_id": user["id"],
         "proposal_type": "RemoveStatement",
         "proposal_text": "Remove Bravo's rule from inside Alpha",
         "val_uuid": b_stmt_id,
     })
-    await _accept_proposal(client, a["id"], user["id"], resp.json()["id"])
+    assert resp.status_code == 422, resp.text
+    assert "different community" in resp.json()["detail"].lower()
 
     # B's statement must still be active — A cannot delete it.
     b_stmts = (await client.get(f"/communities/{b['id']}/statements")).json()
@@ -115,7 +118,8 @@ async def test_replace_statement_cannot_target_foreign_community(client):
         "val_uuid": b_stmt_id,
         "val_text": "Hijacked text",
     })
-    await _accept_proposal(client, a["id"], user["id"], resp.json()["id"])
+    assert resp.status_code == 422, resp.text
+    assert "different community" in resp.json()["detail"].lower()
 
     # B's statement still active and unchanged.
     b_stmts = (await client.get(f"/communities/{b['id']}/statements")).json()
@@ -156,3 +160,48 @@ async def test_replace_statement_via_proposal(client):
     assert len(statements) == 1
     assert statements[0]["statement_text"] == "Version 2"
     assert statements[0]["prev_statement_id"] == stmt_id
+
+
+@pytest.mark.asyncio
+async def test_remove_statement_rejects_bogus_target(client):
+    """RemoveStatement with val_uuid = random UUID must 422.
+    Pre-fix → 201 then silent no-op."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "RemoveStatement",
+        "proposal_text": "remove nothing",
+        "val_uuid": str(_uuid.uuid4()),
+    })
+    assert r.status_code == 422
+    assert "not a known statement" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_remove_statement_rejects_already_removed(client):
+    """Removing an already-REMOVED statement is a no-op at the
+    executor too. Surface at create."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    # Create a statement
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "AddStatement",
+        "proposal_text": "to be removed",
+    })
+    await _accept_proposal(client, community["id"], user["id"], r.json()["id"])
+    stmt_id = (await client.get(f"/communities/{community['id']}/statements")).json()[0]["id"]
+    # Remove it
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "RemoveStatement",
+        "proposal_text": "remove it", "val_uuid": stmt_id,
+    })
+    await _accept_proposal(client, community["id"], user["id"], r.json()["id"])
+    # Try to remove it AGAIN
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "RemoveStatement",
+        "proposal_text": "remove it again", "val_uuid": stmt_id,
+    })
+    assert r.status_code == 422
+    assert "already removed" in r.json()["detail"].lower()
