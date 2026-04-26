@@ -327,6 +327,47 @@ class ProposalService:
                     ),
                 )
 
+        # RemoveStatement / ReplaceStatement: val_uuid must be an
+        # active Statement in THIS community. Pre-fix the executor's
+        # cross-community guard caught the mismatch silently — bot
+        # filed a bogus val_uuid and ate a pulse cycle to do nothing.
+        # Same shape as PR #80 (artifacts), #81 (actions), #70
+        # (members).
+        if data.proposal_type in (
+            ProposalType.REMOVE_STATEMENT, ProposalType.REPLACE_STATEMENT,
+        ):
+            from kbz.models.statement import Statement
+            from kbz.enums import StatementStatus
+            stmt = (
+                await self.db.execute(
+                    select(Statement).where(Statement.id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if stmt is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} is "
+                        f"not a known statement"
+                    ),
+                )
+            if stmt.community_id != community_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} "
+                        f"belongs to a different community "
+                        f"({stmt.community_id})"
+                    ),
+                )
+            if stmt.status != StatementStatus.ACTIVE:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} is "
+                        f"already removed — nothing to do"
+                    ),
+                )
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
