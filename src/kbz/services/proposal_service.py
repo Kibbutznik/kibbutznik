@@ -327,6 +327,39 @@ class ProposalService:
                     ),
                 )
 
+        # JoinAction / EndAction: val_uuid must be an Action that's
+        # a direct child of THIS community. Pre-fix the executor's
+        # parent-community guard caught the cross-tree case at
+        # execution time, but bots still wasted pulse cycles on
+        # filings against bogus or non-action UUIDs. Refuse at create.
+        if data.proposal_type in (
+            ProposalType.JOIN_ACTION, ProposalType.END_ACTION,
+        ):
+            from kbz.models.action import Action
+            action_parent = (
+                await self.db.execute(
+                    select(Action.parent_community_id)
+                    .where(Action.action_id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if action_parent is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} is "
+                        f"not a known action"
+                    ),
+                )
+            if action_parent != community_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} is an "
+                        f"action under a different parent community "
+                        f"({action_parent}) — only the parent can "
+                        f"join/end its own actions"
+                    ),
+                )
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
