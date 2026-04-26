@@ -589,3 +589,48 @@ class TestLLMPresets:
             assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
                 f"{name} has unknown backend {cfg['backend']!r}"
             )
+
+
+@pytest.mark.asyncio
+async def test_update_intention_accepted_as_action_type(community_with_agent):
+    """Lunaris-8b and other cheap LLMs misread the prompt and emit
+    `{"action": "update_intention", "update_intention": "..."}`
+    instead of attaching update_intention as a field on another
+    action. Pre-fix this fell through to "Unknown action" and the
+    turn was wasted (6+ hits in 6000 lines of prod logs).
+
+    Now update_intention is accepted as a do_nothing synonym that
+    also sets the intention. Pulls the intention from one of:
+      - decision.params["update_intention"]
+      - decision.params["proposal_text"]
+      - decision.params["intention"]
+      - decision.reason
+    so the LLM can put it in any of those fields and we still
+    capture it.
+    """
+    agent, community = community_with_agent
+    agent.engine = MockDecisionEngine([
+        {"action": "update_intention",
+         "update_intention": "build the onboarding artifact this round",
+         "reason": "carrying plan across turns"},
+    ])
+    logs = await agent.think_and_act()
+    assert len(logs) == 1
+    assert logs[0].success is True, f"got: {logs[0].details}"
+    assert logs[0].action_type == "update_intention"
+    # The harvest loop in think_and_act stores it on the agent.
+    assert "onboarding artifact" in agent.current_intention
+
+
+@pytest.mark.asyncio
+async def test_update_intention_falls_back_to_reason_field(community_with_agent):
+    """Lunaris occasionally leaves update_intention empty and puts
+    the intention in `reason` instead. We still want to capture it."""
+    agent, community = community_with_agent
+    agent.engine = MockDecisionEngine([
+        {"action": "update_intention",
+         "reason": "wait for the founder to support my proposal"},
+    ])
+    logs = await agent.think_and_act()
+    assert logs[0].success is True
+    assert "wait for the founder" in agent.current_intention
