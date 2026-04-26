@@ -326,25 +326,40 @@ async def _provision_welcome_credits(db: AsyncSession, user: User) -> None:
         return
 
     svc = WalletService(db)
-    # Check wallet existence WITHOUT the financial gate (user wallets
-    # are platform-wide, not community-scoped).
-    from sqlalchemy import select
-    from kbz.models.wallet import Wallet
-    existing = (
-        await db.execute(
-            select(Wallet).where(
-                Wallet.owner_kind == OWNER_USER,
-                Wallet.owner_id == user.id,
-            )
-        )
-    ).scalar_one_or_none()
+    # Race-safe idempotency: gate on the wallet_webhook_events
+    # dedupe table (UNIQUE on (event, idempotency_key)). Two
+    # concurrent /auth/me calls used to both pass the wallet-existence
+    # check, both call get_or_create, and both mint — doubling the
+    # gift. The unique index now turns the loser's record_webhook
+    # INSERT into a clean IntegrityError; we rollback that mint and
+    # bail.
+    from sqlalchemy.exc import IntegrityError
+    welcome_event = "welcome.signup"
+    welcome_key = str(user.id)
+    # Fast-path check (no race protection — purely to skip the work
+    # when the gift was already minted in a past request).
+    existing = await svc.find_webhook(
+        event=welcome_event, idempotency_key=welcome_key,
+    )
     if existing is not None:
-        return  # already provisioned
+        return
 
     wallet = await svc.get_or_create(OWNER_USER, user.id, gate=False)
-    await svc.mint(
+    entry = await svc.mint(
         wallet, amount,
-        webhook_event="welcome.signup",
+        webhook_event=welcome_event,
         external_ref=f"welcome:{user.id}",
         memo="Welcome to Kibbutznik — starter credits",
     )
+    try:
+        await svc.record_webhook(
+            event=welcome_event,
+            idempotency_key=welcome_key,
+            ledger_entry_id=entry.id,
+        )
+    except IntegrityError:
+        # Lost the race — another /auth/me already provisioned this
+        # user. Roll back our duplicate mint so the user doesn't
+        # walk away with double credits.
+        await db.rollback()
+        return
