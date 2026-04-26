@@ -250,3 +250,44 @@ async def test_verify_link_from_invite_grants_session(client):
     # /me should confirm the session
     r = await client.get("/auth/me")
     assert r.json()["user"]["email"] == "joiner@example.com"
+
+
+@pytest.mark.asyncio
+async def test_invite_claim_notifies_other_members(client):
+    """When someone joins via /invites/claim, the resulting Membership
+    proposal must fan out to other active members — pre-fix
+    InviteService.claim built the Proposal row directly without
+    calling NotificationService.fanout_proposal_created, so other
+    members got NO inbox notification that someone applied. Voters
+    had to discover the application via the community feed by
+    coincidence."""
+    # Founder creates community + invite.
+    founder_id = await _login(client, "invite-notif-founder@example.com")
+    community = await create_test_community(client, founder_id)
+    r = await client.post(f"/communities/{community['id']}/invites")
+    code = r.json()["code"]
+
+    # Invitee claims (unauthenticated).
+    client.cookies.clear()
+    r = await client.post(
+        "/invites/claim",
+        json={"invite_code": code, "email": "invite-notif-joiner@example.com"},
+    )
+    assert r.status_code == 200, r.text
+    pid = r.json()["membership_proposal_id"]
+
+    # Founder logs back in and checks their inbox — must contain the
+    # proposal.created notification for the new Membership.
+    await _login(client, "invite-notif-founder@example.com")
+    notes = (await client.get("/users/me/notifications")).json()
+    matching = [
+        n for n in notes
+        if n["kind"] == "proposal.created"
+        and n["payload"].get("proposal_id") == pid
+    ]
+    assert len(matching) == 1, (
+        f"expected exactly one proposal.created notification for the "
+        f"invite-claim Membership; got: "
+        f"{[(n['kind'], n.get('payload', {}).get('proposal_id')) for n in notes]}"
+    )
+    assert matching[0]["payload"]["proposal_type"] == "Membership"
