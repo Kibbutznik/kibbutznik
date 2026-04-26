@@ -76,14 +76,27 @@ class CommunityService:
         )
         self.db.add(pulse)
 
-        # 5. If this is a root community (no parent), seed the primordial ArtifactContainer.
-        if data.parent_id == ZERO_UUID:
-            from kbz.services.artifact_service import ArtifactService
-            await ArtifactService(self.db).create_root_container(
-                community_id,
-                mission=data.initial_artifact_mission,
-                founder_user_id=data.founder_user_id,
-            )
+        # 5. Seed the primordial ArtifactContainer (with its Plan
+        # artifact) for EVERY community — root AND child action.
+        # Pre-fix this only ran for root communities (parent_id ==
+        # ZERO_UUID). That left action communities (created by
+        # accepted AddAction proposals via _exec_add_action →
+        # community_svc.create with a non-zero parent_id) as bare
+        # rooms with no container at all. Members who joined via
+        # JoinAction had nowhere to file artifacts: CreateArtifact
+        # requires a val_uuid pointing at a container, and there
+        # wasn't one. The only path to seed an action's container
+        # was DelegateArtifact from the parent — so an Action that
+        # nobody parented work down into just sat idle ("empty
+        # pulses one by one"). Now every community boots with the
+        # same Plan + container so its members can start working
+        # immediately.
+        from kbz.services.artifact_service import ArtifactService
+        await ArtifactService(self.db).create_root_container(
+            community_id,
+            mission=data.initial_artifact_mission,
+            founder_user_id=data.founder_user_id,
+        )
 
         await self.db.flush()
         await self.db.refresh(community)
