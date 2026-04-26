@@ -1026,3 +1026,59 @@ async def test_remove_support_refused_after_decision(client):
     assert any(
         s["user_id"] == user["id"] for s in matching_after[0]["supporters"]
     ), "audit log lost the supporter — history was rewritten"
+
+
+@pytest.mark.asyncio
+async def test_add_statement_requires_non_empty_text(client):
+    """AddStatement with empty proposal_text used to land Accepted and
+    insert a blank Statement row into the community rulebook. The
+    schema only capped max_length; no min. Require non-empty at create
+    time so the bad row never gets a chance to land."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    for bad in ("", "   ", "\n\t  "):
+        r = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "AddStatement",
+            "proposal_text": bad,
+        })
+        assert r.status_code == 422, f"proposal_text={bad!r} should 422; got {r.status_code}"
+        assert "non-empty" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_artifact_requires_non_empty_content(client):
+    """CreateArtifact's proposal_text becomes the artifact body.
+    Empty text → blank artifact in the community's container. Reject
+    at create."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "CreateArtifact",
+        "proposal_text": "",
+        "val_text": "Just a title",
+    })
+    assert r.status_code == 422
+    assert "non-empty" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_replace_statement_requires_text(client):
+    """ReplaceStatement uses val_text (new statement) or
+    proposal_text. Both empty → blank replacement. Reject at create."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ReplaceStatement",
+        "proposal_text": "",
+        "val_text": "",
+        "val_uuid": str(_uuid.uuid4()),
+    })
+    assert r.status_code == 422
+    assert "non-empty" in r.json()["detail"].lower()

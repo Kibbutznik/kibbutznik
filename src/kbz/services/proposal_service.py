@@ -173,6 +173,38 @@ class ProposalService:
                 detail=f"{data.proposal_type} proposals require val_uuid",
             )
 
+        # Content-bearing types must carry actual content. Pre-fix, the
+        # schema only set max_length (no min), so:
+        #   AddStatement   "" → executor inserts a blank Statement row
+        #                       into the rulebook.
+        #   ReplaceStatement "" + val_text="" → blank successor.
+        #   CreateArtifact "" → blank artifact body.
+        # All three pollute the community's persistent state with rows
+        # nobody intended. Require the relevant text field to be
+        # non-empty (after strip) at create time so the bad data never
+        # gets a chance to land.
+        if ptype == ProposalType.ADD_STATEMENT:
+            if not (data.proposal_text or "").strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="AddStatement requires non-empty proposal_text",
+                )
+        elif ptype == ProposalType.REPLACE_STATEMENT:
+            if not (data.val_text or "").strip() and not (data.proposal_text or "").strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "ReplaceStatement requires non-empty val_text "
+                        "(the new statement) or proposal_text"
+                    ),
+                )
+        elif ptype == ProposalType.CREATE_ARTIFACT:
+            if not (data.proposal_text or "").strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="CreateArtifact requires non-empty proposal_text (the content)",
+                )
+
         # Reject mutations against INACTIVE communities. Once a community
         # is ended (via accepted EndAction → status=INACTIVE on both
         # Action and Community rows), no fresh proposals should land there.
