@@ -211,6 +211,17 @@ class PulseService:
                     outcome_kind=KIND_PROPOSAL_CANCELED,
                 )
                 await self.db.flush()
+                # Emit so the TKG ingestor stamps canceled_at_round
+                # on the proposal node — without this, age-out
+                # cancellations were invisible to semantic search
+                # and rank-by-status queries.
+                await event_bus.emit(
+                    "proposal.canceled",
+                    community_id=community_id,
+                    user_id=proposal.user_id,
+                    proposal_id=proposal.id,
+                    proposal_type=str(proposal.proposal_type),
+                )
                 continue
 
             # Check if enough support to move to OnTheAir.

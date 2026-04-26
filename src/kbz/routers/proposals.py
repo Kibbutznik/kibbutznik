@@ -204,6 +204,16 @@ async def withdraw_proposal(
         from kbz.services.wallet_service import WalletService
         await WalletService(db).escrow_refund(proposal.id)
     await db.commit()
+    # Emit so the TKG ingestor stamps canceled_at_round and the
+    # WebSocket viewer reflects the withdrawal in real time.
+    from kbz.services.event_bus import event_bus
+    await event_bus.emit(
+        "proposal.canceled",
+        community_id=proposal.community_id,
+        user_id=proposal.user_id,
+        proposal_id=proposal.id,
+        proposal_type=str(proposal.proposal_type),
+    )
     proposal = (
         await db.execute(select(Proposal).where(Proposal.id == proposal_id))
     ).scalar_one()
