@@ -596,19 +596,28 @@ async def observe_community(
     snapshot.actions = await client.get_actions(community_id)
     snapshot.pulses = await client.get_pulses(community_id)
 
-    # Get proposals by status
-    all_proposals = await client.get_proposals(community_id)
-    for p in all_proposals:
-        if p["proposal_status"] == "OutThere":
-            snapshot.proposals_out_there.append(p)
-        elif p["proposal_status"] == "OnTheAir":
-            snapshot.proposals_on_the_air.append(p)
-        elif p["proposal_status"] == "Draft":
-            snapshot.proposals_draft.append(p)
-        elif p["proposal_status"] == "Accepted":
-            snapshot.recent_accepted.append(p)
-        elif p["proposal_status"] == "Rejected":
-            snapshot.recent_rejected.append(p)
+    # Get proposals by status. Pre-fix this fetched ALL proposals in
+    # one call and partitioned client-side — for a long-running
+    # community with hundreds of accepted/rejected rows the snapshot
+    # grew unbounded, the prompt blew past cheap-LLM context windows
+    # (lunaris-8b at 8k crashes hard), and every observe() got
+    # slower. Now fetch each status with an explicit per-status limit
+    # so the snapshot stays bounded.
+    snapshot.proposals_out_there = await client.get_proposals(
+        community_id, status="OutThere", limit=50,
+    )
+    snapshot.proposals_on_the_air = await client.get_proposals(
+        community_id, status="OnTheAir", limit=50,
+    )
+    snapshot.proposals_draft = await client.get_proposals(
+        community_id, status="Draft", limit=50,
+    )
+    snapshot.recent_accepted = await client.get_proposals(
+        community_id, status="Accepted", limit=20,
+    )
+    snapshot.recent_rejected = await client.get_proposals(
+        community_id, status="Rejected", limit=10,
+    )
 
     # Fetch comments on active proposals (for social awareness)
     for p in snapshot.proposals_out_there + snapshot.proposals_on_the_air:

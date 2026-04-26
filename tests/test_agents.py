@@ -589,3 +589,35 @@ class TestLLMPresets:
             assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
                 f"{name} has unknown backend {cfg['backend']!r}"
             )
+
+
+@pytest.mark.asyncio
+async def test_observe_caps_recent_accepted_for_long_running_communities(community_with_agent):
+    """Pre-fix observe() fetched ALL proposals via get_proposals() and
+    partitioned client-side, so a long-running community with
+    hundreds of accepted/rejected rows ballooned the snapshot.
+    Lunaris-8b at 8k context crashed; gemma was slowed materially.
+
+    Now each status fetch is explicitly capped. Verify by accepting
+    >10 proposals and checking recent_accepted ≤ 20."""
+    agent, community = community_with_agent
+    user_id = agent.user_id
+    cid = community["id"]
+
+    # Land 12 AddStatement proposals.
+    for i in range(12):
+        r = await agent.client.create_proposal(
+            community_id=cid, user_id=user_id,
+            proposal_type="AddStatement",
+            proposal_text=f"observe-bound statement {i}",
+        )
+        await agent.client.submit_proposal(r["id"])
+        await agent.client.support_proposal(r["id"], user_id)
+        # Drive 2 pulses so it lands.
+        for _ in range(2):
+            await agent.client.support_pulse(cid, user_id)
+
+    snap = await agent.observe()
+    assert len(snap.recent_accepted) <= 20, (
+        f"recent_accepted should be capped; got {len(snap.recent_accepted)}"
+    )
