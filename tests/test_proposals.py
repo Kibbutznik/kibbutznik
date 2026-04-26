@@ -1156,3 +1156,84 @@ async def test_membership_rejects_nonexistent_self_applicant(client):
     })
     assert r.status_code == 422, r.text
     assert "not a known user" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_throw_out_rejects_nonexistent_user(client):
+    """Pre-fix ThrowOut(val_uuid=<bogus>) landed Accepted, the
+    executor's member_svc.throw_out silently no-op'd, and the
+    create-time fanout dropped a `proposal.targets_you` notification
+    in the DB for a user_id that doesn't exist in the users table —
+    an orphan row. Same shape as PR #62/#64. Reject at create."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    bogus = str(_uuid.uuid4())
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "throw out a ghost",
+        "val_uuid": bogus,
+    })
+    assert r.status_code == 422, r.text
+    assert "not an active member" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_throw_out_rejects_real_user_who_isnt_a_member(client):
+    """Same defense for a real user who's never joined this
+    community — the proposal can't have any effect, and the target
+    notification just confuses someone who has no business being in
+    the inbox of this community."""
+    user = await create_test_user(client, "founder-throw")
+    community = await create_test_community(client, user["id"])
+    outsider = await create_test_user(client, "outsider-throw")
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "throw out a stranger",
+        "val_uuid": outsider["id"],
+    })
+    assert r.status_code == 422, r.text
+    assert "not an active member" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_throw_out_against_real_member_still_works(client):
+    """The honest path: ThrowOut against an actual active member
+    creates the proposal as before. Membership setup uses
+    Membership-then-pulse to land the second user as a real
+    member, then we file ThrowOut against them."""
+    founder = await create_test_user(client, "founder-honest")
+    target = await create_test_user(client, "target-honest")
+    community = await create_test_community(client, founder["id"])
+
+    # Land the target as a member.
+    mid = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": target["id"],
+            "proposal_type": "Membership",
+            "proposal_text": "join",
+            "val_uuid": target["id"],
+        })
+    ).json()["id"]
+    await client.patch(f"/proposals/{mid}/submit")
+    await client.post(
+        f"/proposals/{mid}/support", json={"user_id": founder["id"]},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": founder["id"]},
+        )
+
+    # Now ThrowOut against the real member should succeed.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": founder["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "valid removal request",
+        "val_uuid": target["id"],
+    })
+    assert r.status_code == 201, r.text
