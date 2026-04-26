@@ -413,34 +413,51 @@ class Agent:
     def _resolve_val_uuid(self, short_id: str, snapshot: CommunitySnapshot) -> str:
         """Resolve a potentially truncated val_uuid to a full UUID.
 
-        Searches across artifacts, containers, actions, statements, and members.
+        Searches across artifacts, containers, actions, statements, and
+        members. Tolerant of LLM noise (`id=abc12345`, `(abc12345)`,
+        `<container_id>`-style placeholders) — same fix as
+        `_resolve_proposal_id`. Pre-fix the strict prefix match returned
+        the noisy input unchanged, which then 422'd downstream as an
+        invalid UUID.
+
+        Strategy:
+          1. If the input is already a full UUID, return as-is.
+          2. Try clean prefix match.
+          3. Fallback: extract every hex run of length >= 6 and
+             prefix-match each against every known UUID source.
+          4. Otherwise return the input as-is so the API can surface
+             its own error (the prior behavior).
         """
         if not short_id:
             return ""
-        if len(short_id) >= 36:
+        short_id = str(short_id).strip()
+        if len(short_id) >= 36 and self._UUID_PREFIX_RE.match(short_id):
             return short_id
-        # Search artifacts
-        for arts in snapshot.container_artifacts.values():
-            for a in arts:
-                if a["id"].startswith(short_id):
-                    return a["id"]
-        # Search containers
-        for c in snapshot.containers:
-            if c["id"].startswith(short_id):
-                return c["id"]
-        # Search actions
-        for a in snapshot.actions:
-            if a["action_id"].startswith(short_id):
-                return a["action_id"]
-        # Search statements
-        for s in snapshot.statements:
-            if s["id"].startswith(short_id):
-                return s["id"]
-        # Search members
-        for m in snapshot.members:
-            if m["user_id"].startswith(short_id):
-                return m["user_id"]
-        return short_id  # return as-is if no match found
+
+        def _all_known() -> list[str]:
+            out: list[str] = []
+            for arts in snapshot.container_artifacts.values():
+                out.extend(a["id"] for a in arts)
+            out.extend(c["id"] for c in snapshot.containers)
+            out.extend(a["action_id"] for a in snapshot.actions)
+            out.extend(s["id"] for s in snapshot.statements)
+            out.extend(m["user_id"] for m in snapshot.members)
+            return out
+
+        # Try the input directly if it parses as hex/dashes.
+        if self._UUID_PREFIX_RE.match(short_id):
+            for full in _all_known():
+                if full.startswith(short_id):
+                    return full
+
+        # Fallback: extract every hex run >= 6 and try each.
+        candidates = re.findall(r'[0-9a-fA-F]{6,}', short_id)
+        for cand in candidates:
+            for full in _all_known():
+                if full.startswith(cand):
+                    return full
+
+        return short_id  # return as-is if no match found (prior behavior)
 
     async def _execute_action(self, decision: AgentAction, snapshot: CommunitySnapshot) -> ActionLog:
         """Execute the decided action via the API."""

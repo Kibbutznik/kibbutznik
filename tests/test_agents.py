@@ -589,3 +589,50 @@ class TestLLMPresets:
             assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
                 f"{name} has unknown backend {cfg['backend']!r}"
             )
+
+
+class TestValUuidResolver:
+    def _agent(self):
+        from agents.persona import Persona, Traits
+        from agents.api_client import KBZClient
+        engine = MockDecisionEngine()
+        persona = Persona(
+            name="T", role="r", background="b", decision_style="d",
+            communication_style="c", traits=Traits(),
+        )
+        return Agent(persona=persona, client=KBZClient(), engine=engine)
+
+    def _snapshot_with_artifact(self, full_id):
+        return CommunitySnapshot(
+            container_artifacts={"c1": [{"id": full_id, "title": "A", "content": "x"}]},
+        )
+
+    def test_clean_prefix_resolves(self):
+        agent = self._agent()
+        snap = self._snapshot_with_artifact("abc12345-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_val_uuid("abc12345", snap) == "abc12345-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_id_equals_prefix_resolves(self):
+        agent = self._agent()
+        snap = self._snapshot_with_artifact("abc12345-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_val_uuid("id=abc12345", snap) == "abc12345-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_parens_resolves(self):
+        agent = self._agent()
+        snap = self._snapshot_with_artifact("abc12345-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_val_uuid("(abc12345)", snap) == "abc12345-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_no_match_returns_input_unchanged(self):
+        """Preserves the prior permissive behavior — a UUID we don't
+        know about (e.g. just-created and not yet in the snapshot) is
+        passed through to the API."""
+        agent = self._agent()
+        snap = self._snapshot_with_artifact("abc12345-f7b6-4afb-95b6-ad129986b7f3")
+        unknown = "ffffffff-aaaa-bbbb-cccc-dddddddddddd"
+        assert agent._resolve_val_uuid(unknown, snap) == unknown
+
+    def test_full_uuid_returned_as_is(self):
+        agent = self._agent()
+        full = "deadbeef-cafe-babe-1234-567890abcdef"
+        snap = self._snapshot_with_artifact(full)
+        assert agent._resolve_val_uuid(full, snap) == full
