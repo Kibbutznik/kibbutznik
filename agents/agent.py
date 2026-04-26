@@ -627,6 +627,35 @@ class Agent:
             elif decision.action_type == "do_nothing":
                 return ActionLog(now, "do_nothing", decision.reason, "Chose to observe", True)
 
+            elif decision.action_type == "update_intention":
+                # The prompt documents `update_intention` as a FIELD
+                # you can attach to any other decision (it's harvested
+                # in the loop below at line ~300). Cheap LLMs (lunaris
+                # 8b in particular) interpret the docs literally and
+                # emit `{"action": "update_intention", ...}` instead.
+                # That used to fall through to "Unknown action" and the
+                # bot wasted the turn. Accept it as a synonym for
+                # do_nothing — the harvest loop still picks up the
+                # intention from `decision.params["update_intention"]`
+                # OR from the `proposal_text`/`reason` field if the LLM
+                # put the intention there.
+                intention = (
+                    decision.params.get("update_intention")
+                    or decision.params.get("proposal_text")
+                    or decision.params.get("intention")
+                    or decision.reason
+                    or ""
+                ).strip()
+                if intention:
+                    # Mirror the harvest in think_and_act so this works
+                    # even if the loop there doesn't see the field.
+                    decision.params["update_intention"] = intention[:160]
+                return ActionLog(
+                    now, "update_intention", decision.reason,
+                    f"Set intention: {intention[:80]!r}" if intention else "No intention text",
+                    True,
+                )
+
             else:
                 return ActionLog(now, "unknown", decision.reason, f"Unknown action: {decision.action_type}", False)
 
