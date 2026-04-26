@@ -155,6 +155,26 @@ class CommentService:
             if prop_row is not None:
                 recipients.add(prop_row[0])
                 notify_community_id = prop_row[1]
+        elif entity_type == "community":
+            # Pre-fix a top-level comment on a community itself
+            # notified nobody — no proposal author, no parent comment
+            # author. The whole point of community-level commenting
+            # is community-wide attention, so fan out to every active
+            # member (the self-notify drop below removes the
+            # commenter).
+            from kbz.enums import MemberStatus
+            from kbz.models.member import Member
+            member_rows = (
+                await self.db.execute(
+                    select(Member.user_id).where(
+                        Member.community_id == entity_id,
+                        Member.status == MemberStatus.ACTIVE,
+                    )
+                )
+            ).all()
+            for row in member_rows:
+                recipients.add(row[0])
+            notify_community_id = entity_id
 
         # Drop self-notifies up front so we don't even queue a
         # NotificationService call for the commenter (NotificationService

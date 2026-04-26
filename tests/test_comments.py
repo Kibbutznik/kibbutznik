@@ -380,3 +380,93 @@ async def test_comment_on_missing_community_404s(client):
     })
     assert resp.status_code == 404, resp.text
     assert "community" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_top_level_community_comment_notifies_active_members(client):
+    """Pre-fix a top-level comment on a community itself notified
+    NOBODY — no proposal author, no parent-comment author. Now we
+    fan out to every active member of the community (except the
+    commenter)."""
+    # Founder + a second active member.
+    founder = await create_test_user(client, "ccmt-founder")
+    other = await create_test_user(client, "ccmt-other")
+    community = await create_test_community(client, founder["id"])
+    # Land 'other' as a member.
+    mid = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": other["id"], "proposal_type": "Membership",
+            "proposal_text": "join", "val_uuid": other["id"],
+        })
+    ).json()["id"]
+    await client.patch(f"/proposals/{mid}/submit")
+    await client.post(f"/proposals/{mid}/support", json={"user_id": founder["id"]})
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": founder["id"]},
+        )
+
+    # Post a community-level comment as the founder. No session
+    # cookie → agent passthrough.
+    client.cookies.clear()
+    r = await client.post(
+        f"/entities/community/{community['id']}/comments",
+        json={"user_id": founder["id"], "comment_text": "anyone here?"},
+    )
+    assert r.status_code == 201, r.text
+
+    # 'other' should have a comment.posted notification.
+    client.cookies.clear()
+    r = await client.post("/auth/request-magic-link", json={"email": "other-notif@example.com"})
+    # Magic link creates the user — but we want OUR existing 'other'.
+    # Use the agent-style direct session by logging in as the email
+    # we know matches the user.
+    # Simpler: switch user via direct cookie-clearing then GET with
+    # an unauthenticated check against the notifications by user_id.
+    # Easiest: use the api_client pattern from agent tests — but
+    # here we just check the DB state directly via a separate call.
+    from kbz.services.notification_service import NotificationService
+    # Can't easily reach NotificationService from the test client
+    # without raw SQL. Use the GET endpoint for the OTHER user via
+    # a magic-link login as them.
+    client.cookies.clear()
+    # The 'other' user was created via /users (no email). Magic-link
+    # will get-or-create a NEW user keyed on the email — different id.
+    # So check via raw DB.
+    from sqlalchemy import select as _sel
+    from kbz.models.notification import Notification
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+    from kbz.config import settings
+    from sqlalchemy.ext.asyncio import create_async_engine
+    eng = create_async_engine(settings.test_database_url)
+    sf = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as s:
+        rows = (await s.execute(
+            _sel(Notification).where(Notification.user_id == uuid.UUID(other["id"]))
+        )).scalars().all()
+    await eng.dispose()
+    matching = [
+        n for n in rows
+        if n.kind == "comment.posted"
+        and (n.payload_json or {}).get("entity_type") == "community"
+    ]
+    assert len(matching) == 1, (
+        f"expected exactly one community comment.posted notification "
+        f"for the other member; got: {[(n.kind, n.payload_json) for n in rows]}"
+    )
+
+    # Founder (the commenter) must NOT get a self-notify.
+    async with sf() as s:
+        founder_rows = (await s.execute(
+            _sel(Notification).where(Notification.user_id == uuid.UUID(founder["id"]))
+        )).scalars().all()
+    await eng.dispose()
+    founder_self_match = [
+        n for n in founder_rows
+        if n.kind == "comment.posted"
+        and (n.payload_json or {}).get("entity_type") == "community"
+    ]
+    assert founder_self_match == [], (
+        "founder should not get a self-notify on their own community comment"
+    )
