@@ -655,6 +655,39 @@ async def test_change_variable_empty_text_rejected(client):
 
 
 @pytest.mark.asyncio
+async def test_throw_out_without_val_uuid_rejected_at_create(client):
+    """Pre-fix the executor silently skipped (`if proposal.val_uuid:`)
+    when val_uuid was missing — ThrowOut got accepted, the audit log
+    showed it landed, and nothing happened. Surface the error at
+    create time so the author sees it BEFORE wasting a pulse cycle."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ThrowOut",
+        "proposal_text": "no target — should 422",
+    })
+    assert r.status_code == 422
+    assert "val_uuid" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_end_action_without_val_uuid_rejected_at_create(client):
+    """Same shape — EndAction without val_uuid would also no-op
+    silently in the executor."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EndAction",
+        "proposal_text": "no target action",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_invalid_proposal_type(client):
     user = await create_test_user(client)
     community = await create_test_community(client, user["id"])
