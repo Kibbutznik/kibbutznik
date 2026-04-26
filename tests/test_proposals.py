@@ -1325,3 +1325,18 @@ async def test_amend_rejects_empty_text_for_add_statement(client):
     })
     assert r.status_code == 422, r.text
     assert "non-empty" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_community_rejects_whitespace_only_name(client):
+    """min_length=1 lets '   ' (3 spaces) through. The name then
+    appears blank in the community list and inbox notifications.
+    Reject at schema."""
+    user = await create_test_user(client)
+    for bad in ("   ", "\t\n", " \r\n  "):
+        r = await client.post("/communities", json={
+            "name": bad, "founder_user_id": user["id"],
+        })
+        assert r.status_code == 422, (
+            f"name={bad!r} should 422; got {r.status_code} {r.text}"
+        )
