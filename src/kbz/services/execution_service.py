@@ -199,7 +199,17 @@ class ExecutionService:
         # Cancel any active DelegateArtifact proposals in the PARENT community
         # that target this now-ended action (val_text = action community_id).
         # Also cancel any JoinAction proposals for this action (val_uuid = action community_id).
-        active_statuses = (ProposalStatus.OUT_THERE.value, ProposalStatus.ON_THE_AIR.value)
+        # DRAFT included on purpose: a Draft proposal pointing at (or
+        # filed inside) a now-dead action can't ever land usefully —
+        # if we leave it Draft, it just clogs the author's in-flight
+        # cap (ProposalRateLimit) forever and shows up in the
+        # author's "your in-flight proposals" view as a ghost they
+        # can't submit. Cancel it here so the state is clean.
+        active_statuses = (
+            ProposalStatus.DRAFT.value,
+            ProposalStatus.OUT_THERE.value,
+            ProposalStatus.ON_THE_AIR.value,
+        )
         orphan_result = await self.db.execute(
             select(Proposal).where(
                 Proposal.community_id == proposal.community_id,
