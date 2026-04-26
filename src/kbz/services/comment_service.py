@@ -94,12 +94,19 @@ class CommentService:
         )
         self.db.add(comment)
 
-        # Inbox: notify the relevant user. For a top-level comment on
-        # a proposal that's the proposal author. For a reply we also
-        # bubble up to the parent comment's author. Self-comments are
-        # filtered out inside NotificationService.
-        notify_user_id: uuid.UUID | None = None
+        # Inbox: notify the relevant user(s). For a top-level proposal
+        # comment that's the proposal author. For a reply we ALSO
+        # bubble up to the parent comment's author. Pre-fix the code
+        # set notify_user_id once and never accumulated — so a reply
+        # to the proposal author's own comment fanned out only to that
+        # author (NotificationService correctly skips self-notify),
+        # and the proposal author whose post triggered the thread
+        # ALSO received nothing when the parent-author == commenter
+        # case was hit. Now we collect every distinct recipient and
+        # fan out to each.
+        recipients: set[uuid.UUID] = set()
         notify_community_id: uuid.UUID | None = None
+
         if data.parent_comment_id is not None:
             parent = (
                 await self.db.execute(
@@ -107,8 +114,9 @@ class CommentService:
                 )
             ).scalar_one_or_none()
             if parent is not None:
-                notify_user_id = parent.user_id
-        if notify_user_id is None and entity_type == "proposal":
+                recipients.add(parent.user_id)
+
+        if entity_type == "proposal":
             prop_row = (
                 await self.db.execute(
                     select(Proposal.user_id, Proposal.community_id).where(
@@ -117,28 +125,27 @@ class CommentService:
                 )
             ).first()
             if prop_row is not None:
-                notify_user_id = prop_row[0]
+                recipients.add(prop_row[0])
                 notify_community_id = prop_row[1]
-        elif entity_type == "proposal":
-            # Already filled notify_user_id via parent_comment_id;
-            # still grab community_id for scoping.
-            prop_cid = (
-                await self.db.execute(
-                    select(Proposal.community_id).where(Proposal.id == entity_id)
-                )
-            ).scalar_one_or_none()
-            notify_community_id = prop_cid
-        if notify_user_id is not None:
+
+        # Drop self-notifies up front so we don't even queue a
+        # NotificationService call for the commenter (NotificationService
+        # also filters, but skipping here saves the lookup).
+        recipients.discard(data.user_id)
+
+        if recipients:
             from kbz.services.notification_service import NotificationService
-            await NotificationService(self.db).fanout_comment_posted(
-                community_id=notify_community_id,
-                comment_id=comment.id,
-                commenter_user_id=data.user_id,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                comment_text=data.comment_text,
-                notify_user_id=notify_user_id,
-            )
+            notif_svc = NotificationService(self.db)
+            for recipient in recipients:
+                await notif_svc.fanout_comment_posted(
+                    community_id=notify_community_id,
+                    comment_id=comment.id,
+                    commenter_user_id=data.user_id,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    comment_text=data.comment_text,
+                    notify_user_id=recipient,
+                )
 
         await self.db.commit()
         await self.db.refresh(comment)

@@ -165,6 +165,87 @@ async def test_age_out_cancellation_notifies_author(client):
 
 
 @pytest.mark.asyncio
+async def test_self_reply_still_notifies_proposal_author(client):
+    """When a commenter replies to their OWN comment on someone
+    else's proposal, the proposal author must still get the
+    comment.posted notification. Pre-fix the notify chain set
+    notify_user_id to the parent comment's author (= the commenter
+    themselves), which then short-circuited as a self-notify and
+    the proposal author silently got nothing."""
+    # Proposal author + a community.
+    author_id = await _login(client, "self-reply-author@example.com")
+    community = await create_test_community(client, author_id)
+
+    # File a proposal as the author.
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": author_id,
+        "proposal_type": "AddStatement",
+        "proposal_text": "thread starter",
+    })
+    proposal_id = resp.json()["id"]
+
+    # Land a second member who will be the commenter.
+    client.cookies.clear()
+    commenter_id = await _login(client, "self-reply-commenter@example.com")
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": commenter_id,
+        "proposal_type": "Membership",
+        "proposal_text": "join",
+        "val_uuid": commenter_id,
+    })
+    mid = resp.json()["id"]
+    await client.patch(f"/proposals/{mid}/submit")
+    client.cookies.clear()
+    await _login(client, "self-reply-author@example.com")
+    await client.post(
+        f"/proposals/{mid}/support", json={"user_id": author_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{community['id']}/pulses/support",
+            json={"user_id": author_id},
+        )
+
+    # Commenter posts a top-level comment (author gets notified, fine).
+    client.cookies.clear()
+    await _login(client, "self-reply-commenter@example.com")
+    r = await client.post(
+        f"/entities/proposal/{proposal_id}/comments",
+        json={"user_id": commenter_id, "comment_text": "first thought"},
+    )
+    parent_comment_id = r.json()["id"]
+
+    # Author marks all read so we can isolate the reply signal.
+    client.cookies.clear()
+    await _login(client, "self-reply-author@example.com")
+    await client.post("/users/me/notifications/read-all")
+
+    # Commenter REPLIES to their own comment (parent author == commenter).
+    client.cookies.clear()
+    await _login(client, "self-reply-commenter@example.com")
+    await client.post(
+        f"/entities/proposal/{proposal_id}/comments",
+        json={
+            "user_id": commenter_id,
+            "comment_text": "follow-up thought",
+            "parent_comment_id": parent_comment_id,
+        },
+    )
+
+    # Proposal author's inbox must show a NEW comment.posted from
+    # the reply — pre-fix it stayed empty.
+    client.cookies.clear()
+    await _login(client, "self-reply-author@example.com")
+    notes = (await client.get("/users/me/notifications?unread_only=true")).json()
+    comment_notes = [n for n in notes if n["kind"] == "comment.posted"]
+    assert len(comment_notes) == 1, (
+        "proposal author must still hear about the reply when the "
+        "parent comment author == commenter; got: "
+        f"{[n['kind'] for n in notes]}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_mark_read_and_unread_count(client):
     """unread-count, mark-one-read and mark-all-read all flip read_at."""
     founder_id = await _login(client, "reader-notif@example.com")
