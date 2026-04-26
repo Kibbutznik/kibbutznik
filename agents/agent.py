@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from agents.api_client import KBZClient
+from agents.api_client import KBZAPIError, KBZClient
 from agents.community_state import CommunitySnapshot, observe_community
 from agents.decision_engine import AgentAction, DecisionEngine
 from agents.memory import MemoryStore
@@ -223,6 +223,26 @@ class Agent:
             for q, a in recent_interviews:
                 interview_ctx += f"  Viewer asked: \"{q[:120]}\"\n  You answered: \"{a[:120]}\"\n\n"
 
+        # Surface the last few API failures so the LLM can adjust.
+        # Take the most-recent N failures (not just the very last
+        # turn's) — a 8b model often needs to see the same error
+        # twice before it stops repeating it. Cap at 5 for token
+        # budget. De-dupe by `action_type:detail` so a bot stuck
+        # in a loop doesn't blow the buffer with identical lines.
+        recent_failures: list[str] = []
+        seen_keys: set[str] = set()
+        for log in reversed(self.action_history):
+            if log.success:
+                continue
+            key = f"{log.action_type}:{log.details}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            recent_failures.append(f"{log.action_type}: {log.details}")
+            if len(recent_failures) >= 5:
+                break
+        recent_failures.reverse()  # oldest-first reads more naturally
+
         decisions = await self.engine.decide(
             persona_name=self.persona.name,
             persona_role=self.persona.role,
@@ -240,6 +260,7 @@ class Agent:
             total_active_proposals=total_active,
             interview_context=interview_ctx,
             memory_context=memory_context,
+            recent_failures=recent_failures,
         )
 
         # 3. ACT — execute each decision, applying guards per action
@@ -609,6 +630,17 @@ class Agent:
             else:
                 return ActionLog(now, "unknown", decision.reason, f"Unknown action: {decision.action_type}", False)
 
+        except KBZAPIError as e:
+            # Surface the FastAPI `detail` so the next turn's prompt
+            # tells the LLM *why* the call failed — not just "client
+            # error 422". Cheap local models (Ollama 8b) repeat
+            # invalid proposal shapes turn after turn otherwise,
+            # which spends pulse cycles on nothing and makes the
+            # community look stuck.
+            return ActionLog(
+                now, decision.action_type, decision.reason,
+                f"HTTP {e.status_code}: {e.detail}", False,
+            )
         except Exception as e:
             return ActionLog(now, decision.action_type, decision.reason, f"Error: {e}", False)
 

@@ -60,6 +60,55 @@ class TestPersona:
         assert "avoids confrontation" in summary
 
 
+# --- API client error mapping ---
+
+
+class TestKBZAPIError:
+    """The agent-facing API client maps 4xx/5xx into KBZAPIError
+    carrying the FastAPI `detail`. Without this, the agent's
+    failure log contains only the bare httpx wrapper text and the
+    LLM has nothing to learn from."""
+
+    def test_dict_detail_is_extracted(self):
+        from agents.api_client import _check, KBZAPIError
+        import httpx
+        request = httpx.Request("POST", "http://x/communities/c/proposals")
+        resp = httpx.Response(
+            422, request=request,
+            json={"detail": "AddStatement requires non-empty proposal_text"},
+        )
+        with pytest.raises(KBZAPIError) as exc:
+            _check(resp)
+        assert exc.value.status_code == 422
+        assert "non-empty" in exc.value.detail
+
+    def test_list_detail_is_collapsed(self):
+        """FastAPI 422 from pydantic is a list of {loc, msg, ...}.
+        Collapsed to a semicolon-joined string so the failure block
+        reads as one line per failed call."""
+        from agents.api_client import _check, KBZAPIError
+        import httpx
+        request = httpx.Request("POST", "http://x/")
+        resp = httpx.Response(
+            422, request=request,
+            json={"detail": [
+                {"loc": ["body", "user_id"], "msg": "field required"},
+                {"loc": ["body", "amount"], "msg": "value is not a valid Decimal"},
+            ]},
+        )
+        with pytest.raises(KBZAPIError) as exc:
+            _check(resp)
+        assert "field required" in exc.value.detail
+        assert "valid Decimal" in exc.value.detail
+
+    def test_success_passes_through(self):
+        from agents.api_client import _check
+        import httpx
+        request = httpx.Request("GET", "http://x/")
+        resp = httpx.Response(200, request=request, json={"ok": True})
+        _check(resp)  # must not raise
+
+
 # --- Decision Engine Tests ---
 
 
@@ -141,6 +190,45 @@ class TestDecisionEngine:
         assert "AddStatement" in prompt
         assert "Test" in prompt
         assert "Members: 5" in prompt
+
+    def test_build_prompt_omits_failures_block_when_none(self):
+        prompt = build_decision_prompt(
+            persona_name="A", persona_role="r", persona_background="b",
+            persona_decision_style="d", persona_communication_style="c",
+            persona_trait_summary="t", community_summary="s",
+            action_history=[],
+            recent_failures=None,
+        )
+        assert "Recent Failed Actions" not in prompt
+        # Empty list also produces no block — same shape as None.
+        prompt2 = build_decision_prompt(
+            persona_name="A", persona_role="r", persona_background="b",
+            persona_decision_style="d", persona_communication_style="c",
+            persona_trait_summary="t", community_summary="s",
+            action_history=[], recent_failures=[],
+        )
+        assert "Recent Failed Actions" not in prompt2
+
+    def test_build_prompt_renders_failures_block(self):
+        """The failure detail must reach the LLM verbatim — that's
+        the whole point of the feedback loop. Cheap models repeat
+        the same invalid call until they're told what was wrong."""
+        prompt = build_decision_prompt(
+            persona_name="A", persona_role="r", persona_background="b",
+            persona_decision_style="d", persona_communication_style="c",
+            persona_trait_summary="t", community_summary="s",
+            action_history=[],
+            recent_failures=[
+                "create_proposal: HTTP 422: ChangeVariable on 'PulseSupport' "
+                "requires a non-negative value; got '-5'",
+                "create_proposal: HTTP 422: ThrowOut target 00000000-… is not "
+                "an active member of this community",
+            ],
+        )
+        assert "Recent Failed Actions" in prompt
+        assert "DO NOT REPEAT" in prompt
+        assert "non-negative value" in prompt
+        assert "ThrowOut target" in prompt
 
 
 # --- Community State Tests ---
@@ -410,3 +498,59 @@ async def test_agent_interview_context(community_with_agent):
     assert agent.persona.name in context
     assert "create_proposal" in context
     assert "Core value" in context
+
+
+class _CapturingEngine(DecisionEngine):
+    """DecisionEngine that records the kwargs decide() was called
+    with, so the test can assert recent_failures was passed."""
+    def __init__(self):
+        super().__init__()
+        self.calls: list[dict] = []
+
+    async def decide(self, **kwargs) -> list[AgentAction]:
+        self.calls.append(kwargs)
+        return [AgentAction(action_type="do_nothing", reason="captured", params={})]
+
+
+@pytest.mark.asyncio
+async def test_agent_failure_surfaces_in_next_prompt(community_with_agent):
+    """End-to-end: an agent's failed create_proposal must appear in
+    the recent_failures kwarg the next time decide() is called.
+
+    Why this matters: cheap LLMs (Ollama 8b) hallucinate proposal
+    shapes — file ChangeVariable("WrongName") or AddStatement("")
+    over and over. Pre-fix the failure was logged as a generic
+    "Client error '422 Unprocessable Entity'" and the LLM had no
+    way to learn what was wrong. Now the FastAPI `detail` is
+    threaded through KBZAPIError → ActionLog.details →
+    recent_failures kwarg → prompt block.
+    """
+    agent, community = community_with_agent
+    # First turn: try to file an AddStatement with empty text. Server
+    # refuses with 422 (PR #65). The agent's exception handler must
+    # capture the rich detail.
+    agent.engine = MockDecisionEngine([
+        {"action": "create_proposal", "proposal_type": "AddStatement",
+         "proposal_text": "", "reason": "should fail — empty text"},
+    ])
+    logs = await agent.think_and_act()
+    assert len(logs) == 1
+    assert logs[0].success is False
+    assert "non-empty" in logs[0].details.lower(), (
+        f"the failure log must carry the FastAPI `detail`, not the "
+        f"bare httpx wrapper text; got: {logs[0].details!r}"
+    )
+
+    # Second turn: capture what gets fed into decide(). The first
+    # turn's failure should appear in recent_failures, ready for
+    # the LLM to read.
+    cap = _CapturingEngine()
+    agent.engine = cap
+    await agent.think_and_act()
+    assert len(cap.calls) == 1
+    failures = cap.calls[0].get("recent_failures") or []
+    assert any("non-empty" in line for line in failures), (
+        f"the empty-text failure should be in recent_failures so the "
+        f"prompt's 'DO NOT REPEAT' block surfaces it to the LLM; got: "
+        f"{failures!r}"
+    )

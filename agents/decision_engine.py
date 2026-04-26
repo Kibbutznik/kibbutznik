@@ -156,6 +156,7 @@ def build_decision_prompt(
     total_active_proposals: int = 0,
     interview_context: str = "",
     memory_context: str = "",
+    recent_failures: list[str] | None = None,
 ) -> str:
     """Build the full prompt for the LLM to make a decision."""
 
@@ -178,6 +179,24 @@ def build_decision_prompt(
         force_action = "\n!! YOU HAVE DONE NOTHING FOR 2+ TURNS. do_nothing IS FORBIDDEN THIS TURN. Pick a real action. !!\n"
     elif consecutive_do_nothings == 1:
         force_action = "\n! You did nothing last turn. You MUST take a real action now. !\n"
+
+    # Failures from prior turns. The agent's API client now raises
+    # KBZAPIError carrying the FastAPI `detail` field, so each line
+    # tells the LLM what was actually wrong (e.g. "ChangeVariable
+    # on 'PulseSupport' requires a non-negative value", or
+    # "ThrowOut target 00000000-… is not an active member of this
+    # community"). This block is the cheap-model "stop banging your
+    # head on the wall" feedback loop — more important than longer
+    # prompts when running 100 bots on Ollama 8b.
+    failures_block = ""
+    if recent_failures:
+        failures_block = (
+            "\n## ⚠️ Recent Failed Actions — DO NOT REPEAT THESE\n"
+            "The platform refused these last attempts. Read the\n"
+            "*reason* and pick a different action this turn.\n"
+            + "\n".join(f"  - {line}" for line in recent_failures)
+            + "\n"
+        )
 
     # Build initiative-specific guidance
     if initiative >= 0.7:
@@ -289,6 +308,7 @@ Decision style: {persona_decision_style}
 ## Your Last 6 Actions
 {recent_history}
 {force_action}
+{failures_block}
 {interview_context}
 ## Proposing New Things
 {propose_guidance}
@@ -540,6 +560,7 @@ class DecisionEngine:
         total_active_proposals: int = 0,
         interview_context: str = "",
         memory_context: str = "",
+        recent_failures: list[str] | None = None,
     ) -> list[AgentAction]:
         prompt = build_decision_prompt(
             persona_name=persona_name,
@@ -558,6 +579,7 @@ class DecisionEngine:
             total_active_proposals=total_active_proposals,
             interview_context=interview_context,
             memory_context=memory_context,
+            recent_failures=recent_failures,
         )
 
         last_error = None
