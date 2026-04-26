@@ -258,6 +258,30 @@ class ProposalService:
                     ),
                 )
 
+        # ThrowOut: val_uuid must point at an active member of THIS
+        # community. Pre-fix the only required-field check was
+        # "val_uuid present"; the executor's `member_svc.throw_out`
+        # silently no-ops when the target isn't an active member,
+        # so a ThrowOut against a bogus user_id (or a non-member real
+        # user) would land Accepted but do nothing — meanwhile the
+        # create-time fanout already minted a `proposal.targets_you`
+        # notification for a recipient who can't even act on it
+        # (orphan row in `notifications` for non-existent users; or
+        # confusing inbox entry for a real user who isn't a member
+        # here). Refuse at create time.
+        if data.proposal_type == ProposalType.THROW_OUT:
+            member_svc = MemberService(self.db)
+            if not await member_svc.is_active_member(
+                community_id, data.val_uuid,
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"ThrowOut target {data.val_uuid} is not an active "
+                        f"member of this community — nothing to throw out"
+                    ),
+                )
+
         # ChangeVariable validation chain. Run cheapest checks first.
         # 1) Name must be present and known — pre-fix the executor ran
         #    a bare UPDATE against the variables table; an unknown
