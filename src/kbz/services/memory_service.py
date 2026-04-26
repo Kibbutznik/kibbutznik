@@ -95,15 +95,27 @@ class MemoryService:
         user_id: uuid.UUID,
         target_user_id: uuid.UUID,
     ) -> dict | None:
-        """Find an existing relationship memory between two users."""
+        """Find an existing relationship memory between two users.
+
+        Pre-fix used scalar_one_or_none() — but agent_memories has no
+        uniqueness on (user_id, memory_type='relationship', related_id),
+        so an agent that ran the relationship-extractor twice for the
+        same target ended up with two rows. The next find_relationship
+        call would crash with MultipleResultsFound. Pick the most
+        recently updated row instead and let pruning clean up the
+        duplicates eventually.
+        """
         result = await self.db.execute(
-            select(AgentMemory).where(
+            select(AgentMemory)
+            .where(
                 AgentMemory.user_id == user_id,
                 AgentMemory.memory_type == "relationship",
                 AgentMemory.related_id == target_user_id,
             )
+            .order_by(AgentMemory.created_at.desc())
+            .limit(1)
         )
-        mem = result.scalar_one_or_none()
+        mem = result.scalars().first()
         return self._to_dict(mem) if mem else None
 
     async def prune(self, user_id: uuid.UUID, current_round: int) -> int:

@@ -385,6 +385,37 @@ async def test_memory_service_find_relationship(db):
     assert not_found is None
 
 
+@pytest.mark.asyncio
+async def test_find_relationship_handles_duplicate_rows(db):
+    """agent_memories has no uniqueness on (user, type=relationship,
+    related_id), so an agent that ran the relationship-extractor
+    twice for the same target ended up with two rows. Pre-fix
+    find_relationship called scalar_one_or_none() and crashed with
+    MultipleResultsFound on the next lookup. Now it returns the most
+    recently created row instead."""
+    from kbz.services.memory_service import MemoryService
+
+    svc = MemoryService(db)
+    uid = uuid.uuid4()
+    target = uuid.uuid4()
+
+    # Two relationship memories for the same pair (no uniqueness enforced).
+    await svc.add_memory(
+        uid, "relationship", "ally — old note",
+        importance=0.4, related_id=target,
+    )
+    await svc.add_memory(
+        uid, "relationship", "ally — most recent observation",
+        importance=0.7, related_id=target,
+    )
+
+    # Pre-fix this raised MultipleResultsFound; now it returns the
+    # most recently created row (ordered by created_at desc).
+    found = await svc.find_relationship(uid, target)
+    assert found is not None
+    assert "most recent" in found["content"]
+
+
 # ── MemoryFormatter Tests ───────────────────────────────────────────────────
 
 
