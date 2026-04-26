@@ -4,6 +4,55 @@ from typing import Any
 import httpx
 
 
+class KBZAPIError(Exception):
+    """4xx/5xx response from the KBZ API, surfaced with the FastAPI
+    `detail` field so the agent's failure log carries the *reason*
+    (e.g. "ChangeVariable on 'PulseSupport' requires a non-negative
+    value") rather than the bare httpx wrapper text ("Client error
+    '422 Unprocessable Entity' for url '...'"). The agent's prompt
+    folds these into a "Recent failures" block so the LLM can learn
+    not to repeat the same mistake — important for cheap local
+    models (Ollama 8b) that hallucinate proposal shapes more often
+    than Claude does.
+    """
+
+    def __init__(self, status_code: int, detail: str, url: str):
+        self.status_code = status_code
+        self.detail = detail
+        self.url = url
+        super().__init__(f"HTTP {status_code} on {url}: {detail}")
+
+
+def _check(resp: httpx.Response) -> None:
+    """raise_for_status replacement that extracts FastAPI `detail`.
+    Falls back to the response text on parse failure."""
+    if resp.is_success:
+        return
+    detail: str
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            d = body.get("detail")
+            # FastAPI 422 detail is a list of {loc, msg, ...} dicts;
+            # collapse them so the agent's log line stays readable.
+            if isinstance(d, list):
+                detail = "; ".join(
+                    str(item.get("msg") or item)
+                    for item in d
+                ) or str(d)
+            else:
+                detail = str(d) if d is not None else resp.text
+        else:
+            detail = str(body)
+    except Exception:
+        detail = resp.text or f"HTTP {resp.status_code}"
+    raise KBZAPIError(
+        status_code=resp.status_code,
+        detail=detail,
+        url=str(resp.request.url) if resp.request else "",
+    )
+
+
 class KBZClient:
     """Agent-facing API client that abstracts HTTP calls into typed methods."""
 
@@ -25,17 +74,17 @@ class KBZClient:
         if resp.status_code == 409:
             # Username already exists — reuse the existing account
             return await self.get_user_by_name(user_name)
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_user(self, user_id: str) -> dict:
         resp = await self._client.get(f"/users/{user_id}")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_user_by_name(self, user_name: str) -> dict:
         resp = await self._client.get(f"/users/by-name/{user_name}")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Communities ---
@@ -53,34 +102,34 @@ class KBZClient:
         if initial_artifact_mission is not None:
             payload["initial_artifact_mission"] = initial_artifact_mission
         resp = await self._client.post("/communities", json=payload)
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_community(self, community_id: str) -> dict:
         resp = await self._client.get(f"/communities/{community_id}")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_variables(self, community_id: str) -> dict[str, str]:
         resp = await self._client.get(f"/communities/{community_id}/variables")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()["variables"]
 
     async def get_children(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/communities/{community_id}/children")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Members ---
 
     async def get_members(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/communities/{community_id}/members")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_user_communities(self, user_id: str) -> list[dict]:
         resp = await self._client.get(f"/users/{user_id}/communities")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Proposals ---
@@ -106,12 +155,12 @@ class KBZClient:
         if pitch:
             payload["pitch"] = pitch
         resp = await self._client.post(f"/communities/{community_id}/proposals", json=payload)
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_proposal(self, proposal_id: str) -> dict:
         resp = await self._client.get(f"/proposals/{proposal_id}")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_proposals(self, community_id: str, status: str | None = None) -> list[dict]:
@@ -119,12 +168,12 @@ class KBZClient:
         if status:
             url += f"?status={status}"
         resp = await self._client.get(url)
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def submit_proposal(self, proposal_id: str) -> dict:
         resp = await self._client.patch(f"/proposals/{proposal_id}/submit")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def support_proposal(self, proposal_id: str, user_id: str) -> dict:
@@ -134,19 +183,19 @@ class KBZClient:
         )
         if resp.status_code == 409:
             return {"status": "already_supported"}
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def unsupport_proposal(self, proposal_id: str, user_id: str) -> dict:
         resp = await self._client.delete(f"/proposals/{proposal_id}/support/{user_id}")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Pulses ---
 
     async def get_pulses(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/communities/{community_id}/pulses")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def support_pulse(self, community_id: str, user_id: str) -> dict:
@@ -156,21 +205,21 @@ class KBZClient:
         )
         if resp.status_code == 409:
             return {"status": "already_supported"}
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Statements ---
 
     async def get_statements(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/communities/{community_id}/statements")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Actions ---
 
     async def get_actions(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/communities/{community_id}/actions")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Artifacts ---
@@ -179,18 +228,18 @@ class KBZClient:
         resp = await self._client.get(
             f"/artifacts/containers/community/{community_id}?include_history=0"
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_work_tree(self, community_id: str) -> list[dict]:
         resp = await self._client.get(f"/artifacts/communities/{community_id}/work_tree")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_artifact_history(self, artifact_id: str) -> list[dict]:
         """Return the version history of an artifact (newest last)."""
         resp = await self._client.get(f"/artifacts/{artifact_id}/history")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     # --- Comments ---
@@ -213,12 +262,12 @@ class KBZClient:
             f"/entities/{entity_type}/{entity_id}/comments",
             json=payload,
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_comments(self, entity_type: str, entity_id: str) -> list[dict]:
         resp = await self._client.get(f"/entities/{entity_type}/{entity_id}/comments")
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def vote_comment(self, comment_id: str, delta: int) -> dict:
@@ -226,5 +275,5 @@ class KBZClient:
             f"/comments/{comment_id}/score",
             json={"delta": delta},
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
