@@ -224,6 +224,27 @@ class InviteService:
         if claimed is None:
             raise ValueError("invite already claimed (race)")
 
+        # Inbox fanout. Mirror ProposalService.create — without this,
+        # invite-claim Membership proposals were filed silently:
+        # other members got no inbox entry telling them someone
+        # applied to join. The TKG/WebSocket emit lives in the
+        # caller (routers/invites.py); the notification fanout
+        # belongs here next to the Proposal insert so it lands in
+        # the same transaction.
+        from kbz.services.notification_service import NotificationService
+        notif_svc = NotificationService(self.db)
+        await notif_svc.fanout_proposal_created(
+            community_id=invite.community_id,
+            proposal_id=proposal.id,
+            # Membership.value (the string "Membership") rather than
+            # str(enum) which gives "ProposalType.MEMBERSHIP". The
+            # ProposalService.create path doesn't trip on this because
+            # data.proposal_type comes in as a string from the API.
+            proposal_type=ProposalType.MEMBERSHIP.value,
+            proposal_text=proposal.proposal_text or "",
+            author_user_id=user.id,
+        )
+
         await self.db.flush()
 
         return ClaimedInvite(
