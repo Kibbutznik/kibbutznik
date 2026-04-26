@@ -48,6 +48,44 @@ from kbz.enums import ProposalStatus, ProposalType
 from kbz.models.action import Action
 from kbz.models.proposal import Proposal
 from kbz.models.user import User
+
+
+async def _enforce_proposal_rate_limit(db, community_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Mirror ProposalService.create's per-member in-flight cap on
+    these wallet shortcuts. Without this, /actions/{id}/funding-request
+    and /communities/{id}/payment-request can be used to flood the
+    proposal queue past the cap that /communities/{id}/proposals
+    enforces. Same defense shape, same 429 message — keeps both
+    surfaces honest.
+    """
+    from sqlalchemy import func as _func
+    from kbz.services.proposal_service import (
+        _resolve_rate_limit, _ACTIVE_DEDUPE_STATUSES, PROPOSAL_RATE_LIMIT_VAR,
+    )
+    cap = await _resolve_rate_limit(db, community_id)
+    if cap <= 0:
+        return
+    in_flight = (
+        await db.execute(
+            select(_func.count())
+            .select_from(Proposal)
+            .where(
+                Proposal.community_id == community_id,
+                Proposal.user_id == user_id,
+                Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+            )
+        )
+    ).scalar_one()
+    if in_flight >= cap:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Proposal cap: you already have {in_flight} in-flight "
+                f"proposals in this community (max {cap}). Wait for some "
+                f"to land or be canceled, or file a ChangeVariable "
+                f"proposal to raise '{PROPOSAL_RATE_LIMIT_VAR}'."
+            ),
+        )
 from kbz.models.wallet import (
     OWNER_ACTION,
     OWNER_COMMUNITY,
@@ -257,6 +295,7 @@ async def file_funding_request(
     from kbz.services.member_service import MemberService
     if not await MemberService(db).is_active_member(parent, user.id):
         raise HTTPException(status_code=403, detail="User is not an active member")
+    await _enforce_proposal_rate_limit(db, parent, user.id)
     _parse_positive_amount(body.amount)
     p = Proposal(
         id=uuid.uuid4(),
@@ -336,6 +375,7 @@ async def file_payment_request(
     from kbz.services.member_service import MemberService
     if not await MemberService(db).is_active_member(community_id, user.id):
         raise HTTPException(status_code=403, detail="User is not an active member")
+    await _enforce_proposal_rate_limit(db, community_id, user.id)
     # Early check that this is a leaf — saves a pointless proposal.
     # Match `status == ACTIVE` so an EndAction'd sub-Action (which
     # leaves an INACTIVE Action row behind for audit) doesn't

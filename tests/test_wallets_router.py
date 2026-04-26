@@ -353,3 +353,99 @@ async def test_payment_request_rejects_bad_amounts(client):
         assert r.status_code == 400, f"amount={bad!r} should 400, got {r.status_code}"
 
 
+@pytest.mark.asyncio
+async def test_funding_request_honors_proposal_rate_limit(client):
+    """The wallet shortcut /actions/{id}/funding-request bypassed
+    ProposalService.create entirely, building Proposal rows directly.
+    That meant the per-member in-flight cap (default 5) didn't apply
+    to it — a user already at the cap on /communities/{id}/proposals
+    could file unlimited Funding via the shortcut. Now both surfaces
+    enforce the same cap."""
+    founder_id = await _login(client, "ratecap-fund@example.com")
+    c = (
+        await client.post("/communities", json={
+            "name": "ratecap", "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+    # Land an action under it so the funding-request shortcut has a target.
+    apid = (
+        await client.post(f"/communities/{c['id']}/proposals", json={
+            "user_id": founder_id,
+            "proposal_type": "AddAction",
+            "proposal_text": "WG",
+            "val_text": "WG",
+        })
+    ).json()["id"]
+    await client.patch(f"/proposals/{apid}/submit")
+    await client.post(
+        f"/proposals/{apid}/support", json={"user_id": founder_id},
+    )
+    for _ in range(2):
+        await client.post(
+            f"/communities/{c['id']}/pulses/support",
+            json={"user_id": founder_id},
+        )
+    actions = (await client.get(f"/communities/{c['id']}/actions")).json()
+    action_id = actions[0]["action_id"]
+
+    # Fill the cap with 5 in-flight AddStatement proposals via the
+    # normal route. Default ProposalRateLimit is 5.
+    for i in range(5):
+        r = await client.post(f"/communities/{c['id']}/proposals", json={
+            "user_id": founder_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": f"capper {i}",
+        })
+        assert r.status_code == 201, r.text
+
+    # Sanity: 6th via normal route is capped.
+    r = await client.post(f"/communities/{c['id']}/proposals", json={
+        "user_id": founder_id,
+        "proposal_type": "AddStatement",
+        "proposal_text": "should be capped",
+    })
+    assert r.status_code == 429
+
+    # The regression: funding-request shortcut must ALSO 429 once
+    # capped. Pre-fix it sailed past with a 200.
+    r = await client.post(
+        f"/actions/{action_id}/funding-request",
+        json={"amount": "5", "pitch": "shortcut bypass attempt"},
+    )
+    assert r.status_code == 429, (
+        f"funding-request shortcut bypassed cap: got {r.status_code} {r.text}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_payment_request_honors_proposal_rate_limit(client):
+    """Same cap-bypass for /communities/{id}/payment-request — also
+    direct Proposal construction, also missed the cap."""
+    founder_id = await _login(client, "ratecap-pay@example.com")
+    c = (
+        await client.post("/communities", json={
+            "name": "ratecap-pay", "founder_user_id": founder_id,
+            "enable_financial": True,
+        })
+    ).json()
+
+    # Fill the cap with 5 in-flight proposals via the normal route.
+    for i in range(5):
+        r = await client.post(f"/communities/{c['id']}/proposals", json={
+            "user_id": founder_id,
+            "proposal_type": "AddStatement",
+            "proposal_text": f"pay-capper {i}",
+        })
+        assert r.status_code == 201
+
+    # The shortcut must 429.
+    r = await client.post(
+        f"/communities/{c['id']}/payment-request",
+        json={"amount": "5", "pitch": "shortcut bypass attempt"},
+    )
+    assert r.status_code == 429, (
+        f"payment-request shortcut bypassed cap: got {r.status_code} {r.text}"
+    )
+
+
