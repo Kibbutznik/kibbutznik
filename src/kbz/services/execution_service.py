@@ -241,6 +241,19 @@ class ExecutionService:
         for inside in inside_result.scalars().all():
             inside.proposal_status = ProposalStatus.CANCELED.value
             inside.decided_at = _decided_now
+            # Membership proposals open an escrow at create time
+            # (see proposal_service.py) when the community is
+            # financial AND membershipFee > 0. The other cancel
+            # paths (pulse age-out, applicant withdraw, rejection)
+            # all refund here too — without a parallel refund on
+            # auto-cancel-via-EndAction, the applicant's credits
+            # stay locked in the escrow wallet forever after the
+            # action terminates. escrow_refund is a no-op when
+            # there's no escrow, so this is safe for non-financial
+            # action communities and for non-Membership types.
+            if inside.proposal_type == ProposalType.MEMBERSHIP.value:
+                from kbz.services.wallet_service import WalletService
+                await WalletService(self.db).escrow_refund(inside.id)
             logger.info(
                 "Auto-canceled %s proposal %s inside ended community %s",
                 inside.proposal_type, inside.id, ended_action_id,

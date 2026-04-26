@@ -469,3 +469,86 @@ async def test_end_action_sweeps_balance_to_parent(sf):
         a_w = (await db.execute(select(Wallet).where(Wallet.id == a_w.id))).scalar_one()
         assert p_w.balance == Decimal("25")
         assert a_w.balance == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_end_action_refunds_inside_membership_escrows(sf):
+    """A Membership proposal filed INSIDE a (financial) action
+    community opens a membershipFee escrow at create time. When the
+    parent ends the action (EndAction), the executor auto-cancels
+    that pending Membership — but pre-fix the escrow wallet was
+    NOT refunded. The applicant's credits stayed locked forever.
+    Pulse age-out + withdraw + rejection all refund. EndAction
+    auto-cancel must too."""
+    async with sf() as db:
+        parent = await _mk_community(db, financial=True, name="parent")
+        action = await _mk_action(db, parent)
+        # Make the action sub-community financial so the escrow
+        # path is reachable from inside it.
+        db.add(
+            Variable(
+                community_id=action,
+                name="Financial",
+                value="internal",
+            )
+        )
+        await db.commit()
+
+        # Mint credits to the applicant's user wallet.
+        applicant_id = uuid.uuid4()
+        svc = WalletService(db)
+        applicant_w = await svc.get_or_create(OWNER_USER, applicant_id, gate=False)
+        await svc.mint(applicant_w, "10", webhook_event="seed", external_ref="r")
+        await db.commit()
+
+        # File a Membership proposal INSIDE the action community,
+        # then open its escrow (mirrors proposal_service.create's
+        # escrow_open call when membershipFee > 0).
+        membership_prop = await _mk_proposal(
+            db,
+            community_id=action,
+            user_id=applicant_id,
+            ptype=ProposalType.MEMBERSHIP,
+            val_uuid=applicant_id,
+        )
+        # Make it OUT_THERE so it's caught by the executor's
+        # active-statuses filter.
+        membership_prop.proposal_status = ProposalStatus.OUT_THERE
+        await svc.escrow_open(
+            membership_prop.id, Decimal("10"), applicant_w,
+            memo="membership escrow",
+        )
+        await db.commit()
+
+        # Sanity: applicant wallet is now empty, escrow holds 10.
+        applicant_w = (
+            await db.execute(select(Wallet).where(Wallet.id == applicant_w.id))
+        ).scalar_one()
+        assert applicant_w.balance == Decimal("0")
+
+        # File + execute the parent's EndAction.
+        end_prop = await _mk_proposal(
+            db,
+            community_id=parent,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.END_ACTION,
+            val_uuid=action,
+        )
+        await db.commit()
+        await ExecutionService(db)._exec_end_action(end_prop)
+        await db.commit()
+
+        # Membership proposal must now be Canceled.
+        m_after = (
+            await db.execute(select(Proposal).where(Proposal.id == membership_prop.id))
+        ).scalar_one()
+        assert m_after.proposal_status == ProposalStatus.CANCELED
+
+        # The applicant's credits must be back — escrow refunded.
+        applicant_w = (
+            await db.execute(select(Wallet).where(Wallet.id == applicant_w.id))
+        ).scalar_one()
+        assert applicant_w.balance == Decimal("10"), (
+            "EndAction auto-canceled the inside Membership proposal but "
+            "did NOT refund its escrow — applicant's credits leaked."
+        )
