@@ -190,14 +190,17 @@ async def test_end_action_refuses_foreign_action(client):
     await _accept_proposal(client, b["id"], user["id"], resp.json()["id"])
     b_action_id = (await client.get(f"/communities/{b['id']}/actions")).json()[0]["action_id"]
 
-    # File EndAction in A pointing at B's action.
+    # File EndAction in A pointing at B's action. The cross-tree
+    # validation should refuse this at create time now (was 201
+    # then silently no-op'd at execute time).
     resp = await client.post(f"/communities/{a['id']}/proposals", json={
         "user_id": user["id"],
         "proposal_type": "EndAction",
         "proposal_text": "End B's action from A",
         "val_uuid": b_action_id,
     })
-    await _accept_proposal(client, a["id"], user["id"], resp.json()["id"])
+    assert resp.status_code == 422, resp.text
+    assert "different parent community" in resp.json()["detail"].lower()
 
     # B's action must still be active.
     b_actions = (await client.get(f"/communities/{b['id']}/actions")).json()
@@ -298,14 +301,17 @@ async def test_join_action_refuses_foreign_action(client):
     })
     await _accept_proposal(client, a["id"], user1["id"], resp.json()["id"])
 
-    # File JoinAction in A pointing at B's action.
+    # File JoinAction in A pointing at B's action. The cross-tree
+    # validation refuses this at create time now (was 201 then
+    # silently no-op'd at execute time).
     resp = await client.post(f"/communities/{a['id']}/proposals", json={
         "user_id": user2["id"],
         "proposal_type": "JoinAction",
         "proposal_text": "join B's action via A",
         "val_uuid": b_action_id,
     })
-    await _accept_proposal(client, a["id"], user1["id"], resp.json()["id"])
+    assert resp.status_code == 422, resp.text
+    assert "different parent community" in resp.json()["detail"].lower()
 
     # user2 must NOT have ended up as a member of B's action.
     b_action_members = (
@@ -506,3 +512,36 @@ async def test_submit_refused_for_inactive_community(client):
     r = await client.patch(f"/proposals/{inside_pid}/submit")
     assert r.status_code == 400, r.text
     assert "not active" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_join_action_rejects_bogus_action_uuid(client):
+    """JoinAction with val_uuid = random UUID (not a real action)
+    must 422 at create time. Pre-fix it was 201 then the executor's
+    silent no-op."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "JoinAction",
+        "proposal_text": "join nothing",
+        "val_uuid": str(_uuid.uuid4()),
+    })
+    assert r.status_code == 422
+    assert "not a known action" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_end_action_rejects_bogus_action_uuid(client):
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EndAction",
+        "proposal_text": "end nothing",
+        "val_uuid": str(_uuid.uuid4()),
+    })
+    assert r.status_code == 422
+    assert "not a known action" in r.json()["detail"].lower()
