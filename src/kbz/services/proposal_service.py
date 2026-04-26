@@ -232,6 +232,32 @@ class ProposalService:
             if not await member_svc.is_active_member(community_id, data.user_id):
                 raise HTTPException(status_code=403, detail="User is not an active member")
 
+        # Membership proposals: the applicant (val_uuid if provided,
+        # else user_id) must reference a real user. There are no FK
+        # constraints on members.user_id at the DB level, so without
+        # this check an Accepted Membership for a non-existent
+        # user_id mints an orphan member row (NULL user_name in
+        # /communities/{id}/members) AND increments member_count,
+        # permanently inflating every threshold computation. Pre-fix:
+        #   POST {proposal_type:Membership, user_id:<real>, val_uuid:<bogus>}
+        #   → 201 → 2 pulses → /members shows the ghost.
+        if data.proposal_type == ProposalType.MEMBERSHIP:
+            from kbz.models.user import User as _User
+            applicant_id = data.val_uuid or data.user_id
+            applicant_exists = (
+                await self.db.execute(
+                    select(_User.id).where(_User.id == applicant_id)
+                )
+            ).scalar_one_or_none()
+            if applicant_exists is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Membership applicant {applicant_id} is not a "
+                        f"known user"
+                    ),
+                )
+
         # ChangeVariable validation chain. Run cheapest checks first.
         # 1) Name must be present and known — pre-fix the executor ran
         #    a bare UPDATE against the variables table; an unknown

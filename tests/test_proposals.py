@@ -1114,3 +1114,45 @@ async def test_replace_statement_requires_text(client):
     })
     assert r.status_code == 422
     assert "non-empty" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_membership_rejects_nonexistent_applicant(client):
+    """Membership where val_uuid points at a user_id that doesn't
+    exist must 422. Pre-fix the proposal was accepted, the executor
+    ran member_svc.create(community_id, bogus_user_id), and an
+    orphan member row landed in the roster — NULL user_name in
+    /members AND a permanent +1 to member_count that inflated every
+    threshold computation forever (the orphan can never vote)."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    bogus = str(_uuid.uuid4())
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "Membership",
+        "proposal_text": "smuggled-in member",
+        "val_uuid": bogus,
+    })
+    assert r.status_code == 422, r.text
+    assert "not a known user" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_membership_rejects_nonexistent_self_applicant(client):
+    """Same shape but with no val_uuid — Membership uses user_id as
+    the applicant. A bogus user_id (e.g. an agent posting with a
+    fabricated id) must also 422."""
+    import uuid as _uuid
+    founder = await create_test_user(client)
+    community = await create_test_community(client, founder["id"])
+    bogus = str(_uuid.uuid4())  # no user row for this id
+
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": bogus,
+        "proposal_type": "Membership",
+        "proposal_text": "ghost applicant",
+    })
+    assert r.status_code == 422, r.text
+    assert "not a known user" in r.json()["detail"].lower()
