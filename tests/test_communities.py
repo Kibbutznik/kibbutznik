@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from tests.conftest import create_test_user, create_test_community
 
@@ -147,3 +149,31 @@ async def test_create_community_rejects_bogus_parent(client):
         "parent_id": "11111111-1111-1111-1111-111111111111",
     })
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_user_does_not_store_password_hash(client, db):
+    """Pre-fix POST /users wrote SHA-256(password) to password_hash —
+    unsalted, no key-stretching. Auth uses magic-link tokens; the
+    column is never read. Now we discard the password and store '' so
+    a DB breach can't turn this column into a credential leak."""
+    import hashlib
+    from sqlalchemy import select as _select
+    from kbz.models.user import User
+
+    r = await client.post("/users", json={
+        "user_name": "pwd-discard-test", "password": "supersecret123",
+    })
+    assert r.status_code == 201, r.text
+    uid = r.json()["id"]
+    # Read straight from the DB.
+    user = (
+        await db.execute(_select(User).where(User.id == uuid.UUID(uid)))
+    ).scalar_one()
+    assert user.password_hash == "", (
+        f"password_hash should be empty — got {user.password_hash!r}. "
+        f"If non-empty, a DB dump leaks credentials via rainbow tables."
+    )
+    # And specifically, it must NOT be SHA-256 of the password.
+    sha = hashlib.sha256(b"supersecret123").hexdigest()
+    assert user.password_hash != sha
