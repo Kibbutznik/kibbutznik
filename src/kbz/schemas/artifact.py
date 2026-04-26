@@ -11,7 +11,12 @@ class ArtifactResponse(BaseModel):
     title: str | None
     content: str
     author_user_id: uuid.UUID
-    proposal_id: uuid.UUID
+    # Nullable on purpose: communities are seeded with a "Plan"
+    # artifact that doesn't originate from any proposal. The model
+    # column is nullable; the response schema must match, otherwise
+    # /artifacts/containers/community/{id} 500s with a pydantic
+    # ValidationError as soon as the seeded plan is in the result.
+    proposal_id: uuid.UUID | None
     prev_artifact_id: uuid.UUID | None
     status: int
     created_at: datetime
