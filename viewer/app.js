@@ -1595,6 +1595,12 @@ function VariablesTab({ communityId, openDetail }) {
 }
 
 // ── LLM Switcher ────────────────────────────────────────
+// NOTE: keep these keys in sync with `LLM_PRESETS` in
+// agents/simulation_api.py — the dropdown is rendered from
+// THIS map, not from the API's `presets` field, so a backend-
+// only preset addition won't show up here without an entry below.
+// (TODO: drive the dropdown off `status.llm.presets` so the
+// two lists can't drift again.)
 const LLM_LABELS = {
     "custom":              "— custom —",
     "claude-haiku":        "⚡ Claude Haiku",
@@ -1605,6 +1611,7 @@ const LLM_LABELS = {
     "or-mistral-small":    "🌐 OR mistral-small",
     "or-lunaris":          "🌐 OR lunaris-8b",
     "or-gemini-flash-lite":"🌐 OR gemini-2.5-flash-lite",
+    "or-gpt-oss-20b-nitro":"🌐 OR gpt-oss-20b :nitro",
 };
 
 function LLMSwitcher({ currentPreset }) {
