@@ -369,15 +369,28 @@ class ExecutionService:
         # action tree. Refuse if val_uuid isn't a direct child of A.
         action_row = (
             await self.db.execute(
-                select(Action.parent_community_id).where(
+                select(Action.parent_community_id, Action.status).where(
                     Action.action_id == proposal.val_uuid
                 )
             )
-        ).scalar_one_or_none()
-        if action_row is None or action_row != proposal.community_id:
+        ).first()
+        if action_row is None or action_row[0] != proposal.community_id:
             logger.warning(
                 "Funding %s val_uuid %s is not a direct child action of community %s — refused",
                 proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
+        # Refuse Funding into an INACTIVE (already-ended) action.
+        # EndAction sweeps the action's wallet to the parent and
+        # marks the Action row INACTIVE; a fresh Funding deposit
+        # afterward would land in the now-orphaned action wallet
+        # with no path to ever leave (no further sweep, no Payment
+        # since pulses don't process INACTIVE communities). Funds
+        # would be permanently stuck.
+        if action_row[1] != CommunityStatus.ACTIVE:
+            logger.warning(
+                "Funding %s refused — target action %s is INACTIVE",
+                proposal.id, proposal.val_uuid,
             )
             return
         svc = WalletService(self.db)
