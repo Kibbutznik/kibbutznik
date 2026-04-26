@@ -349,6 +349,47 @@ async def test_exec_create_artifact_refuses_cross_community_container(db):
 
 
 @pytest.mark.asyncio
+async def test_exec_create_artifact_uses_proposal_text_as_content(db):
+    """An accepted CreateArtifact must store proposal_text as the
+    new artifact's content. Pre-fix the handler hardcoded content=""
+    so agents had to immediately follow up with EditArtifact to fill
+    the body — wasted pulse slot and produced empty Artifact rows
+    that broke downstream rendering."""
+    from kbz.services.execution_service import ExecutionService
+
+    community = await _mk_community(db, "Content")
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(community.id)
+    user = uuid.uuid4()
+
+    p = Proposal(
+        id=uuid.uuid4(),
+        community_id=community.id,
+        user_id=user,
+        proposal_type=ProposalType.CREATE_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="The drafted body of the artifact lives here.",
+        val_text="My Artifact Title",
+        val_uuid=container.id,
+        age=0,
+        support_count=0,
+    )
+    db.add(p)
+    await db.flush()
+
+    await ExecutionService(db).execute_proposal(p)
+    artifacts = await svc.list_artifacts(container.id)
+    # We seeded a Plan in create_root_container with founder=None so
+    # the artifact list filters Plans out automatically. Find the
+    # non-Plan we just created.
+    non_plan = [a for a in artifacts if not a.is_plan]
+    assert len(non_plan) == 1
+    a = non_plan[0]
+    assert a.title == "My Artifact Title"
+    assert a.content == "The drafted body of the artifact lives here."
+
+
+@pytest.mark.asyncio
 async def test_delegate_refuses_foreign_source_artifact(db):
     """ArtifactService.delegate must refuse a source artifact that
     belongs to a community OTHER than delegating_proposal.community_id.

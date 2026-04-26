@@ -523,10 +523,17 @@ class ExecutionService:
             )
             return
         try:
+            # Pre-fix the handler hardcoded content="". Agents would
+            # propose a CreateArtifact with their drafted text in
+            # proposal_text, watch it Accept, then find the resulting
+            # Artifact had an empty body. They had to immediately file
+            # an EditArtifact to fill it — wasted pulse slot. Now the
+            # proposal_text becomes the initial content and val_text
+            # is the title (consistent with EditArtifact's mapping).
             await ArtifactService(self.db).create_artifact(
                 container_id=proposal.val_uuid,
-                content="",
-                title=proposal.val_text or proposal.proposal_text or "Untitled",
+                content=proposal.proposal_text or "",
+                title=proposal.val_text or "Untitled",
                 author_user_id=proposal.user_id,
                 proposal_id=proposal.id,
             )
