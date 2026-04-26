@@ -554,3 +554,38 @@ async def test_agent_failure_surfaces_in_next_prompt(community_with_agent):
         f"prompt's 'DO NOT REPEAT' block surfaces it to the LLM; got: "
         f"{failures!r}"
     )
+
+
+# --- LLM preset switcher ---
+
+
+class TestLLMPresets:
+    def test_gpt_oss_20b_nitro_preset_exists(self):
+        """The viewer's LLM-switcher dropdown reads LLM_PRESETS to
+        populate options. Adding a model to the simulation CLI
+        (`--backend openrouter --model openai/gpt-oss-20b:nitro`)
+        works without a preset, but the viewer can't switch into it
+        unless the preset is registered."""
+        from agents.simulation_api import LLM_PRESETS
+        assert "or-gpt-oss-20b-nitro" in LLM_PRESETS, (
+            "expected the gpt-oss-20b:nitro preset to be registered "
+            "so the viewer dropdown picks it up"
+        )
+        cfg = LLM_PRESETS["or-gpt-oss-20b-nitro"]
+        assert cfg["backend"] == "openrouter"
+        assert cfg["model"] == "openai/gpt-oss-20b:nitro"
+        # `think` controls the Ollama reasoning-mode toggle and is
+        # irrelevant for OpenRouter, but the dict shape requires it.
+        assert cfg.get("think") is False
+
+    def test_all_presets_have_required_shape(self):
+        """Every preset must carry a backend + model — the switcher
+        crashes otherwise. Cheap regression for typo-class
+        breakage."""
+        from agents.simulation_api import LLM_PRESETS
+        for name, cfg in LLM_PRESETS.items():
+            assert "backend" in cfg, f"{name} missing backend"
+            assert "model" in cfg, f"{name} missing model"
+            assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
+                f"{name} has unknown backend {cfg['backend']!r}"
+            )

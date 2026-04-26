@@ -182,6 +182,11 @@ LLM_PRESETS = {
     "or-mistral-small":     {"backend": "openrouter", "model": "mistralai/mistral-small-creative",         "think": False},
     "or-lunaris":           {"backend": "openrouter", "model": "sao10k/l3-lunaris-8b",               "think": False},
     "or-gemini-flash-lite": {"backend": "openrouter", "model": "google/gemini-2.5-flash-lite-preview","think": False},
+    # OpenAI gpt-oss-20b via OpenRouter's :nitro lane — same weights
+    # as the local Ollama gpt-oss:20b but routed through providers
+    # tuned for low latency. Useful for 100-bot simulations where
+    # sequential per-turn latency dominates wall time.
+    "or-gpt-oss-20b-nitro": {"backend": "openrouter", "model": "openai/gpt-oss-20b:nitro",          "think": False},
 }
 
 
