@@ -151,6 +151,8 @@ class WalletService:
         wallets when the owning community is not financial (unless
         `gate=False` — used internally when we KNOW the caller has
         already checked)."""
+        from sqlalchemy.exc import IntegrityError as _IntegrityError
+
         existing = (
             await self.db.execute(
                 select(Wallet).where(
@@ -175,7 +177,30 @@ class WalletService:
             balance=Decimal("0"),
         )
         self.db.add(w)
-        await self.db.flush()
+        # Race-window safety: two concurrent first-access requests for
+        # the same wallet both pass the SELECT above before either
+        # flushes. The unique index ix_wallets_owner_unique on
+        # (owner_kind, owner_id) catches the loser's INSERT — without
+        # this guard the loser sees a 500 instead of the winning
+        # wallet. Symmetric to the proposal-support / magic-link
+        # race fixes (PR #20, PR #21).
+        try:
+            await self.db.flush()
+        except _IntegrityError:
+            await self.db.rollback()
+            winner = (
+                await self.db.execute(
+                    select(Wallet).where(
+                        Wallet.owner_kind == owner_kind,
+                        Wallet.owner_id == owner_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if winner is None:
+                # Defense-in-depth: index fired but we can't find the
+                # winner. Re-raise so we don't return None silently.
+                raise
+            return winner
         return w
 
     async def balance(self, wallet_id: uuid.UUID) -> Decimal:
