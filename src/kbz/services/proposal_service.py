@@ -176,15 +176,31 @@ class ProposalService:
             if not await member_svc.is_active_member(community_id, data.user_id):
                 raise HTTPException(status_code=403, detail="User is not an active member")
 
-        # ChangeVariable validation. Numeric-typed variables
-        # (PulseSupport, MaxAge, etc.) are parsed via int(float(value))
-        # every pulse cycle. Letting a non-numeric val_text land —
-        # e.g. ChangeVariable("PulseSupport", "soon") — crashes
-        # execute_pulse with ValueError mid-cycle and leaves the
-        # community's state half-processed. Validate at create time
-        # so the author sees their bad input immediately.
+        # ChangeVariable validation chain. Run cheapest checks first.
+        # 1) Name must be present and known — pre-fix the executor ran
+        #    a bare UPDATE against the variables table; an unknown
+        #    var_name (typo, invented value) hit zero rows and the
+        #    proposal silently accomplished nothing.
+        # 2) Numeric-typed variables (PulseSupport, MaxAge, etc.) are
+        #    parsed via int(float(value)) every pulse cycle. Letting a
+        #    non-numeric val_text land — e.g. ChangeVariable(
+        #    "PulseSupport", "soon") — crashes execute_pulse with
+        #    ValueError mid-cycle. Validate at create time.
         if data.proposal_type == ProposalType.CHANGE_VARIABLE:
             var_name = (data.proposal_text or "").split("\n", 1)[0].strip()
+            if not var_name:
+                raise HTTPException(
+                    status_code=422,
+                    detail="ChangeVariable proposal_text must name the variable on its first line",
+                )
+            if var_name not in DEFAULT_VARIABLES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Unknown variable '{var_name}'. ChangeVariable can "
+                        f"only target variables defined in DEFAULT_VARIABLES."
+                    ),
+                )
             if var_name in _NUMERIC_VARIABLES:
                 raw = (data.val_text or "").strip()
                 try:
