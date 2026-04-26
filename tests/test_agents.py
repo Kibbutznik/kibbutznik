@@ -589,3 +589,75 @@ class TestLLMPresets:
             assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
                 f"{name} has unknown backend {cfg['backend']!r}"
             )
+
+
+class TestProposalIdResolver:
+    """Cheap LLMs (lunaris-8b) emit proposal_ids with extra noise:
+    `"id=61d3b594"`, `"61d3b594..."`, `"proposal 61d3b594"`. The
+    pre-fix strict regex rejected all of those (13+ failures in 6000
+    prod log lines). The new resolver extracts hex runs and matches.
+    """
+
+    def _agent(self):
+        from agents.persona import Persona, Traits
+        from agents.api_client import KBZClient
+        engine = MockDecisionEngine()
+        persona = Persona(
+            name="Test", role="r", background="b", decision_style="d",
+            communication_style="c", traits=Traits(),
+        )
+        return Agent(persona=persona, client=KBZClient(), engine=engine)
+
+    def _snapshot_with_proposal(self, full_id):
+        # CommunitySnapshot is a dataclass with default_factory for
+        # all collection fields, so passing only what we use here is
+        # fine — everything else defaults to empty.
+        return CommunitySnapshot(
+            proposals_out_there=[{
+                "id": full_id, "proposal_type": "AddStatement",
+                "proposal_text": "x", "user_id": "u",
+            }],
+        )
+
+    def test_clean_short_prefix(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_proposal_id("61d3b594", snap) == "61d3b594-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_id_equals_prefix(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_proposal_id("id=61d3b594", snap) == "61d3b594-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_trailing_dots(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_proposal_id("61d3b594...", snap) == "61d3b594-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_word_prefix(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_proposal_id("proposal 61d3b594", snap) == "61d3b594-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_parens_wrapper(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_proposal_id("(61d3b594)", snap) == "61d3b594-f7b6-4afb-95b6-ad129986b7f3"
+
+    def test_no_match_returns_empty(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        assert agent._resolve_proposal_id("ffffffff", snap) == ""
+
+    def test_proposal_type_name_rejected(self):
+        agent = self._agent()
+        snap = self._snapshot_with_proposal("61d3b594-f7b6-4afb-95b6-ad129986b7f3")
+        # AddStatement is a known type name — must NOT silently
+        # match a proposal even if its prefix overlaps.
+        assert agent._resolve_proposal_id("AddStatement", snap) == ""
+
+    def test_full_uuid_returned_as_is(self):
+        agent = self._agent()
+        full = "abcdef12-3456-7890-abcd-ef1234567890"
+        snap = self._snapshot_with_proposal(full)
+        assert agent._resolve_proposal_id(full, snap) == full
