@@ -620,6 +620,38 @@ async def test_change_variable_accepts_numeric_for_numeric_var(client):
 
 
 @pytest.mark.asyncio
+async def test_change_variable_rejects_negative_for_numeric_var(client):
+    """Negative values on numeric variables make no sense:
+    - PulseSupport=-5 (% threshold) breaks the >= ceil(n*pct/100) math
+      and lets every proposal auto-pass with zero support.
+    - MaxAge=-3 (rounds before age-out) cancels every proposal before
+      it can age in.
+    - membershipFee=-1 (Decimal money) would mint credits to applicants.
+    Reject at create time. ProposalRateLimit's "off" sentinel is 0
+    (still allowed), not negative."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    cases = [
+        ("PulseSupport", "-5"),
+        ("MaxAge", "-1"),
+        ("MinCommittee", "-2"),
+        ("membershipFee", "-1"),
+    ]
+    for var_name, bad in cases:
+        r = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "ChangeVariable",
+            "proposal_text": var_name,
+            "val_text": bad,
+        })
+        assert r.status_code == 422, (
+            f"var={var_name} val_text={bad!r} should 422; got {r.status_code}: {r.text}"
+        )
+        assert "non-negative" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_change_variable_unknown_var_rejected(client):
     """A ChangeVariable proposal naming a variable that isn't in
     DEFAULT_VARIABLES used to silently no-op at execute time
