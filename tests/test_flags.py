@@ -24,6 +24,18 @@ async def _login(client, email: str) -> str:
     return r.json()["user"]["user_id"]
 
 
+async def _real_proposal_in(client, community_id, author) -> str:
+    """Create a real proposal in `community_id` authored by `author`.
+    Comments now require the entity to exist; flag tests that comment
+    on a proposal must attach to a real one."""
+    resp = await client.post(f"/communities/{community_id}/proposals", json={
+        "user_id": author["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": f"flag-target-{uuid.uuid4()}",
+    })
+    return resp.json()["id"]
+
+
 async def _get_pair_score(
     db_engine, a: str, b: str,
 ) -> float:
@@ -77,7 +89,7 @@ async def test_positive_flag_on_comment_bumps_closeness(client, db_engine):
 
     # Founder posts a comment on a proposal entity (any UUID works
     # for the entity_id — comments are polymorphic).
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     comment_resp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "what do we think"},
@@ -109,7 +121,7 @@ async def test_negative_flag_drops_closeness(client, db_engine):
     community = await create_test_community(client, founder["id"])
     await _land_membership(client, community["id"], founder["id"], flagger["id"])
 
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "controversial"},
@@ -141,7 +153,7 @@ async def test_flag_flip_reverses_then_applies(client, db_engine):
     community = await create_test_community(client, founder["id"])
     await _land_membership(client, community["id"], founder["id"], flagger["id"])
 
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "let's see"},
@@ -184,7 +196,7 @@ async def test_clear_flag_reverses_closeness(client, db_engine):
     # All setup happens unauthenticated so the session-spoof guards
     # in /communities, /proposals, /comments don't 403 us.
     community = await create_test_community(client, founder["id"])
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "tbd"},
@@ -223,7 +235,7 @@ async def test_re_flag_same_value_is_idempotent(client, db_engine):
     community = await create_test_community(client, founder["id"])
     await _land_membership(client, community["id"], founder["id"], flagger["id"])
 
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "stable"},
@@ -250,7 +262,7 @@ async def test_self_flag_rejected(client):
     community = await create_test_community(client, user["id"])
 
     # Founder tries to flag their own comment.
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], user)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": user["id"], "comment_text": "hi"},
@@ -274,7 +286,7 @@ async def test_non_member_cannot_flag(client):
     outsider = await create_test_user(client, "nm-outsider")
     community = await create_test_community(client, founder["id"])
 
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "members only"},
@@ -295,7 +307,7 @@ async def test_non_member_cannot_flag(client):
 async def test_summary_returns_counts_and_my_value(client):
     founder = await create_test_user(client, "sum-founder")
     community = await create_test_community(client, founder["id"])
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], founder)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": founder["id"], "comment_text": "for summary"},
@@ -349,7 +361,7 @@ async def test_session_spoof_blocked(client):
     other = await create_test_user(client, "spoof-victim")
     # All setup unauthenticated so session-spoof guards don't 403 us.
     community = await create_test_community(client, other["id"])
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal_in(client, community["id"], other)
     cresp = await client.post(
         f"/entities/proposal/{entity_id}/comments",
         json={"user_id": other["id"], "comment_text": "victim's comment"},

@@ -49,6 +49,34 @@ class CommentService:
     async def add_comment(
         self, entity_id: uuid.UUID, entity_type: str, data: CommentCreate
     ) -> Comment:
+        # The entity itself must exist. Without this guard, a POST to
+        # /entities/proposal/<bogus-uuid>/comments lands a ghost
+        # comment in the DB attached to a non-existent proposal_id —
+        # nobody is notified (the recipient lookup hits prop_row=None
+        # and silently bails), and the comment is functionally
+        # invisible except via direct GET against that bogus id.
+        # Same shape applies to the "community" entity_type.
+        if entity_type == "proposal":
+            exists = (
+                await self.db.execute(
+                    select(Proposal.id).where(Proposal.id == entity_id)
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                raise HTTPException(
+                    status_code=404, detail="proposal not found",
+                )
+        elif entity_type == "community":
+            from kbz.models.community import Community
+            exists = (
+                await self.db.execute(
+                    select(Community.id).where(Community.id == entity_id)
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                raise HTTPException(
+                    status_code=404, detail="community not found",
+                )
         # If this is a reply, the parent must exist AND be attached to the
         # same (entity_id, entity_type). Otherwise a reply can jump threads
         # — e.g. reply to a comment on proposal A while posting on proposal
