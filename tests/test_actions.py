@@ -207,6 +207,68 @@ async def test_end_action_refuses_foreign_action(client):
 
 
 @pytest.mark.asyncio
+async def test_join_action_refuses_inactive_action(client, db):
+    """A JoinAction targeting an INACTIVE (already-ended) action
+    must NOT add the proposer to the dead sub-community. Pre-fix
+    the executor blindly inserted a Member row regardless of
+    action.status."""
+    import uuid as _uuid
+    from kbz.enums import MemberStatus, ProposalStatus, ProposalType
+    from kbz.models.action import Action
+    from kbz.models.community import Community
+    from kbz.models.member import Member
+    from kbz.models.proposal import Proposal
+    from kbz.services.execution_service import ExecutionService
+
+    founder = await create_test_user(client, "ji-founder")
+    joiner = await create_test_user(client, "ji-joiner")
+    parent = await create_test_community(client, founder["id"])
+
+    parent_id = _uuid.UUID(parent["id"])
+    action_id = _uuid.uuid4()
+    db.add(Community(
+        id=action_id, parent_id=parent_id, name="dead-action",
+        status=2, member_count=0,  # INACTIVE
+    ))
+    db.add(Action(action_id=action_id, parent_community_id=parent_id, status=2))
+    joiner_uuid = _uuid.UUID(joiner["id"])
+    db.add(Member(
+        community_id=parent_id, user_id=joiner_uuid,
+        status=MemberStatus.ACTIVE, seniority=0,
+    ))
+    await db.commit()
+
+    p = Proposal(
+        id=_uuid.uuid4(),
+        community_id=parent_id,
+        user_id=joiner_uuid,
+        proposal_type=ProposalType.JOIN_ACTION,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="join the dead one",
+        val_text="",
+        val_uuid=action_id,
+        age=0,
+        support_count=0,
+    )
+    db.add(p)
+    await db.commit()
+
+    await ExecutionService(db).execute_proposal(p)
+    await db.commit()
+
+    from sqlalchemy import select as _select
+    rows = (
+        await db.execute(
+            _select(Member).where(
+                Member.community_id == action_id,
+                Member.user_id == joiner_uuid,
+            )
+        )
+    ).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
 async def test_join_action_refuses_foreign_action(client):
     """JoinAction in community A naming an action in B must NOT add
     the proposer to B's action — A has no jurisdiction over B's

@@ -268,17 +268,28 @@ class ExecutionService:
         # an action that belongs to B's tree would otherwise let A's
         # vote add the proposer to one of B's actions — bypassing B's
         # governance over its own membership.
-        action_parent = (
+        action_row = (
             await self.db.execute(
-                select(Action.parent_community_id).where(
+                select(Action.parent_community_id, Action.status).where(
                     Action.action_id == proposal.val_uuid
                 )
             )
-        ).scalar_one_or_none()
-        if action_parent is None or action_parent != proposal.community_id:
+        ).first()
+        if action_row is None or action_row[0] != proposal.community_id:
             logger.warning(
                 "JoinAction %s val_uuid %s is not a direct child action of community %s — refused",
                 proposal.id, proposal.val_uuid, proposal.community_id,
+            )
+            return
+        # Refuse JoinAction into an INACTIVE (already-ended) action.
+        # Otherwise the proposer becomes a ghost member of a dead
+        # sub-community — pulses don't process INACTIVE communities
+        # so they can't participate in anything anyway, and
+        # downstream member-count math gets confused by the orphan.
+        if action_row[1] != CommunityStatus.ACTIVE:
+            logger.warning(
+                "JoinAction %s refused — target action %s is INACTIVE",
+                proposal.id, proposal.val_uuid,
             )
             return
         member_svc = MemberService(self.db)
