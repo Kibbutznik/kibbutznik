@@ -1,6 +1,6 @@
 import uuid
 import pytest
-from tests.conftest import create_test_user
+from tests.conftest import create_test_user, create_test_community
 
 
 async def _login_email(client, email: str) -> str:
@@ -10,10 +10,23 @@ async def _login_email(client, email: str) -> str:
     return r.json()["user"]["user_id"]
 
 
+async def _real_proposal(client, user) -> str:
+    """Create a real proposal in a fresh community and return its id.
+    Comments now require the entity to exist; tests must attach to a
+    real proposal_id rather than a random UUID."""
+    community = await create_test_community(client, user["id"])
+    resp = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": f"comment-target-{uuid.uuid4()}",
+    })
+    return resp.json()["id"]
+
+
 @pytest.mark.asyncio
 async def test_add_comment(client):
     user = await create_test_user(client)
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, user)
 
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": user["id"],
@@ -28,7 +41,7 @@ async def test_add_comment(client):
 @pytest.mark.asyncio
 async def test_get_comments(client):
     user = await create_test_user(client)
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, user)
 
     await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": user["id"],
@@ -51,7 +64,7 @@ async def test_nested_comments(client):
     threading. Pre-fix this returned root only and the zoomed comment
     view never showed any replies."""
     user = await create_test_user(client)
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, user)
 
     # Parent comment
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
@@ -95,7 +108,7 @@ async def test_comment_vote_is_per_user_and_toggle(client):
     points."""
     voter = await create_test_user(client, "voter")
     author = await create_test_user(client, "score-author")
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, author)
 
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": author["id"],
@@ -151,7 +164,7 @@ async def test_comment_vote_independent_across_users(client):
     a = await create_test_user(client, "voter-a")
     b = await create_test_user(client, "voter-b")
     author = await create_test_user(client, "score-author2")
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, author)
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": author["id"], "comment_text": "two voters",
     })
@@ -180,7 +193,7 @@ async def test_comment_listing_carries_my_vote(client):
     arrow already cast without per-comment lookups."""
     # Setup unauthenticated so session-spoof guards don't 403 us.
     author = await create_test_user(client, "list-author")
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, author)
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": author["id"], "comment_text": "list me",
     })
@@ -257,7 +270,7 @@ async def test_score_delta_must_be_single_step(client):
     """delta is clamped to [-1, 1] at the schema layer."""
     voter = await create_test_user(client, "clamp-voter")
     author = await create_test_user(client, "clamp-author")
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, author)
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": author["id"],
         "comment_text": "Clamp target",
@@ -283,7 +296,7 @@ async def test_score_session_spoof_blocked(client):
     bypass the per-user dedupe entirely."""
     victim = await create_test_user(client, "spoof-victim-vote")
     author = await create_test_user(client, "score-author3")
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, author)
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": author["id"], "comment_text": "spoof target",
     })
@@ -305,8 +318,8 @@ async def test_reply_rejects_parent_on_different_entity(client):
     on proposal A while posting on proposal B) and the tree view
     silently loses the thread."""
     user = await create_test_user(client)
-    entity_a = str(uuid.uuid4())
-    entity_b = str(uuid.uuid4())
+    entity_a = await _real_proposal(client, user)
+    entity_b = await _real_proposal(client, user)
 
     parent = await client.post(f"/entities/proposal/{entity_a}/comments", json={
         "user_id": user["id"],
@@ -327,10 +340,43 @@ async def test_reply_rejects_parent_on_different_entity(client):
 async def test_reply_rejects_missing_parent(client):
     """parent_comment_id pointing at nothing → 404, not silent orphan."""
     user = await create_test_user(client)
-    entity_id = str(uuid.uuid4())
+    entity_id = await _real_proposal(client, user)
     resp = await client.post(f"/entities/proposal/{entity_id}/comments", json={
         "user_id": user["id"],
         "comment_text": "reply to ghost",
         "parent_comment_id": str(uuid.uuid4()),
     })
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_comment_on_missing_proposal_404s(client):
+    """POST /entities/proposal/<bogus-uuid>/comments must 404. Pre-fix
+    the comment landed in the DB attached to a non-existent
+    proposal_id — nobody got notified (recipient lookup hit None and
+    silently bailed) and the row was functionally invisible except
+    via direct GET against the bogus id. Same silent-no-op shape as
+    the executor bugs we've been fixing throughout this cycle."""
+    user = await create_test_user(client)
+    bogus_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/proposal/{bogus_id}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "ghost comment on a missing proposal",
+    })
+    assert resp.status_code == 404, resp.text
+    assert "proposal" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_comment_on_missing_community_404s(client):
+    """Same shape for the 'community' entity_type — POST against a
+    bogus community_id must 404 instead of silently creating an
+    orphan comment row."""
+    user = await create_test_user(client)
+    bogus_id = str(uuid.uuid4())
+    resp = await client.post(f"/entities/community/{bogus_id}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "ghost comment on a missing community",
+    })
+    assert resp.status_code == 404, resp.text
+    assert "community" in resp.json()["detail"].lower()
