@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import (
     ArtifactStatus,
+    CommunityStatus,
     ContainerStatus,
     ProposalStatus,
     ProposalType,
@@ -311,6 +312,16 @@ class ArtifactService:
         if action.parent_community_id != delegating_proposal.community_id:
             raise ArtifactServiceError(
                 "Delegation target must be a direct child Action of the proposing community"
+            )
+        # Refuse delegation into an INACTIVE (already-ended) action.
+        # An EndAction'd action's sub-community is INACTIVE; new
+        # containers minted there would never get worked on (pulses
+        # don't process INACTIVE communities) and the parent's
+        # delegated_from_artifact_id would point at a dead container.
+        if action.status != CommunityStatus.ACTIVE:
+            raise ArtifactServiceError(
+                f"Target action {target_action_community_id} is INACTIVE — "
+                "cannot delegate into an ended action"
             )
 
         # Copy the delegated artifact's content as the child container's

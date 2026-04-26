@@ -216,6 +216,37 @@ async def test_exec_remove_artifact_refuses_cross_community_target(db):
 
 
 @pytest.mark.asyncio
+async def test_delegate_refuses_inactive_action(db):
+    """A DelegateArtifact targeting an INACTIVE (already-ended) action
+    must NOT mint a new container in the dead community. Pre-fix the
+    container was created — pulses don't process INACTIVE communities
+    so the work would never get done, and the parent's
+    delegated_from_artifact_id pointed at a dead container."""
+    from sqlalchemy import update as _update
+
+    parent = await _mk_community(db, "Parent-INA")
+    child = await _mk_child_action(db, parent, "Child-INA")
+    # Mark the child action INACTIVE.
+    await db.execute(
+        _update(Action).where(Action.action_id == child.id)
+        .values(status=2)  # INACTIVE
+    )
+    await db.flush()
+
+    svc = ArtifactService(db)
+    container = await svc.create_root_container(parent.id)
+    user = uuid.uuid4()
+    p = await _mk_proposal(db, parent.id, user)
+    artifact = await svc.create_artifact(container.id, "delegate me", "T", user, p.id)
+
+    delegating = await _mk_proposal(db, parent.id, user, ProposalType.DELEGATE_ARTIFACT)
+
+    with pytest.raises(ArtifactServiceError) as excinfo:
+        await svc.delegate(artifact.id, child.id, delegating)
+    assert "INACTIVE" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
 async def test_delegate_requires_direct_child_action(db):
     parent = await _mk_community(db, "Parent")
     child = await _mk_child_action(db, parent, "Child")
