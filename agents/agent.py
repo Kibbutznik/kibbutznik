@@ -373,21 +373,26 @@ class Agent:
     _UUID_PREFIX_RE = re.compile(r'^[0-9a-fA-F\-]+$')
 
     def _resolve_proposal_id(self, short_id: str, snapshot: CommunitySnapshot) -> str:
-        """Resolve a potentially truncated proposal ID to a full UUID."""
+        """Resolve a potentially truncated proposal ID to a full UUID.
+
+        Tolerant of common LLM noise. Cheap models (lunaris-8b) often
+        emit IDs with stray prefixes/suffixes like ``"id=61d3b594"``,
+        ``"61d3b594..."``, ``"proposal 61d3b594"``, ``"(61d3b594)"``.
+        Pre-fix the strict regex rejected all of those (13+ "Could not
+        resolve proposal ID" hits in 6000 prod log lines for lunaris).
+        Now we extract every hex run of length ≥ 6 and prefix-match
+        each against the snapshot's known proposals — succeeds whenever
+        the LLM at least copied the right digits somewhere in the
+        string.
+        """
         if not short_id:
             return ""
-        # Reject if it's a known proposal type name (LLM confusion)
+        short_id = str(short_id).strip()
         if short_id in self._PROPOSAL_TYPES:
             logger.warning(f"[{self.persona.name}] Got proposal type name '{short_id}' as proposal_id — ignoring")
             return ""
-        # Reject strings that can't be UUID prefixes (no letters/dashes pattern)
-        if not self._UUID_PREFIX_RE.match(short_id):
-            logger.warning(f"[{self.persona.name}] Invalid proposal_id format '{short_id[:20]}' — ignoring")
-            return ""
-        # If it looks like a full UUID already, return as-is
-        if len(short_id) >= 36:
+        if len(short_id) >= 36 and self._UUID_PREFIX_RE.match(short_id):
             return short_id
-        # Search all known proposals for a prefix match
         all_proposals = (
             snapshot.proposals_out_there
             + snapshot.proposals_on_the_air
@@ -395,9 +400,21 @@ class Agent:
             + snapshot.recent_accepted
             + snapshot.recent_rejected
         )
-        for p in all_proposals:
-            if p["id"].startswith(short_id):
-                return p["id"]
+        # Try the input as-is first.
+        if self._UUID_PREFIX_RE.match(short_id):
+            for p in all_proposals:
+                if p["id"].startswith(short_id):
+                    return p["id"]
+        # Fallback: extract every hex run of length >= 6 and prefix-match.
+        candidates = re.findall(r'[0-9a-fA-F]{6,}', short_id)
+        for cand in candidates:
+            for p in all_proposals:
+                if p["id"].startswith(cand):
+                    return p["id"]
+        logger.warning(
+            f"[{self.persona.name}] No proposal matched '{short_id[:40]}' "
+            f"(extracted candidates: {candidates[:3]})"
+        )
         return ""
 
     def _resolve_comment_id(self, short_id: str, snapshot: CommunitySnapshot) -> str:
