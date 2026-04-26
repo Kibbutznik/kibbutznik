@@ -506,3 +506,58 @@ async def test_submit_refused_for_inactive_community(client):
     r = await client.patch(f"/proposals/{inside_pid}/submit")
     assert r.status_code == 400, r.text
     assert "not active" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_action_community_gets_seeded_container_and_plan(client):
+    """Pre-fix CommunityService.create gated container/Plan seeding
+    on `parent_id == ZERO_UUID`, so action communities (created via
+    AddAction with parent_id = the parent community) had no
+    container at all. Members who joined via JoinAction had nowhere
+    to file artifacts — CreateArtifact requires a val_uuid pointing
+    at a container, and there wasn't one. The only path to seed an
+    action's container was DelegateArtifact from the parent. This
+    is what made simulations stall on "empty pulses one by one":
+    once an Action was created without delegated work, nothing in
+    it could happen.
+
+    Now every community — root or child — gets the same Plan
+    artifact at creation time.
+    """
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+
+    # Create an action via accepted AddAction.
+    resp = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddAction",
+        "proposal_text": "Working group with a Plan",
+        "val_text": "WG",
+    })
+    await _accept_proposal(client, parent["id"], user["id"], resp.json()["id"])
+
+    actions = (await client.get(f"/communities/{parent['id']}/actions")).json()
+    assert len(actions) == 1
+    action_id = actions[0]["action_id"]
+
+    # The action's containers endpoint must return at least one
+    # container, and that container must contain a seeded Plan
+    # artifact (proposal_id is null because Plans are system-
+    # created — see PR #66 for the schema fix that allows this).
+    r = await client.get(f"/artifacts/containers/community/{action_id}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body) >= 1, (
+        f"action community {action_id} should have a seeded container "
+        f"so members can file artifacts; got: {body}"
+    )
+    artifacts = body[0]["artifacts"]
+    seeded = [a for a in artifacts if a["proposal_id"] is None]
+    assert len(seeded) == 1, (
+        f"expected exactly one seeded Plan artifact (proposal_id=null) "
+        f"in the action's container; got: {artifacts}"
+    )
+    assert "Plan" in seeded[0]["title"] or "plan" in (seeded[0]["content"] or "").lower(), (
+        f"seeded artifact should be a Plan; got title={seeded[0]['title']!r} "
+        f"content={(seeded[0]['content'] or '')[:80]!r}"
+    )
