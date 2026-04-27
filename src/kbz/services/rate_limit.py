@@ -41,9 +41,19 @@ class RateLimiter:
     """Fixed-window-of-the-last-N-seconds limiter. Threadsafe for a
     single process."""
 
+    # Run a sweep over self._buckets once every N check() calls.
+    # Without this the bucket dict grows unboundedly: every distinct
+    # key (per-email + per-IP for magic-link, plus any future limiter
+    # callers) leaves a deque behind even after its entries expire.
+    # On a server that's been up for weeks with thousands of distinct
+    # senders this is a slow leak. The sweep is O(buckets) and only
+    # fires every _PURGE_EVERY calls, so amortized cost is trivial.
+    _PURGE_EVERY = 256
+
     def __init__(self) -> None:
         self._buckets: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+        self._calls_since_purge = 0
 
     def check(self, *, key: str, limit: int, window_s: int) -> RateLimitResult:
         """Record a hit at NOW and report whether the bucket overflows.
@@ -65,6 +75,19 @@ class RateLimiter:
             # Add this hit
             q.append(now)
             hits = len(q)
+            # Opportunistic dict-level purge. Drop any bucket whose
+            # newest entry is older than the window we just used —
+            # those entries are guaranteed to be expired by now and
+            # the bucket holds no useful state.
+            self._calls_since_purge += 1
+            if self._calls_since_purge >= self._PURGE_EVERY:
+                self._calls_since_purge = 0
+                stale_keys = [
+                    k for k, dq in self._buckets.items()
+                    if not dq or dq[-1] < cutoff
+                ]
+                for k in stale_keys:
+                    del self._buckets[k]
             if hits <= limit:
                 return RateLimitResult(
                     allowed=True, retry_after_s=0,
