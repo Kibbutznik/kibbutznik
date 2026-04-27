@@ -1,4 +1,3 @@
-import hashlib
 import uuid
 
 from sqlalchemy import select
@@ -9,19 +8,27 @@ from kbz.models.user import User
 from kbz.schemas.user import UserCreate
 
 
-def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
 class UserService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, data: UserCreate) -> User:
+        # NB: data.password is accepted (kept on the schema for
+        # bot/test backwards compatibility) but DELIBERATELY DISCARDED
+        # here. Auth in production goes through magic-link tokens
+        # (auth_service.py); the password_hash column is never read
+        # anywhere outside of legacy migrations. Pre-fix we stored
+        # SHA-256(password) — unsalted, no key-stretching — which
+        # turned every users table dump into a free credential leak
+        # (rainbow tables make sha256 of common passwords instant).
+        # Storing "" makes it impossible to leak a useful credential
+        # from this column even if the DB is breached. If a real
+        # password-auth path ever lands, it should use bcrypt/argon2
+        # via auth_service, not this column.
         user = User(
             id=uuid.uuid4(),
             user_name=data.user_name,
-            password_hash=_hash_password(data.password),
+            password_hash="",
             about=data.about,
             wallet_address=data.wallet_address,
         )
