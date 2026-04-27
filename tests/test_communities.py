@@ -147,3 +147,15 @@ async def test_create_community_rejects_bogus_parent(client):
         "parent_id": "11111111-1111-1111-1111-111111111111",
     })
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_whitespace_only_name(client):
+    """min_length=3 lets '   ' through. Reject at schema."""
+    for bad in ("   ", "\t\n ", "    "):
+        r = await client.post("/users", json={
+            "user_name": bad, "password": "x",
+        })
+        assert r.status_code == 422, (
+            f"user_name={bad!r} should 422; got {r.status_code} {r.text}"
+        )
