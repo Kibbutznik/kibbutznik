@@ -327,6 +327,40 @@ class ProposalService:
                     ),
                 )
 
+        # EditArtifact / RemoveArtifact: val_uuid must be an Artifact
+        # row that lives in THIS community. Pre-fix the executor had a
+        # cross-community guard that silently no-op'd if the artifact
+        # didn't exist or belonged to another community — so a bot
+        # could file EditArtifact(val_uuid=<bogus>) and the proposal
+        # ate a pulse cycle to do nothing. Lunaris hits this often
+        # (4+ "artifact … not found in community" failures in 6000
+        # prod log lines). Refuse at create time.
+        if data.proposal_type in (
+            ProposalType.EDIT_ARTIFACT, ProposalType.REMOVE_ARTIFACT,
+        ):
+            from kbz.models.artifact import Artifact
+            art = (
+                await self.db.execute(
+                    select(Artifact).where(Artifact.id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if art is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} is "
+                        f"not a known artifact"
+                    ),
+                )
+            if art.community_id != community_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{data.proposal_type} target {data.val_uuid} "
+                        f"belongs to a different community ({art.community_id}) "
+                        f"— this community can't edit/remove it"
+                    ),
+                )
 
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in

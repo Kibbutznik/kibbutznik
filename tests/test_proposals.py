@@ -1325,3 +1325,81 @@ async def test_amend_rejects_empty_text_for_add_statement(client):
     })
     assert r.status_code == 422, r.text
     assert "non-empty" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_edit_artifact_rejects_nonexistent_target(client):
+    """Pre-fix EditArtifact(val_uuid=<bogus>) landed Accepted, the
+    executor's cross-community guard silently no-op'd, and the
+    proposal ate a pulse cycle. Lunaris hits this often."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    bogus = str(_uuid.uuid4())
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EditArtifact",
+        "proposal_text": "edit content quoting some words",
+        "val_text": "title",
+        "val_uuid": bogus,
+    })
+    assert r.status_code == 422, r.text
+    assert "not a known artifact" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_remove_artifact_rejects_nonexistent_target(client):
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    bogus = str(_uuid.uuid4())
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "RemoveArtifact",
+        "proposal_text": "remove",
+        "val_uuid": bogus,
+    })
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_edit_artifact_rejects_cross_community_target(client):
+    """Same shape — val_uuid points at a real artifact but it's in
+    a different community. Pre-fix the executor's cross-community
+    guard caught it at execution time; now refuse at create time
+    so the bot doesn't waste a pulse cycle."""
+    user = await create_test_user(client, "cross-edit-founder")
+    a = await create_test_community(client, user["id"], name="Alpha-XCE")
+    b = await create_test_community(client, user["id"], name="Bravo-XCE")
+    # Land an artifact in B via accepted CreateArtifact.
+    container_b = (
+        await client.get(f"/artifacts/containers/community/{b['id']}")
+    ).json()[0]["container"]["id"]
+    r = await client.post(f"/communities/{b['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "CreateArtifact",
+        "proposal_text": "B's content here",
+        "val_text": "B's title",
+        "val_uuid": container_b,
+    })
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    await client.post(f"/proposals/{pid}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(f"/communities/{b['id']}/pulses/support", json={"user_id": user["id"]})
+    # Find the new artifact's id.
+    arts_b = (
+        await client.get(f"/artifacts/containers/community/{b['id']}")
+    ).json()[0]["artifacts"]
+    b_art = next(a for a in arts_b if a["proposal_id"] is not None)
+
+    # Now from A, try to file EditArtifact pointing at B's artifact.
+    r = await client.post(f"/communities/{a['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "EditArtifact",
+        "proposal_text": "rewriting B's content",
+        "val_text": "hijacked title",
+        "val_uuid": b_art["id"],
+    })
+    assert r.status_code == 422, r.text
+    assert "different community" in r.json()["detail"].lower()
