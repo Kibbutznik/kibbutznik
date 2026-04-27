@@ -153,6 +153,36 @@ class ExecutionService:
         self.db.add(action)
         await self.db.flush()
 
+        # Optional: if AddAction carried val_uuid, treat it as a parent
+        # artifact to delegate into the new action immediately. Same
+        # outcome as if the parent had filed AddAction + DelegateArtifact
+        # back-to-back, but in one accepted proposal — saves a pulse
+        # cycle and avoids the dead-end "action with no delegated
+        # container" state that confused agents (they had nowhere to
+        # file artifacts and the create-time gate refused new filings
+        # against the not-yet-active sub-community).
+        #
+        # The delegate() call already enforces:
+        #   - source artifact exists and is ACTIVE
+        #   - source belongs to THIS community (no cross-tree)
+        #   - source is not a Plan
+        #   - target action is ACTIVE
+        # — so we can call it directly with the proposal's val_uuid.
+        # On any of those failures the action still exists; the
+        # delegation just doesn't happen and the warning logs it.
+        if proposal.val_uuid is not None:
+            try:
+                await ArtifactService(self.db).delegate(
+                    source_artifact_id=proposal.val_uuid,
+                    target_action_community_id=child.id,
+                    delegating_proposal=proposal,
+                )
+            except ArtifactServiceError as e:
+                logger.warning(
+                    "AddAction %s val_uuid=%s: auto-delegate failed: %s",
+                    proposal.id, proposal.val_uuid, e,
+                )
+
     async def _exec_end_action(self, proposal: Proposal) -> None:
         if not proposal.val_uuid:
             return

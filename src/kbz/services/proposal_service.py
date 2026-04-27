@@ -362,6 +362,59 @@ class ProposalService:
                     ),
                 )
 
+        # AddAction with val_uuid: optional shortcut that auto-delegates
+        # the named parent artifact into the new action on accept (see
+        # _exec_add_action). When val_uuid is supplied, validate it's a
+        # real artifact in THIS community — same shape as the
+        # EditArtifact/RemoveArtifact check above. The proposal succeeds
+        # at create-time without val_uuid (creates a bare action; the
+        # parent can DelegateArtifact later). With val_uuid, it must
+        # point at something the parent owns.
+        if (
+            data.proposal_type == ProposalType.ADD_ACTION
+            and data.val_uuid is not None
+        ):
+            from kbz.models.artifact import Artifact
+            from kbz.enums import ArtifactStatus
+            art = (
+                await self.db.execute(
+                    select(Artifact).where(Artifact.id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if art is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"AddAction val_uuid {data.val_uuid} (parent artifact to "
+                        f"auto-delegate) is not a known artifact"
+                    ),
+                )
+            if art.community_id != community_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"AddAction val_uuid {data.val_uuid} belongs to a "
+                        f"different community ({art.community_id}) — only this "
+                        f"community's artifacts can be auto-delegated"
+                    ),
+                )
+            if art.status != ArtifactStatus.ACTIVE:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"AddAction val_uuid {data.val_uuid} is not ACTIVE "
+                        f"(retired or superseded artifacts can't be delegated)"
+                    ),
+                )
+            if getattr(art, "is_plan", False):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "AddAction val_uuid points at a Plan artifact — "
+                        "Plans guide work but can't be delegated themselves"
+                    ),
+                )
+
         # Per-member proposal cap. Counts in-flight proposals
         # (DRAFT / OUT_THERE / ON_THE_AIR) authored by this user in
         # this community. Two exemptions:

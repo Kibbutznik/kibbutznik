@@ -506,3 +506,137 @@ async def test_submit_refused_for_inactive_community(client):
     r = await client.patch(f"/proposals/{inside_pid}/submit")
     assert r.status_code == 400, r.text
     assert "not active" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_add_action_with_val_uuid_auto_delegates(client):
+    """An AddAction proposal can carry val_uuid pointing at one of
+    THIS community's artifacts. On accept, the new action gets a
+    delegated container linked to that artifact + a Plan — same
+    outcome as filing AddAction + DelegateArtifact back-to-back, but
+    in one accepted proposal.
+
+    This is the right architecture for action communities: their
+    container MUST point back to a parent artifact via
+    delegated_from_artifact_id so the work has a commit path. A bare
+    action with no delegated container is a dead end nobody can
+    contribute to."""
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+
+    # Seed a parent artifact via accepted CreateArtifact.
+    container = (
+        await client.get(f"/artifacts/containers/community/{parent['id']}")
+    ).json()[0]["container"]
+    cp = (
+        await client.post(f"/communities/{parent['id']}/proposals", json={
+            "user_id": user["id"], "proposal_type": "CreateArtifact",
+            "proposal_text": "needs working group attention",
+            "val_text": "Onboarding Procedures",
+            "val_uuid": container["id"],
+        })
+    ).json()
+    await _accept_proposal(client, parent["id"], user["id"], cp["id"])
+    arts = (await client.get(f"/artifacts/containers/community/{parent['id']}")).json()[0]["artifacts"]
+    parent_art = next(a for a in arts if a["proposal_id"] is not None)
+
+    # File AddAction with val_uuid = parent artifact id.
+    ap = (
+        await client.post(f"/communities/{parent['id']}/proposals", json={
+            "user_id": user["id"], "proposal_type": "AddAction",
+            "proposal_text": "Working group on onboarding",
+            "val_text": "Onboarding WG",
+            "val_uuid": parent_art["id"],
+        })
+    ).json()
+    await _accept_proposal(client, parent["id"], user["id"], ap["id"])
+
+    actions = (await client.get(f"/communities/{parent['id']}/actions")).json()
+    assert len(actions) == 1
+    action_id = actions[0]["action_id"]
+
+    # The new action must have a delegated container pointing at the
+    # parent artifact, with a seeded Plan inside.
+    r = await client.get(f"/artifacts/containers/community/{action_id}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body) == 1, (
+        f"action should have exactly one delegated container; got {body}"
+    )
+    cont = body[0]["container"]
+    assert cont["delegated_from_artifact_id"] == parent_art["id"], (
+        f"container should link back to parent artifact; got "
+        f"delegated_from_artifact_id={cont['delegated_from_artifact_id']!r}"
+    )
+    plans = [a for a in body[0]["artifacts"] if a["proposal_id"] is None]
+    assert len(plans) == 1, f"should have a seeded Plan; got: {body[0]['artifacts']}"
+
+
+@pytest.mark.asyncio
+async def test_add_action_without_val_uuid_creates_bare_action(client):
+    """The val_uuid is optional. AddAction without it creates a bare
+    action (no container) — same behavior as before. The parent can
+    still file DelegateArtifact later."""
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+    ap = (
+        await client.post(f"/communities/{parent['id']}/proposals", json={
+            "user_id": user["id"], "proposal_type": "AddAction",
+            "proposal_text": "Bare action — no artifact yet",
+            "val_text": "Empty WG",
+        })
+    ).json()
+    await _accept_proposal(client, parent["id"], user["id"], ap["id"])
+    actions = (await client.get(f"/communities/{parent['id']}/actions")).json()
+    assert len(actions) == 1
+    action_id = actions[0]["action_id"]
+    # No containers — the action is bare (matches existing behavior).
+    body = (await client.get(f"/artifacts/containers/community/{action_id}")).json()
+    assert body == [], f"bare action should have no containers; got {body}"
+
+
+@pytest.mark.asyncio
+async def test_add_action_val_uuid_must_belong_to_this_community(client):
+    """val_uuid pointing at an artifact in another community is
+    refused at create time — same shape as EditArtifact validation."""
+    user = await create_test_user(client)
+    a = await create_test_community(client, user["id"], name="Alpha-AAV")
+    b = await create_test_community(client, user["id"], name="Bravo-AAV")
+    # Land an artifact in B
+    cb = (await client.get(f"/artifacts/containers/community/{b['id']}")).json()[0]["container"]
+    cp = (
+        await client.post(f"/communities/{b['id']}/proposals", json={
+            "user_id": user["id"], "proposal_type": "CreateArtifact",
+            "proposal_text": "B's artifact content",
+            "val_text": "B's title", "val_uuid": cb["id"],
+        })
+    ).json()
+    await _accept_proposal(client, b["id"], user["id"], cp["id"])
+    arts_b = (await client.get(f"/artifacts/containers/community/{b['id']}")).json()[0]["artifacts"]
+    b_art = next(a for a in arts_b if a["proposal_id"] is not None)
+
+    # AddAction in A with val_uuid pointing at B's artifact.
+    r = await client.post(f"/communities/{a['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "AddAction",
+        "proposal_text": "Steal B's artifact",
+        "val_text": "Hijack",
+        "val_uuid": b_art["id"],
+    })
+    assert r.status_code == 422, r.text
+    assert "different community" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_add_action_val_uuid_must_be_known_artifact(client):
+    """Bogus val_uuid → 422."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    parent = await create_test_community(client, user["id"])
+    r = await client.post(f"/communities/{parent['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "AddAction",
+        "proposal_text": "wrap a ghost",
+        "val_text": "WG",
+        "val_uuid": str(_uuid.uuid4()),
+    })
+    assert r.status_code == 422
+    assert "not a known artifact" in r.json()["detail"].lower()
