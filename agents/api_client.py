@@ -163,10 +163,20 @@ class KBZClient:
         _check(resp)
         return resp.json()
 
-    async def get_proposals(self, community_id: str, status: str | None = None) -> list[dict]:
-        url = f"/communities/{community_id}/proposals"
+    async def get_proposals(
+        self,
+        community_id: str,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
+        params = []
         if status:
-            url += f"?status={status}"
+            params.append(f"status={status}")
+        if limit is not None:
+            params.append(f"limit={int(limit)}")
+        url = f"/communities/{community_id}/proposals"
+        if params:
+            url += "?" + "&".join(params)
         resp = await self._client.get(url)
         _check(resp)
         return resp.json()
