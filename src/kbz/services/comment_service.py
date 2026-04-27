@@ -102,13 +102,29 @@ class CommentService:
                 await self.db.execute(select(Proposal).where(Proposal.id == entity_id))
             ).scalar_one_or_none()
             if prop and prop.proposal_type == ProposalType.EDIT_ARTIFACT.value:
-                if not _comment_quotes_proposal(data.comment_text or "", prop.proposal_text or ""):
+                # Anti-hallucination: the comment must quote a literal
+                # 5-word run from EITHER the proposed new content
+                # (proposal_text) OR the old content being replaced
+                # (prev_content, snapshotted at create time). Pre-fix
+                # we only checked proposal_text — but a reviewer's
+                # natural rhetoric is "the line about X is wrong"
+                # where X is in the OLD text. Forcing the agent to
+                # quote only-the-new-text encouraged it to invent
+                # phrases. Allowing either is no weaker as an anti-
+                # hallucination signal: a literal 5-word run from
+                # either text proves the agent actually read SOMETHING
+                # real.
+                comment_text = data.comment_text or ""
+                quotes_new = _comment_quotes_proposal(comment_text, prop.proposal_text or "")
+                quotes_old = _comment_quotes_proposal(comment_text, prop.prev_content or "")
+                if not quotes_new and not quotes_old:
                     raise HTTPException(
                         status_code=422,
                         detail=(
                             "EditArtifact comment must quote a 5+ word literal substring "
-                            "from the proposal_text. Read the actual PROPOSED content and "
-                            "quote a phrase from it — do not fabricate details."
+                            "from EITHER the proposed new content (proposal_text) OR the "
+                            "current artifact text (prev_content). Read the actual proposal "
+                            "and quote a phrase from it — do not fabricate details."
                         ),
                     )
         comment = Comment(

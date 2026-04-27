@@ -380,3 +380,54 @@ async def test_comment_on_missing_community_404s(client):
     })
     assert resp.status_code == 404, resp.text
     assert "community" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_edit_artifact_comment_can_quote_old_content(client):
+    """EditArtifact comments often reference what's BEING REPLACED.
+    Pre-fix the anti-hallucination guard only matched against
+    proposal_text (the NEW content), forcing agents to quote
+    text they were proposing to add. Now either the new or old
+    text counts. Old is in proposal.prev_content (snapshotted at
+    create time)."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+
+    # Seed an artifact via accepted CreateArtifact.
+    container = (
+        await client.get(f"/artifacts/containers/community/{community['id']}")
+    ).json()[0]["container"]
+    cp = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"], "proposal_type": "CreateArtifact",
+            "proposal_text": "the original text here is exactly what we agreed",
+            "val_text": "Original Title",
+            "val_uuid": container["id"],
+        })
+    ).json()
+    await client.patch(f"/proposals/{cp['id']}/submit")
+    await client.post(f"/proposals/{cp['id']}/support", json={"user_id": user["id"]})
+    for _ in range(2):
+        await client.post(f"/communities/{community['id']}/pulses/support", json={"user_id": user["id"]})
+    arts = (await client.get(f"/artifacts/containers/community/{community['id']}")).json()[0]["artifacts"]
+    real_art = next(a for a in arts if a["proposal_id"] is not None)
+
+    # File EditArtifact with completely new text. The proposal's
+    # prev_content snapshot will hold the original.
+    ep = (
+        await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"], "proposal_type": "EditArtifact",
+            "proposal_text": "totally different replacement content goes here now",
+            "val_text": "Updated Title",
+            "val_uuid": real_art["id"],
+        })
+    ).json()
+    proposal_id = ep["id"]
+
+    # Quote a 5-word run from the OLD content (prev_content). Pre-fix
+    # this 422'd because the matcher only checked proposal_text.
+    r = await client.post(f"/entities/proposal/{proposal_id}/comments", json={
+        "user_id": user["id"],
+        "comment_text": "concerns about 'the original text here is' — proposing to keep that phrasing",
+    })
+    assert r.status_code == 201, r.text
