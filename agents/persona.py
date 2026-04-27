@@ -110,7 +110,9 @@ def load_adversarial_personas() -> list[Persona]:
     return out
 
 
-# Extra names used when the requested member count exceeds the number of YAML personas.
+# Curated names used first when the requested member count exceeds the
+# YAML personas. After this list is exhausted, names are generated as
+# Member_037, Member_038, …, so any count can be served.
 _EXTRA_NAMES = [
     "Alex", "Sam", "Jordan", "Morgan", "Casey", "Riley",
     "Avery", "Quinn", "Blake", "Drew", "Jamie", "Kai",
@@ -119,16 +121,25 @@ _EXTRA_NAMES = [
     "Lennon", "Lyric", "Nova", "Zion", "Cruz", "Indigo",
 ]
 
-#: Hard ceiling: 6 YAML personas + 30 generated names.
-MAX_MEMBERS = len(_EXTRA_NAMES) + 6  # 36
+# Soft cap. Pre-fix MAX_MEMBERS was hardcoded to 36 (=6+30) and
+# `build_persona_list` clamped to it, so requesting --members 40 (or
+# 100) silently capped at 36 and the user couldn't run the larger
+# simulations they intended. The cap was driven by the fixed
+# `_EXTRA_NAMES` list running out, not any platform constraint.
+# Now we keep a generous upper bound (sanity: refuse 10000) but let
+# the persona generator produce procedural names beyond the curated
+# list.
+MAX_MEMBERS = 1000
 
 
 def build_persona_list(count: int, directory: str | None = None) -> list[Persona]:
     """Return exactly *count* personas for a simulation.
 
     * count ≤ available YAML files → shuffle and take the first *count*.
-    * count > available YAML files → use all YAML personas and pad with
-      freshly generated random personas (names drawn from ``_EXTRA_NAMES``).
+    * count > YAML files but ≤ YAML + curated names → fill with
+      curated names from `_EXTRA_NAMES` (random pick).
+    * count > YAML + curated → fill the rest with `Member_NNN` names
+      so any count up to MAX_MEMBERS works.
     * count is clamped to [2, MAX_MEMBERS].
     """
     count = max(2, min(count, MAX_MEMBERS))
@@ -137,13 +148,23 @@ def build_persona_list(count: int, directory: str | None = None) -> list[Persona
         shuffled = yaml_personas[:]
         random.shuffle(shuffled)
         return shuffled[:count]
-    # Need more than the YAML files can provide — pad with generated personas.
+    # Need more than the YAML files can provide — pad with curated names
+    # first, then with procedural Member_NNN names if we still need more.
     result = yaml_personas[:]  # all YAML personas first
     extra_needed = count - len(yaml_personas)
+
     available_names = [n for n in _EXTRA_NAMES if not any(p.name == n for p in result)]
     random.shuffle(available_names)
-    for name in available_names[:extra_needed]:
+    take_curated = min(extra_needed, len(available_names))
+    for name in available_names[:take_curated]:
         result.append(generate_persona(name))
+    extra_needed -= take_curated
+
+    # Procedural fallback. Numbered from where the curated list left off
+    # to keep names distinct even if curated names had been used.
+    base = len(yaml_personas) + take_curated
+    for i in range(extra_needed):
+        result.append(generate_persona(f"Member_{base + i + 1:03d}"))
     return result
 
 

@@ -589,3 +589,47 @@ class TestLLMPresets:
             assert cfg["backend"] in ("anthropic", "ollama", "openrouter"), (
                 f"{name} has unknown backend {cfg['backend']!r}"
             )
+
+
+class TestPersonaCount:
+    """Pre-fix MAX_MEMBERS was hardcoded to 36 and `build_persona_list`
+    clamped silently — `--members 40` got 36, `--members 100` got 36.
+    Now we generate procedural names past the curated list."""
+
+    def test_count_below_yaml_returns_yaml_subset(self):
+        from agents.persona import build_persona_list, load_all_personas
+        n_yaml = len(load_all_personas())
+        result = build_persona_list(min(3, n_yaml))
+        assert len(result) == min(3, n_yaml)
+
+    def test_count_just_past_yaml_uses_curated_names(self):
+        from agents.persona import build_persona_list, load_all_personas, _EXTRA_NAMES
+        n_yaml = len(load_all_personas())
+        result = build_persona_list(n_yaml + 5)
+        assert len(result) == n_yaml + 5
+        # The 5 extras must come from the curated _EXTRA_NAMES list
+        # (since curated has 30 entries, we won't exhaust it at +5).
+        added = result[n_yaml:]
+        assert all(p.name in _EXTRA_NAMES for p in added)
+
+    def test_count_far_past_curated_uses_procedural_names(self):
+        """The bug we're fixing: 40 used to be capped at 36."""
+        from agents.persona import build_persona_list
+        result = build_persona_list(40)
+        assert len(result) == 40, "previously clamped silently to 36"
+
+    def test_count_100_works(self):
+        from agents.persona import build_persona_list
+        result = build_persona_list(100)
+        assert len(result) == 100
+        # All names must be unique — duplicate user_names break the
+        # /users registration path (409 collision).
+        names = [p.name for p in result]
+        assert len(set(names)) == 100, "duplicate names in 100-bot persona list"
+
+    def test_clamp_minimum_is_2(self):
+        from agents.persona import build_persona_list
+        result = build_persona_list(0)
+        assert len(result) == 2
+        result = build_persona_list(1)
+        assert len(result) == 2
