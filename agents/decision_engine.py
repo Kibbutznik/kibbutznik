@@ -398,14 +398,25 @@ Rules:
 - Include "eagerness" (1-10) and "eager_front" (propose/pulse/comment/support/observe/produce) in EACH item.
 - **DEDUPLICATION:** Before creating ANY proposal, check the active proposals list. If an equivalent proposal already exists (same type + same target), SUPPORT it instead of creating a duplicate. This is especially critical for JoinAction — never create a JoinAction if one already exists for the same action.
 
-## Optional: `update_intention` — carry a plan across turns
-You may add an `"update_intention": "<1-line string>"` field on ANY decision this turn to
-SET your running intention. That string becomes the `CURRENT INTENTION` line at the top
+## Optional: carry a plan across turns via the `update_intention` SIDE-FIELD
+
+`update_intention` is **NOT an action** — it is a side-field you ATTACH TO any
+real action this turn (support_pulse, support_proposal, comment, do_nothing, etc.).
+
+✅ CORRECT — attach as a sibling field on a real action:
+  {{"action": "support_pulse", "reason": "…", "update_intention": "Push the WG pulse this round"}}
+  {{"action": "do_nothing",    "reason": "…", "update_intention": "Wait for Rivka to support before supporting pulse"}}
+
+❌ WRONG — never use it as the value of `action`:
+  {{"action": "update_intention", "update_intention": "..."}}   ← will be rejected as Unknown action
+  {{"action": "intention",        "text": "..."}}               ← same — there is no such action
+
+What the field does: that string becomes the `CURRENT INTENTION` line at the top
 of your next turn's memory context, so multi-step plans (propose X → wait a round →
 support Y → push pulse) survive across turns instead of resetting each round.
 
 The CURRENT INTENTION block at the top of your memory (if shown) is YOUR last turn's
-intention, which you can choose to continue, update, or abandon. If you don't supply
+intention, which you can choose to continue, update, or abandon. If you don't attach
 `update_intention` this turn, your previous intention persists unchanged.
 
 Good intentions (short, concrete, actionable next step):
