@@ -1980,9 +1980,12 @@ const PROPOSAL_CATALOG = [
 
     // ── Actions (working groups)
     { value: "AddAction",       group: "Actions",     label: "Start a new action (working group)",
-      help: "Describe the work. Short name becomes the group's label.",
+      help: "Describe the work. Short name becomes the group's label. Optionally pick a parent artifact so the new action is born with that artifact delegated to it (one accepted proposal instead of two).",
       needs: { text: true, val_text: true },
-      val_text_label: "Short name", val_text_placeholder: "e.g. Onboarding Writers" },
+      val_text_label: "Short name", val_text_placeholder: "e.g. Onboarding Writers",
+      pickFrom: "artifacts", val_uuid_label: "Parent artifact to delegate (optional)", val_uuid_optional: true,
+      val_uuid_none_label: "— none (create bare action) —",
+      val_uuid_empty_message: "No artifacts in this community to delegate — will create a bare action." },
     { value: "EndAction",       group: "Actions",     label: "Close an action",
       help: "Pick a sub-action to close. Its wallet (if any) sweeps back to parent.",
       needs: { text: true, val_uuid: true },
@@ -3069,12 +3072,14 @@ function ProposePage({ communityId, user }) {
                         </div>
                         {pickItems.length === 0 ? (
                             <div className="muted" style={{ fontSize: "0.85rem" }}>
-                                No {spec.pickFrom} available. You may need one to exist first.
+                                {spec.val_uuid_optional
+                                    ? (spec.val_uuid_empty_message || `No ${spec.pickFrom} available — leaving empty.`)
+                                    : `No ${spec.pickFrom} available. You may need one to exist first.`}
                             </div>
                         ) : (
-                            <select className="input" required value={valUuid}
+                            <select className="input" required={!spec.val_uuid_optional} value={valUuid}
                                     onChange={(e) => setValUuid(e.target.value)}>
-                                <option value="">— choose —</option>
+                                <option value="">{spec.val_uuid_optional ? (spec.val_uuid_none_label || "— none —") : "— choose —"}</option>
                                 {pickItems.map(it => (
                                     <option key={it.id} value={it.id}>{it.label}</option>
                                 ))}
