@@ -431,6 +431,13 @@ Bad intentions (vague, persona-shaped, not plan-shaped):
 Respond with a JSON ARRAY, no other text:
 [{{"action": "...", "reason": "...", "eagerness": N, "eager_front": "...", ...params}}]
 
+**STRICT JSON ONLY — NO COMMENTS, NO TRAILING PROSE.** Do not annotate values
+with `// ...` or `/* ... */`; standard JSON forbids those and the parser will
+reject the whole response. If you need to explain WHICH artifact/action you
+picked, put the explanation inside the `reason` field — never as a comment
+next to the value. Wrong: `"val_uuid": "319f0559",  // the Plan artifact`
+Right: `"val_uuid": "319f0559", "reason": "I picked the Plan artifact because…"`
+
 **Important**: for `create_proposal`, your `reason` is PUBLIC — it is stored as
 the proposal's "pitch" and shown to everyone in the community. Write it as a
 1–3-sentence case for accepting the proposal (not a log line to yourself).
@@ -447,7 +454,7 @@ Examples:
   {{"action": "support_pulse", "reason": "Keep the governance cycle moving — proposals need pulses to advance", "eagerness": 7, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "<the empty onboarding artifact id from this community>", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "<artifact_id>", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
   {{"action": "support_pulse", "reason": "Need the pulse to fire so the AddAction-with-delegation can land", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
@@ -767,10 +774,20 @@ class DecisionEngine:
         if text.startswith("json"):
             text = text[4:].strip()
 
-        # 3. Strip JavaScript-style // comments (common in mistral/openrouter outputs).
-        #    Only removes // that appear after a JSON value (closing " } ] or digit),
-        #    not inside string content.
-        text = re.sub(r'([\]}"\'0-9])\s*//[^\n]*', r'\1', text)
+        # 3. Strip JavaScript-style // and /* */ comments.
+        #
+        # Mistral / OpenRouter / many self-hosted models emit JSON-with-
+        # comments — most often after a comma:
+        #     "val_uuid": "319f0559",  // The Plan artifact in Root
+        # The previous regex only matched when `]`, `}`, `"`, `'`, or a
+        # digit preceded the whitespace before `//`, so the much more
+        # common `,  //` case slipped through and EVERY response from
+        # commenting models failed to parse → all agents do_nothing.
+        # Walk the text once, tracking whether we are inside a JSON
+        # string, and skip `// ... \n` and `/* ... */` outside strings.
+        # Strings are kept intact so a literal `//` inside a value (e.g.
+        # a URL) survives.
+        text = _strip_json_comments(text)
 
         # Try to parse as JSON
         data = None
@@ -832,3 +849,57 @@ class DecisionEngine:
         # Filter out do_nothing when mixed with real actions
         real = [a for a in actions if a.action_type != "do_nothing"]
         return real if real else [actions[0]]
+
+
+def _strip_json_comments(text: str) -> str:
+    """Remove JS-style ``//`` and ``/* */`` comments from JSON text.
+
+    The model occasionally annotates JSON values with comments
+    (especially after commas) which break ``json.loads``. Walk the text
+    once, tracking whether we are inside a JSON string so a literal
+    ``//`` inside a string (e.g. a URL) is preserved verbatim.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    while i < n:
+        c = text[i]
+        if in_string:
+            # Preserve every char inside a string, including escapes.
+            if c == "\\" and i + 1 < n:
+                out.append(c)
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_string = False
+            out.append(c)
+            i += 1
+            continue
+        # Outside strings.
+        if c == '"':
+            in_string = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            nxt = text[i + 1]
+            if nxt == "/":
+                # Line comment: skip until newline (newline kept).
+                i += 2
+                while i < n and text[i] != "\n":
+                    i += 1
+                continue
+            if nxt == "*":
+                # Block comment: skip until */ (or EOF).
+                i += 2
+                while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                    i += 1
+                i = min(i + 2, n)
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
