@@ -957,6 +957,109 @@ class TestStripJsonComments:
         assert parsed[1]["action"] == "support_pulse"
 
 
+class TestIdPrefixes:
+    """Single-letter prefixes (P-/A-/C-/K-/S-/U-/M-) tag every id the
+    LLM sees, so it can't confuse a proposal_id for an artifact_id (the
+    top failure mode in prod: 39 'EditArtifact skipped: artifact <id>
+    not found' events in 40 minutes were the model passing a P-… where
+    an A-… was needed).
+
+    The renderer (community_state.summarize) wraps every id slice with
+    its kind prefix; the agent resolvers strip the prefix before
+    matching against snapshot ids."""
+
+    def test_tag_id_renders_with_prefix(self):
+        from agents.community_state import tag_id
+        assert tag_id("proposal", "abc12345-1234-5678-9012-abcdef123456") == "P-abc12345"
+        assert tag_id("artifact", "abc12345-...") == "A-abc12345"
+        assert tag_id("container", "abc12345-...") == "C-abc12345"
+        assert tag_id("action", "abc12345-...") == "K-abc12345"
+        assert tag_id("statement", "abc12345-...") == "S-abc12345"
+        assert tag_id("user", "abc12345-...") == "U-abc12345"
+        assert tag_id("comment", "abc12345-...") == "M-abc12345"
+
+    def test_strip_id_tag_round_trip(self):
+        from agents.community_state import tag_id, strip_id_tag
+        full = "abc12345-1234-5678-9012-abcdef123456"
+        for kind in ("proposal", "artifact", "container", "action",
+                     "statement", "user", "comment"):
+            tagged = tag_id(kind, full)
+            assert strip_id_tag(tagged) == full[:8]
+
+    def test_strip_id_tag_passes_through_when_unprefixed(self):
+        """Backward-compat: a raw id without a prefix is unchanged."""
+        from agents.community_state import strip_id_tag
+        assert strip_id_tag("abc12345") == "abc12345"
+        assert strip_id_tag("abc12345-1234-5678-9012-abcdef123456") == "abc12345-1234-5678-9012-abcdef123456"
+        assert strip_id_tag("") == ""
+
+    def test_resolve_proposal_id_handles_tagged_input(self):
+        """Agent resolvers must accept `P-abc12345` and resolve it
+        against the proposal pool exactly like the bare prefix."""
+        from agents.persona import Persona, Traits
+        from agents.api_client import KBZClient
+        engine = MockDecisionEngine()
+        persona = Persona(name="T", role="r", background="b", decision_style="d",
+                          communication_style="c", traits=Traits())
+        agent = Agent(persona=persona, client=KBZClient(), engine=engine)
+        full = "61d3b594-f7b6-4afb-95b6-ad129986b7f3"
+        snap = CommunitySnapshot(
+            proposals_out_there=[{"id": full, "proposal_type": "AddStatement",
+                                  "proposal_text": "x", "user_id": "u"}],
+        )
+        # Tagged form resolves
+        assert agent._resolve_proposal_id("P-61d3b594", snap) == full
+        # Untagged form still resolves (backward-compat)
+        assert agent._resolve_proposal_id("61d3b594", snap) == full
+
+    def test_resolve_val_uuid_handles_tagged_input(self):
+        """Same shape for val_uuid resolver — tagged input is stripped
+        and matched against the catch-all pool."""
+        from agents.persona import Persona, Traits
+        from agents.api_client import KBZClient
+        engine = MockDecisionEngine()
+        persona = Persona(name="T", role="r", background="b", decision_style="d",
+                          communication_style="c", traits=Traits())
+        agent = Agent(persona=persona, client=KBZClient(), engine=engine)
+        full = "abc12345-1234-5678-9012-abcdef123456"
+        snap = CommunitySnapshot(
+            container_artifacts={"c1": [{"id": full, "title": "A", "content": "x"}]},
+        )
+        assert agent._resolve_val_uuid("A-abc12345", snap) == full
+        # Tag of the wrong type is fine — we strip and prefix-match anyway
+        # (the LLM may emit the wrong kind; the resolver still finds it
+        # if the underlying id matches a known entity).
+        assert agent._resolve_val_uuid("P-abc12345", snap) == full
+
+    def test_summary_renders_proposal_and_artifact_ids_with_prefixes(self):
+        """Most important: the prompt-facing summary string contains
+        prefixed ids so the LLM literally cannot confuse types when
+        copy-pasting."""
+        full_p = "11111111-1111-1111-1111-111111111111"
+        full_a = "22222222-2222-2222-2222-222222222222"
+        full_c = "33333333-3333-3333-3333-333333333333"
+        snap = CommunitySnapshot(
+            community={"id": "c", "name": "Test", "member_count": 1, "status": 1},
+            variables={"PulseSupport": "50", "ProposalSupport": "50", "MaxAge": "2"},
+            proposals_out_there=[{"id": full_p, "proposal_type": "AddStatement",
+                                  "proposal_text": "x", "user_id": "u",
+                                  "support_count": 0, "age": 0}],
+            containers=[{"id": full_c, "title": "Root", "status": 1, "mission": "m"}],
+            container_artifacts={full_c: [
+                {"id": full_a, "title": "Onboarding", "content": "",
+                 "author_user_id": "u", "is_plan": False},
+            ]},
+        )
+        out = snap.summarize(my_user_id="u")
+        # Proposal id appears with P- prefix, never as bare slice.
+        assert "P-11111111" in out
+        assert "id: 11111111" not in out  # bare slice should NOT appear
+        # Artifact id appears with A- prefix.
+        assert "A-22222222" in out
+        # Container id appears with C- prefix.
+        assert "C-33333333" in out
+
+
 def test_prompt_disambiguates_update_intention_field_vs_action():
     """The prompt's `update_intention` section is rendered into every
     turn's prompt. Cheap LLMs (lunaris-8b) misread the original

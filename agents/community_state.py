@@ -3,11 +3,62 @@ Community state observer — agents use this to "browse" and understand
 what's happening in their community before making decisions.
 """
 import logging
+import re
 from dataclasses import dataclass, field
 
 from agents.api_client import KBZClient
 
 logger = logging.getLogger(__name__)
+
+
+# ── Single-letter ID prefixes ──────────────────────────────────────────
+# Without prefixes, an 8-char UUID slice like "34eacc02" could be a
+# proposal id, an artifact id, or a container id — and the LLM (esp.
+# mistral-small) routinely picks the wrong one. With prefixes, the type
+# is syntactically obvious in every context the model sees and emits.
+#
+# The renderer wraps every id slice as e.g. "P-34eacc02"; the agent
+# resolvers (_resolve_proposal_id, _resolve_val_uuid, _resolve_comment_id)
+# strip the `[A-Z]-` prefix before matching against snapshot ids.
+ID_KIND_PREFIX = {
+    "proposal":  "P",   # support_proposal, comment, reply_comment
+    "artifact":  "A",   # EditArtifact, RemoveArtifact, DelegateArtifact, AddAction val_uuid
+    "container": "C",   # CreateArtifact, CommitArtifact
+    "action":    "K",   # JoinAction, EndAction, DelegateArtifact val_text — K for "Kibbutz" (sub-community); avoids the A clash with artifact
+    "statement": "S",   # RemoveStatement, ReplaceStatement
+    "user":      "U",   # Membership, ThrowOut
+    "comment":   "M",   # vote_comment, reply_comment — M for Message
+}
+
+_TAG_RE = re.compile(r"^([A-Z])-")
+
+
+def tag_id(kind: str, full_id: str, n: int = 8) -> str:
+    """Render an id with its single-letter type prefix and 8-char slice.
+
+    >>> tag_id("proposal", "34eacc02-...")
+    'P-34eacc02'
+    """
+    prefix = ID_KIND_PREFIX.get(kind, "?")
+    if not full_id:
+        return f"{prefix}-?"
+    return f"{prefix}-{str(full_id)[:n]}"
+
+
+def strip_id_tag(tagged: str) -> str:
+    """Strip a `X-` prefix if present and return the bare id portion.
+
+    Tolerant of LLM noise: `"id=P-34eacc02"`, `"(P-34eacc02)"` etc. are
+    handled by callers' existing fallback regex; this only strips the
+    most common form `X-<id>` at the start of the string.
+    """
+    if not tagged:
+        return ""
+    s = str(tagged).strip()
+    m = _TAG_RE.match(s)
+    if m:
+        return s[2:]
+    return s
 
 
 def _proposal_display_text(p: dict) -> str:
@@ -168,7 +219,7 @@ class CommunitySnapshot:
             ctext = (latest.get("comment_text") or "")[:80]
             ptype = p.get("proposal_type", "?")
             highlights.append(
-                f"  💬 NEW COMMENT on [{ptype}] id={pid[:8]} — {commenter}: \"{ctext}\" "
+                f"  💬 NEW COMMENT on [{ptype}] id={tag_id('proposal', pid)} — {commenter}: \"{ctext}\" "
                 f"(you haven't engaged with this proposal)"
             )
 
@@ -229,7 +280,7 @@ class CommunitySnapshot:
             st = status_label.get(c.get("status"), str(c.get("status")))
             is_delegated_container = bool(c.get("delegated_from_artifact_id"))
             origin = " (root)" if not is_delegated_container else " (delegated from parent — YOUR WORK CONTAINER)"
-            lines.append(f"\n  Container \"{c.get('title','')}\" [id={cid[:8]}] — {st}{origin}")
+            lines.append(f"\n  Container \"{c.get('title','')}\" [id={tag_id('container', cid)}] — {st}{origin}")
             mission = (c.get("mission") or "").strip()
             if mission:
                 lines.append(f"    >>> MISSION: {mission}")
@@ -269,12 +320,12 @@ class CommunitySnapshot:
                 plan_content = (plan_art.get("content") or "").strip()
                 plan_is_template = plan_content.startswith("## Plan") and "(What is this" in plan_content
                 if plan_content and not plan_is_template:
-                    lines.append(f"    📋 PLAN [{pid[:8]}]:")
+                    lines.append(f"    📋 PLAN [{tag_id('artifact', pid)}]:")
                     lines.append(f"      {plan_content}")
-                    lines.append(f"      → To update the plan: EditArtifact val_uuid={pid[:8]}")
+                    lines.append(f"      → To update the plan: EditArtifact val_uuid={tag_id('artifact', pid)}")
                 else:
-                    lines.append(f"    📋 PLAN [{pid[:8]}] — ⚡ NEEDS FILLING — fill this FIRST before creating other artifacts!")
-                    lines.append(f"      → Propose EditArtifact val_uuid={pid[:8]} to outline goals, needed sections, and approach")
+                    lines.append(f"    📋 PLAN [{tag_id('artifact', pid)}] — ⚡ NEEDS FILLING — fill this FIRST before creating other artifacts!")
+                    lines.append(f"      → Propose EditArtifact val_uuid={tag_id('artifact', pid)} to outline goals, needed sections, and approach")
 
             for a in regular_arts:
                 aid = a["id"]
@@ -283,39 +334,39 @@ class CommunitySnapshot:
                 deleg = self.delegations_out.get(aid)
                 if deleg:
                     lines.append(
-                        f"    [{aid[:8]}] \"{title}\" by {author} — DELEGATED to action "
+                        f"    [{tag_id('artifact', aid)}] \"{title}\" by {author} — DELEGATED to action "
                         f"\"{deleg['action_name']}\" "
                         f"({deleg['child_artifact_count']} child artifacts, container status: {deleg['child_status']})"
                     )
                 elif not (a.get("content") or "").strip():
                     if is_delegated_container:
                         lines.append(
-                            f"    [{aid[:8]}] \"{title}\" by {author} — "
-                            f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={aid[:8]}"
+                            f"    [{tag_id('artifact', aid)}] \"{title}\" by {author} — "
+                            f"⚡ EMPTY — propose EditArtifact NOW: val_uuid={tag_id('artifact', aid)}"
                         )
                     else:
                         lines.append(
-                            f"    [{aid[:8]}] \"{title}\" by {author} — "
-                            f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={aid[:8]}, val_text=<action_id>), "
-                            f"or EditArtifact directly if no suitable Action exists (val_uuid={aid[:8]})"
+                            f"    [{tag_id('artifact', aid)}] \"{title}\" by {author} — "
+                            f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={tag_id('artifact', aid)}, val_text=K-<action_id>), "
+                            f"or EditArtifact directly if no suitable Action exists (val_uuid={tag_id('artifact', aid)})"
                         )
                 else:
                     full_content = (a.get("content") or "").strip()
-                    lines.append(f"    [{aid[:8]}] \"{title}\" by {author} — current content:")
+                    lines.append(f"    [{tag_id('artifact', aid)}] \"{title}\" by {author} — current content:")
                     lines.append(f"      {full_content}")
-                    lines.append(f"      → To improve: EditArtifact val_uuid={aid[:8]}")
+                    lines.append(f"      → To improve: EditArtifact val_uuid={tag_id('artifact', aid)}")
             if c.get("status") == 1 and arts:
                 # Exclude plan from "all filled" check
                 non_plan = [a for a in arts if not a.get("is_plan")]
                 all_filled = all((a.get("content") or "").strip() for a in non_plan if not self.delegations_out.get(a["id"])) if non_plan else False
                 if all_filled and is_delegated_container:
                     lines.append(
-                        f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={cid[:8]} "
-                        f"val_text=JSON list of artifact ids in order"
+                        f"    ✅ All artifacts filled! Propose CommitArtifact: val_uuid={tag_id('container', cid)} "
+                        f"val_text=JSON list of artifact ids in order (e.g. [\"A-id1\",\"A-id2\"])"
                     )
                 elif not is_delegated_container:
                     lines.append(
-                        f"    → To commit: CommitArtifact with val_uuid={cid[:8]} "
+                        f"    → To commit: CommitArtifact with val_uuid={tag_id('container', cid)} "
                         f"and val_text=JSON list of artifact ids in chosen order"
                     )
             if c.get("status") == 2:
@@ -355,7 +406,7 @@ class CommunitySnapshot:
             lines.append("   Outdated or harmful rules can be retired via RemoveStatement,")
             lines.append("   or rewritten in place via ReplaceStatement — both target the rule by id.)")
             for i, s in enumerate(self.statements, 1):
-                lines.append(f"  {i}. [id={s['id'][:8]}] {s['statement_text']}")
+                lines.append(f"  {i}. [id={tag_id('statement', s['id'])}] {s['statement_text']}")
         else:
             lines.append("\n### Community Rules: None yet — consider proposing AddStatement to establish community values!")
 
@@ -388,20 +439,20 @@ class CommunitySnapshot:
                         if idle else ""
                     )
                     lines.append(
-                        f"  - [{name}] id={aid[:8]} ({len(members)} members, "
+                        f"  - [{name}] id={tag_id('action', aid)} ({len(members)} members, "
                         f"{pulses} pulses fired, {active_props} active proposals, "
                         f"{accepted} accepted / {rejected} rejected){status_tag}"
                     )
                     if idle:
                         lines.append(
-                            f"    → To close: create EndAction proposal with val_uuid={aid[:8]}"
+                            f"    → To close: create EndAction proposal with val_uuid={tag_id('action', aid)}"
                         )
             if ended_actions:
                 lines.append(f"\n### Ended Actions ({len(ended_actions)}): (already closed, no action needed)")
                 for a in ended_actions:
                     aid = a['action_id']
                     name = self.action_names.get(aid, "Unnamed")
-                    lines.append(f"  - [{name}] id={aid[:8]}")
+                    lines.append(f"  - [{name}] id={tag_id('action', aid)}")
 
         promote_threshold = self._proposal_support_threshold()
 
@@ -442,7 +493,7 @@ class CommunitySnapshot:
                 lines.append(
                     f"  - [{p['proposal_type']}] \"{desc}\" "
                     f"by {creator} | support: {support}/{accept_threshold} | {will_promote} |{age_warn}"
-                    f" | id: {p['id'][:8]}{you_supported}"
+                    f" | id: {tag_id('proposal', p['id'])}{you_supported}"
                 )
                 _append_edit_diff(p, lines)
                 # Warn agents NOT to JoinAction for AddAction proposals that haven't been accepted yet
@@ -475,7 +526,7 @@ class CommunitySnapshot:
                 lines.append(
                     f"  - [{p['proposal_type']}] \"{desc}\" "
                     f"by {creator} | support: {support}/{threshold} needed → **{verdict}**"
-                    f" | id: {p['id'][:8]}{you_supported}"
+                    f" | id: {tag_id('proposal', p['id'])}{you_supported}"
                 )
                 _append_edit_diff(p, lines)
                 if p["proposal_type"] == "AddAction":
@@ -539,7 +590,7 @@ class CommunitySnapshot:
                     member_count = len(self.action_members.get(aid, []))
                     pending = ja_counts.get(aid, 0)
                     pending_note = f" — ⚠️ {pending} JoinAction proposals already pending, SUPPORT one instead of creating another!" if pending > 0 else ""
-                    lines.append(f"  - [{name}] → JoinAction with val_uuid={aid[:8]} ({member_count} members){pending_note}")
+                    lines.append(f"  - [{name}] → JoinAction with val_uuid={tag_id('action', aid)} ({member_count} members){pending_note}")
 
         # Members list (with user_ids for ThrowOut targeting)
         if self.members:
@@ -548,7 +599,7 @@ class CommunitySnapshot:
                 name = users_cache.get(m["user_id"], m["user_id"][:8])
                 seniority = m.get("seniority", 0)
                 me_marker = " ← you" if m["user_id"] == my_user_id else ""
-                lines.append(f"  - {name} (user_id={m['user_id'][:8]}, seniority={seniority}){me_marker}")
+                lines.append(f"  - {name} (user_id={tag_id('user', m['user_id'])}, seniority={seniority}){me_marker}")
 
         # Community chat — recent messages (or new since last read)
         if self.chat_messages:

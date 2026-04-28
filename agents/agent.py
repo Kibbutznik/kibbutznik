@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from agents.api_client import KBZAPIError, KBZClient
-from agents.community_state import CommunitySnapshot, observe_community
+from agents.community_state import CommunitySnapshot, observe_community, strip_id_tag
 from agents.decision_engine import AgentAction, DecisionEngine
 from agents.memory import MemoryStore
 from agents.memory_extractor import MemoryExtractor
@@ -387,7 +387,10 @@ class Agent:
         """
         if not short_id:
             return ""
-        short_id = str(short_id).strip()
+        # Strip any single-letter type prefix (P-, A-, etc.) before matching.
+        # The renderer tags ids with their type for the LLM, but the API
+        # takes raw UUIDs.
+        short_id = strip_id_tag(str(short_id).strip())
         if short_id in self._PROPOSAL_TYPES:
             logger.warning(f"[{self.persona.name}] Got proposal type name '{short_id}' as proposal_id — ignoring")
             return ""
@@ -419,6 +422,7 @@ class Agent:
 
     def _resolve_comment_id(self, short_id: str, snapshot: CommunitySnapshot) -> str:
         """Resolve a potentially truncated comment ID to a full UUID."""
+        short_id = strip_id_tag(short_id or "")
         if not short_id or len(short_id) >= 36:
             return short_id
         for comments in snapshot.proposal_comments.values():
@@ -447,7 +451,8 @@ class Agent:
         """
         if not short_id:
             return ""
-        short_id = str(short_id).strip()
+        # Strip single-letter type prefix (P-, A-, K-, ...) before matching.
+        short_id = strip_id_tag(str(short_id).strip())
         if len(short_id) >= 36 and self._UUID_PREFIX_RE.match(short_id):
             return short_id
 
