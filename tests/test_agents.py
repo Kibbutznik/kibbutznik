@@ -875,6 +875,88 @@ def test_prompt_teaches_add_action_val_uuid_shortcut():
     )
 
 
+class TestStripJsonComments:
+    """Mistral / OpenRouter / many self-hosted models annotate JSON
+    values with `// ...` comments — most often after a comma:
+
+        "val_uuid": "319f0559",  // The Plan artifact in Root container
+
+    The previous regex required the char before the whitespace to be
+    `]`, `}`, `"`, `'`, or a digit, so the very common `,  //` case
+    slipped through and EVERY commented response failed to parse. The
+    string-aware stripper walks the text once, tracking string state
+    so a literal `//` inside a string value (e.g. a URL) survives."""
+
+    def test_strips_line_comment_after_comma(self):
+        """The exact failure shape from prod logs (mistral-small-creative)."""
+        from agents.decision_engine import _strip_json_comments
+        import json
+        src = '[{"val_uuid": "319f0559",  // The Plan artifact in Root\n"reason": "x"}]'
+        out = _strip_json_comments(src)
+        assert "//" not in out  # comment fully removed
+        # And the result must be valid JSON.
+        parsed = json.loads(out)
+        assert parsed[0]["val_uuid"] == "319f0559"
+        assert parsed[0]["reason"] == "x"
+
+    def test_preserves_double_slash_inside_string(self):
+        """A URL inside a JSON value contains // and MUST survive."""
+        from agents.decision_engine import _strip_json_comments
+        import json
+        src = '{"url": "https://kibbutznik.org/path", "k": 1}'
+        out = _strip_json_comments(src)
+        parsed = json.loads(out)
+        assert parsed["url"] == "https://kibbutznik.org/path"
+
+    def test_strips_block_comment(self):
+        from agents.decision_engine import _strip_json_comments
+        import json
+        src = '[{"a": 1, /* trailing note */ "b": 2}]'
+        out = _strip_json_comments(src)
+        parsed = json.loads(out)
+        assert parsed == [{"a": 1, "b": 2}]
+
+    def test_handles_escaped_quote_in_string(self):
+        """Escapes don't break string-state tracking."""
+        from agents.decision_engine import _strip_json_comments
+        import json
+        src = r'{"k": "he said \"hi\"", "n": 1}  // tail'
+        out = _strip_json_comments(src)
+        parsed = json.loads(out)
+        assert parsed == {"k": 'he said "hi"', "n": 1}
+
+    def test_full_failing_response_from_prod(self):
+        """Reproduces the verbatim mistral-small-creative response that
+        failed to parse in prod (Apr 28 logs). Pre-fix this returned
+        empty/None and the agent fell back to do_nothing — three rounds
+        of every agent doing nothing because the stripper missed the
+        ',  //' shape."""
+        from agents.decision_engine import _strip_json_comments
+        import json
+        src = '''[
+    {
+        "action": "create_proposal",
+        "proposal_type": "AddAction",
+        "val_text": "Marketing Strategy Team",
+        "val_uuid": "319f0559",  // The Plan artifact in Root container
+        "reason": "Pairing this AddAction with the Plan artifact ensures the team is born with a clear mandate.",
+        "eagerness": 10,
+        "eager_front": "produce"
+    },
+    {
+        "action": "support_pulse",
+        "reason": "Lock in acceptance now.",
+        "eagerness": 10,
+        "eager_front": "pulse"
+    }
+]'''
+        parsed = json.loads(_strip_json_comments(src))
+        assert len(parsed) == 2
+        assert parsed[0]["proposal_type"] == "AddAction"
+        assert parsed[0]["val_uuid"] == "319f0559"
+        assert parsed[1]["action"] == "support_pulse"
+
+
 def test_prompt_disambiguates_update_intention_field_vs_action():
     """The prompt's `update_intention` section is rendered into every
     turn's prompt. Cheap LLMs (lunaris-8b) misread the original
