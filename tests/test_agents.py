@@ -873,3 +873,32 @@ def test_prompt_teaches_add_action_val_uuid_shortcut():
         "one-step shortcut; otherwise bots will keep emitting the slow "
         "two-step AddAction + DelegateArtifact pattern."
     )
+
+
+def test_prompt_disambiguates_update_intention_field_vs_action():
+    """The prompt's `update_intention` section is rendered into every
+    turn's prompt. Cheap LLMs (lunaris-8b) misread the original
+    'optional FIELD' wording as 'optional action' and emitted
+    {"action": "update_intention", ...} — which falls through to
+    "Unknown action" and wastes the turn (6+ hits in one prod log).
+
+    The fix is in the prompt text, not the dispatcher: an explicit
+    ✅/❌ contrast plus the SIDE-FIELD label leaves no room for that
+    misread. This test pins the wording so a future edit doesn't
+    silently re-introduce the ambiguity."""
+    prompt = build_decision_prompt(
+        persona_name="Test", persona_role="r", persona_background="b",
+        persona_decision_style="d", persona_communication_style="c",
+        persona_trait_summary="t", community_summary="s",
+        action_history=[],
+    )
+    # The KBZ_RULES (which contains this section) gets folded into the
+    # prompt every turn.
+    assert "update_intention" in prompt
+    # Must be labeled as NOT an action.
+    assert "NOT an action" in prompt or "not an action" in prompt
+    # Must call out the wrong shape explicitly so the LLM can pattern-
+    # match the warning before emitting it.
+    assert '"action": "update_intention"' in prompt
+    # Must show the correct attach-to-real-action shape.
+    assert "side-field" in prompt.lower() or "sibling field" in prompt.lower()
