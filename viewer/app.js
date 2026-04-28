@@ -1290,11 +1290,27 @@ function ActionTreeTab({ communityId, rootCommunityId, openDetail, onNavigate })
 
     const rootId = rootCommunityId || communityId;
 
+    const reload = useCallback((withSpinner) => {
+        if (!rootId) return;
+        if (withSpinner) setLoading(true);
+        API.get(`/communities/${rootId}/actions`).then(a => setActions(a)).catch(() => setActions([])).finally(() => setLoading(false));
+    }, [rootId]);
+
+    useEffect(() => { reload(true); }, [reload]);
+
     useEffect(() => {
         if (!rootId) return;
-        setLoading(true);
-        API.getCached(`/communities/${rootId}/actions`).then(a => setActions(a)).catch(() => setActions([])).finally(() => setLoading(false));
-    }, [rootId]);
+        let pending = null;
+        const handler = () => {
+            if (pending) return;
+            pending = setTimeout(() => { pending = null; reload(false); }, 600);
+        };
+        window.addEventListener("kbz-refresh", handler);
+        return () => {
+            window.removeEventListener("kbz-refresh", handler);
+            if (pending) clearTimeout(pending);
+        };
+    }, [rootId, reload]);
 
     if (loading) return <div className="loading-center"><span className="spinner"></span> Loading actions...</div>;
 
@@ -1319,14 +1335,30 @@ function ActionSidebar({ rootCommunityId, activeCommunityId, onNavigate, openDet
     const [actions, setActions] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+    const reload = useCallback((withSpinner) => {
         if (!rootCommunityId) return;
-        setLoading(true);
+        if (withSpinner) setLoading(true);
         API.get(`/communities/${rootCommunityId}/actions`)
             .then(a => setActions(a))
             .catch(() => setActions([]))
             .finally(() => setLoading(false));
-    }, [rootCommunityId, round]);
+    }, [rootCommunityId]);
+
+    useEffect(() => { reload(true); }, [reload, round]);
+
+    useEffect(() => {
+        if (!rootCommunityId) return;
+        let pending = null;
+        const handler = () => {
+            if (pending) return;
+            pending = setTimeout(() => { pending = null; reload(false); }, 600);
+        };
+        window.addEventListener("kbz-refresh", handler);
+        return () => {
+            window.removeEventListener("kbz-refresh", handler);
+            if (pending) clearTimeout(pending);
+        };
+    }, [rootCommunityId, reload]);
 
     // Don't show sidebar if no actions exist (desktop only — on mobile it's hidden by default)
     if (!loading && actions.length === 0) return null;
