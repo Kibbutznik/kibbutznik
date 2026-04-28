@@ -541,6 +541,61 @@ class Agent:
                         return ActionLog(now, "do_nothing", decision.reason,
                             f"CreateArtifact skipped: container {(val_uuid or '')[:8]} not found in community", False)
 
+                # --- Generic UUID-shape sanity for val_uuid ---
+                # The model occasionally emits a literal placeholder
+                # like "<artifact_id>" copied from the prompt, or a
+                # name like "Marketing Strategy Team" where a UUID
+                # belongs. The server then 422s with "Input should be
+                # a valid UUID, invalid character: ... found '<' at 1".
+                # Drop val_uuid before sending so the request either
+                # succeeds (types where val_uuid is optional) or fails
+                # earlier with a clearer message. Allows the per-type
+                # checks below to handle missing val_uuid uniformly.
+                if val_uuid and not self._UUID_PREFIX_RE.match(val_uuid):
+                    val_uuid = None
+
+                # --- AddAction pre-flight (val_uuid is OPTIONAL) ---
+                # The model is hallucinating UUIDs for the val_uuid
+                # shortcut (e.g. dd5e6318-... never existed; emitted
+                # by all 6 agents across 5+ rounds against prod).
+                # If val_uuid doesn't match a real artifact in this
+                # community, drop it — file as a bare AddAction. The
+                # action still gets created; a follow-up
+                # DelegateArtifact can attach work later.
+                if ptype == "AddAction" and val_uuid:
+                    all_artifact_ids = {
+                        a["id"]
+                        for arts in snapshot.container_artifacts.values()
+                        for a in arts
+                    }
+                    if val_uuid not in all_artifact_ids:
+                        logger.info(
+                            f"[{self.persona.name}] AddAction val_uuid "
+                            f"{val_uuid[:8]} not in community artifacts — "
+                            f"dropping val_uuid, filing as bare action"
+                        )
+                        val_uuid = None
+
+                # --- JoinAction pre-flight (val_uuid is REQUIRED) ---
+                # Same hallucination pattern: model emits a UUID for an
+                # action that doesn't exist (often the same fabricated
+                # UUID it tried to use for a never-accepted AddAction).
+                # Aborting locally avoids a 422 round-trip.
+                if ptype == "JoinAction":
+                    valid_action_ids = {a["action_id"] for a in snapshot.actions}
+                    if not val_uuid or val_uuid not in valid_action_ids:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"JoinAction skipped: action {(val_uuid or '?')[:8]} "
+                            f"not in active actions list", False)
+
+                # --- EndAction pre-flight (val_uuid is REQUIRED) ---
+                if ptype == "EndAction":
+                    valid_action_ids = {a["action_id"] for a in snapshot.actions}
+                    if not val_uuid or val_uuid not in valid_action_ids:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"EndAction skipped: action {(val_uuid or '?')[:8]} "
+                            f"not in active actions list", False)
+
                 # --- DelegateArtifact pre-flight validation ---
                 if ptype == "DelegateArtifact":
                     artifact_id = val_uuid or ""
