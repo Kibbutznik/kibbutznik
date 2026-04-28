@@ -822,3 +822,54 @@ async def test_observe_caps_recent_accepted_for_long_running_communities(communi
     assert len(snap.recent_accepted) <= 20, (
         f"recent_accepted should be capped; got {len(snap.recent_accepted)}"
     )
+
+
+def test_prompt_teaches_add_action_val_uuid_shortcut():
+    """AddAction now accepts an optional val_uuid that auto-delegates a
+    parent artifact on accept (PR #90 — already shipped to prod). Pre-fix
+    the prompt only described the slow two-step (AddAction then
+    DelegateArtifact), so bots rarely or never used the shortcut and
+    routinely created bare actions with no work to do — exactly the
+    "actions are starving" symptom the user reported. This test pins the
+    new wording so a future refactor doesn't silently drop the shortcut
+    from both the rules and the worked example."""
+    prompt = build_decision_prompt(
+        persona_name="Test", persona_role="r", persona_background="b",
+        persona_decision_style="d", persona_communication_style="c",
+        persona_trait_summary="t", community_summary="s",
+        action_history=[],
+    )
+    # The rules block must explicitly call out the val_uuid shortcut on
+    # AddAction (not just describe DelegateArtifact separately).
+    assert "AddAction" in prompt and "val_uuid" in prompt
+    # The mention must associate val_uuid with AddAction specifically —
+    # easy proxy: the words appear in the same ~400-char window.
+    add_action_idx = prompt.find("AddAction")
+    while add_action_idx != -1:
+        window = prompt[add_action_idx:add_action_idx + 400]
+        if "val_uuid" in window and ("delegate" in window.lower() or "auto-delegat" in window.lower()):
+            break
+        add_action_idx = prompt.find("AddAction", add_action_idx + 1)
+    else:
+        raise AssertionError(
+            "Prompt mentions AddAction and val_uuid but never associates "
+            "them — the one-step val_uuid shortcut isn't taught."
+        )
+    # The worked example block at the bottom should demonstrate the
+    # one-step form (AddAction with val_uuid) rather than the slow
+    # AddAction + DelegateArtifact pair. Cheap LLMs lean heavily on the
+    # examples; if the example shows two steps they emit two steps.
+    assert '"proposal_type": "AddAction"' in prompt
+    examples_block = prompt[prompt.find("Examples:"):]
+    assert '"proposal_type": "AddAction"' in examples_block, (
+        "examples block should include an AddAction example"
+    )
+    # In the AddAction example specifically, val_uuid must appear so the
+    # model sees the one-step pattern modelled.
+    aa_in_examples = examples_block.find('"proposal_type": "AddAction"')
+    aa_window = examples_block[aa_in_examples:aa_in_examples + 600]
+    assert '"val_uuid"' in aa_window, (
+        "AddAction example must include val_uuid to demonstrate the "
+        "one-step shortcut; otherwise bots will keep emitting the slow "
+        "two-step AddAction + DelegateArtifact pattern."
+    )

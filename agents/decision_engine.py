@@ -63,7 +63,7 @@ Every member implicitly "signs" them by joining.
 ### Proposal Types
 - **AddStatement** — community principle/rule (constitution) — defines what members agree to follow
 - **ChangeVariable** — change governance thresholds (proposal_text=variable name, val_text=new value)
-- **AddAction** — create a working group/committee (becomes its own sub-community with members, pulses, proposals!)
+- **AddAction** — create a working group/committee (becomes its own sub-community with members, pulses, proposals!). **One-step shortcut: include `val_uuid=<parent artifact id>` to ALSO auto-delegate that artifact to the new action on accept** — saves a whole pulse cycle vs. AddAction-then-DelegateArtifact. Use this whenever you already know which artifact the new action will own (the artifact must be ACTIVE, in THIS community, and not the 📋 Plan).
 - **JoinAction** — join an existing, already-accepted action — val_uuid=<MUST be from "Actions You Can Join" or "Active Actions" in state — NEVER use an AddAction proposal's id; if the AddAction is still OutThere/OnTheAir the action doesn't exist yet!> — proposal goes to ROOT community
 - **Membership** — welcome a new member (val_uuid=the new user's id)
 - **ThrowOut** — remove a member who violates community rules (needs 60%) — val_uuid=the target member's user_id. The thrown-out member is removed from ALL sub-communities too.
@@ -316,7 +316,7 @@ Decision style: {persona_decision_style}
 Proposal ideas (in priority order — depends on whether you are in ROOT or a child ACTION):
 **If in ROOT community:**
 - **DelegateArtifact**: MOST IMPORTANT — hand empty artifacts to child Actions. val_uuid=<artifact_id>, val_text=<child action community_id>
-- **AddAction**: create a focused working group to handle artifacts — proposal_text=description, val_text=short name (e.g. "Onboarding Writers")
+- **AddAction**: create a focused working group to handle artifacts — proposal_text=description, val_text=short name (e.g. "Onboarding Writers"). **Prefer the one-step form: also pass `val_uuid=<parent artifact id>` so the new action is BORN with that artifact delegated to it.** A bare action (no delegated artifact) has nothing to do — pair every AddAction with the artifact it should own.
 - **CreateArtifact**: plan a new section title (empty slot) in the container. val_uuid=<container_id>, val_text=<title>
 - **JoinAction**: join a child Action to help produce content — val_uuid=<the full action_id from "Actions You Can Join">
 **If in a child ACTION:**
@@ -353,7 +353,7 @@ You joined this action because it has artifacts delegated to it that need conten
 **Action priority per round (ROOT community):**
 1. **support_pulse** — do this EVERY round unless you have a specific 1-round reason to delay. Nothing moves without pulses!
 2. If root has EMPTY artifacts AND a matching Action exists → propose **DelegateArtifact** to hand work to the Action.
-3. If root has EMPTY artifacts AND no Action exists → propose **AddAction** to create a team, THEN **DelegateArtifact**.
+3. If root has EMPTY artifacts AND no Action exists → propose **AddAction with `val_uuid=<that artifact's id>`** — one proposal that creates the team AND delegates the artifact in a single accept. (The slow two-step `AddAction` then `DelegateArtifact` still works, but wastes a pulse cycle.)
 4. **JoinAction** — if "Actions You Can Join" lists actions AND no pending JoinAction proposal exists for that action, propose one. If a JoinAction is already pending, SUPPORT it instead.
 5. If root needs more section titles → propose **CreateArtifact** (title only).
 6. If no Action exists yet and an artifact needs content urgently → **EditArtifact** directly in root is allowed.
@@ -436,9 +436,8 @@ Examples:
   {{"action": "support_pulse", "reason": "Keep the governance cycle moving — proposals need pulses to advance", "eagerness": 7, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "reason": "Need a dedicated team to flesh out onboarding artifacts", "eagerness": 8, "eager_front": "produce"}},
-  {{"action": "create_proposal", "proposal_type": "DelegateArtifact", "val_uuid": "<artifact_id>", "val_text": "<child action community_id>", "reason": "This artifact needs focused work by the Onboarding Writers team", "eagerness": 8, "eager_front": "produce"}},
-  {{"action": "support_pulse", "reason": "Need the pulse to fire so the AddAction and DelegateArtifact can advance", "eagerness": 8, "eager_front": "pulse"}}
+  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "<the empty onboarding artifact id from this community>", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
+  {{"action": "support_pulse", "reason": "Need the pulse to fire so the AddAction-with-delegation can land", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
   {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "<full action_id from 'Actions You Can Join' in state>", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
