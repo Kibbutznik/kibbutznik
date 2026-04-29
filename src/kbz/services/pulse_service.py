@@ -28,11 +28,21 @@ class PulseService:
         result = await self.db.execute(select(Pulse).where(Pulse.id == pulse_id))
         return result.scalar_one_or_none()
 
-    async def list_by_community(self, community_id: uuid.UUID) -> list[Pulse]:
+    async def list_by_community(
+        self,
+        community_id: uuid.UUID,
+        *,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> list[Pulse]:
+        # Pre-fix unbounded — old communities have N pulses where N
+        # grows with every governance round. Hard cap so a single read
+        # can't dump thousands of rows.
         result = await self.db.execute(
             select(Pulse)
             .where(Pulse.community_id == community_id)
             .order_by(Pulse.created_at.desc())
+            .limit(limit).offset(offset)
         )
         return list(result.scalars().all())
 
