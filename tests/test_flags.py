@@ -378,3 +378,32 @@ async def test_session_spoof_blocked(client):
         "value": 1,
     })
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_flag_rejects_cross_community_target(client):
+    """Pre-fix `set_flag` accepted `community_id` from the request body
+    without checking it matched the target. A member of community B
+    could flag a proposal in community A, the row was scoped to B, and
+    closeness (flagger, author) was mutated globally — cross-community
+    closeness pollution. Now the target's real community is resolved
+    server-side and a mismatch 400s."""
+    alice = await create_test_user(client, name="alice-cc-flag")
+    bob = await create_test_user(client, name="bob-cc-flag")
+    a = await create_test_community(client, alice["id"], name="Alpha-flag-cc")
+    b = await create_test_community(client, bob["id"], name="Bravo-flag-cc")
+    pa = await client.post(f"/communities/{a['id']}/proposals", json={
+        "user_id": alice["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "alice writes in A",
+    })
+    assert pa.status_code == 201
+    r = await client.post("/flags", json={
+        "user_id": bob["id"],
+        "community_id": b["id"],          # WRONG — proposal is in A
+        "target_kind": "proposal",
+        "target_id": pa.json()["id"],
+        "value": -1,
+    })
+    assert r.status_code == 400, r.text
+    assert "different community" in r.json()["detail"].lower()

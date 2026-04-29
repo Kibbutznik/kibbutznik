@@ -53,6 +53,65 @@ class FlagService:
 
     # ---- author resolution ---------------------------------------
 
+    async def _resolve_target_community(
+        self, target_kind: str, target_id: uuid.UUID,
+    ) -> uuid.UUID | None:
+        """Find the community a flag target ACTUALLY belongs to.
+
+        Pre-fix `set_flag` accepted `community_id` from the request body
+        without checking it matched the target. A member of community B
+        could flag a comment by Alice in community A, the row was
+        written under B's id, and the closeness pair (flagger, Alice)
+        was mutated even though Alice never participated in B —
+        cross-community closeness pollution. Now we resolve the
+        target's real community here and the caller verifies.
+        """
+        if target_kind == TARGET_PROPOSAL:
+            return (
+                await self.db.execute(
+                    select(Proposal.community_id).where(Proposal.id == target_id)
+                )
+            ).scalar_one_or_none()
+        if target_kind == TARGET_COMMENT:
+            row = (
+                await self.db.execute(
+                    select(Comment.entity_type, Comment.entity_id)
+                    .where(Comment.id == target_id)
+                )
+            ).first()
+            if row is None:
+                return None
+            etype, eid = row
+            if etype == "community":
+                return eid
+            if etype == "proposal":
+                return (
+                    await self.db.execute(
+                        select(Proposal.community_id).where(Proposal.id == eid)
+                    )
+                ).scalar_one_or_none()
+            return None
+        if target_kind == TARGET_REASON:
+            # Reason → support → proposal → community
+            from kbz.models.reason import Reason as _R
+            from kbz.models.support import Support as _S
+            row = (
+                await self.db.execute(
+                    select(_S.proposal_id)
+                    .join(_R, _R.support_id == _S.id)
+                    .where(_R.id == target_id)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            return (
+                await self.db.execute(
+                    select(Proposal.community_id).where(Proposal.id == row)
+                )
+            ).scalar_one_or_none()
+        # TARGET_USER has no canonical community — accept the body's value.
+        return None
+
     async def _resolve_author(
         self, target_kind: str, target_id: uuid.UUID,
     ) -> uuid.UUID | None:
@@ -129,6 +188,32 @@ class FlagService:
             raise HTTPException(
                 status_code=422, detail="value must be -1 or 1",
             )
+
+        # Resolve the target's REAL community and require it to match
+        # the body's `community_id`. Pre-fix the body's value was used
+        # verbatim, so a member of community B could flag content from
+        # community A — the row was scoped to B and the closeness
+        # delta polluted the (flagger, author) pair globally. The
+        # `target_kind="user"` case has no canonical community, so we
+        # keep accepting the body for it.
+        if target_kind != TARGET_USER:
+            real_community = await self._resolve_target_community(
+                target_kind, target_id,
+            )
+            if real_community is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"{target_kind} {target_id} not found",
+                )
+            if real_community != community_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"target {target_kind} {target_id} belongs to a "
+                        f"different community ({real_community}) — "
+                        f"flag must be scoped to that community"
+                    ),
+                )
 
         # Membership check: the flagger has to be an active member
         # of the community they're flagging in.
