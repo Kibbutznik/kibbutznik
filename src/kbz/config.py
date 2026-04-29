@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     # rotated to a high-entropy random. Empty string disables the
     # webhook endpoint entirely (returns 503).
     webhook_secret: str = ""
+    # Per-event amount cap for the wallet-deposit webhook. Even with a
+    # valid HMAC signature, a single event over this limit is rejected
+    # — defense-in-depth in case the secret leaks. Default 1,000,000
+    # internal credits; override with KBZ_WEBHOOK_MAX_AMOUNT for prod
+    # rails that legitimately move more.
+    webhook_max_amount: str = "1000000"
     # Which WalletBacking to instantiate when a community's
     # `Financial` variable is "internal". Phase 2+ will route to
     # "safe" / "stripe" based on the variable value itself.

@@ -324,3 +324,41 @@ async def test_webhook_503_when_secret_unset(client, monkeypatch):
         headers={"X-KBZ-Signature": _sig(raw), "Content-Type": "application/json"},
     )
     assert r.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_webhook_rejects_amount_over_per_event_cap(client, monkeypatch):
+    """Defense-in-depth: even with a valid HMAC signature, a single
+    deposit over `webhook_max_amount` must 400. Pre-fix the secret was
+    the SOLE gate; if it leaked an attacker could mint unbounded
+    credits in one call."""
+    monkeypatch.setattr(settings, "webhook_max_amount", "100")  # tight cap
+    user = await create_test_user(client, name="cap-test")
+    body = {
+        "target_kind": "user",
+        "target_id": user["id"],
+        "amount": "101",          # one over the cap
+        "event": "test.over",
+        "external_ref": "ref-over",
+        "idempotency_key": "idem-over",
+    }
+    raw = json.dumps(body).encode()
+    r = await client.post(
+        "/webhooks/wallet-deposit",
+        content=raw,
+        headers={"X-KBZ-Signature": _sig(raw), "Content-Type": "application/json"},
+    )
+    assert r.status_code == 400, r.text
+    assert "cap" in r.json()["detail"].lower()
+
+    # Sanity: at-cap is still allowed.
+    body["amount"] = "100"
+    body["external_ref"] = "ref-eq"
+    body["idempotency_key"] = "idem-eq"
+    raw = json.dumps(body).encode()
+    r = await client.post(
+        "/webhooks/wallet-deposit",
+        content=raw,
+        headers={"X-KBZ-Signature": _sig(raw), "Content-Type": "application/json"},
+    )
+    assert r.status_code == 200, r.text
