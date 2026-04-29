@@ -94,10 +94,14 @@ class ReasonService:
 
     async def list_for_proposal(
         self, proposal_id: uuid.UUID,
+        *, limit: int = 1000, offset: int = 0,
     ) -> list[Reason]:
         """Flat list of all ACTIVE reasons under the proposal,
         oldest-first within each stance. Clients reconstruct the
-        tree via parent_reason_id; the read API stays simple."""
+        tree via parent_reason_id; the read API stays simple.
+
+        Capped — pre-fix unbounded; a long-running deliberation could
+        accrue thousands of rows and dump them all on every read."""
         rows = await self.db.execute(
             select(Reason)
             .where(
@@ -105,5 +109,6 @@ class ReasonService:
                 Reason.status == STATUS_ACTIVE,
             )
             .order_by(Reason.stance.asc(), Reason.created_at.asc())
+            .limit(limit).offset(offset)
         )
         return list(rows.scalars().all())
