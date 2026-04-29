@@ -33,24 +33,34 @@ router = APIRouter()
 MemoryType = Literal["episodic", "goal", "relationship", "reflection"]
 
 
+# Pre-fix `MemoryCreate.content` and `MemoryUpdate.content` had no
+# upper bound. A single member can store a multi-megabyte memory row,
+# inflating the agent-memory table and the GET-listing payload (capped
+# at 100 rows × N MB = 100s of MB on a single GET). Cap at 16k —
+# generous for legitimate agent reasoning, narrow enough to bound a
+# single store call.
+_MEMORY_CONTENT_MAX = 16_000
+_MEMORY_CATEGORY_MAX = 255
+
+
 class MemoryCreate(BaseModel):
     # UUID-typed so a malformed value comes back as a clean 422 instead
     # of crashing the endpoint with `ValueError -> 500` from a manual
     # `uuid.UUID(body.user_id)` call inside the handler.
     user_id: uuid.UUID
     memory_type: MemoryType
-    content: str
+    content: str = Field(min_length=1, max_length=_MEMORY_CONTENT_MAX)
     importance: float = Field(0.5, ge=0.0, le=1.0)
-    category: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=_MEMORY_CATEGORY_MAX)
     round_num: Optional[int] = None
     related_id: Optional[uuid.UUID] = None
     expires_at: Optional[int] = None
 
 
 class MemoryUpdate(BaseModel):
-    content: Optional[str] = None
+    content: Optional[str] = Field(default=None, max_length=_MEMORY_CONTENT_MAX)
     importance: Optional[float] = Field(None, ge=0.0, le=1.0)
-    category: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=_MEMORY_CATEGORY_MAX)
     expires_at: Optional[int] = None
 
 
