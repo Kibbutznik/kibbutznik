@@ -98,3 +98,21 @@ async def test_magic_link_request_hits_email_service(client):
     captured = LogBackend.outbox[0]
     assert captured.to == "target@example.com"
     assert "/auth/verify?token=" in captured.text
+
+
+def test_render_invite_email_escapes_user_controlled_fields():
+    """`inviter_name` and `community_name` come from user-controlled
+    columns. A community named `<img src=x onerror=alert(1)>` would
+    inject HTML into outgoing email if interpolated raw."""
+    from kbz.services.email_service import render_invite_email
+    msg = render_invite_email(
+        invite_url="https://kbz/invite/abc",
+        inviter_name="<script>alert('xss')</script>",
+        community_name="<img src=x onerror=alert(1)>",
+    )
+    # Plain text body is allowed to keep raw chars (no rendering).
+    # HTML body must NOT contain unescaped tags from user fields.
+    assert "<script>alert" not in msg.html
+    assert "<img src=x onerror=" not in msg.html
+    # Escaped form must be there so the labels still appear.
+    assert "&lt;script&gt;" in msg.html or "&lt;img" in msg.html
