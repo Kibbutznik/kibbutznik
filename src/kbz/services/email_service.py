@@ -195,7 +195,19 @@ def render_invite_email(
     app_name: str = "Kibbutznik",
 ) -> EmailMessage:
     """An invite handoff. The recipient clicks through, enters their
-    email, and the claim flow files a Membership proposal."""
+    email, and the claim flow files a Membership proposal.
+
+    HTML escaping: `inviter_name` and `community_name` come from
+    user-controlled fields (User.user_name and Community.name). A
+    community whose name is `<img src=x onerror=…>` would inject HTML
+    into outgoing email if interpolated raw. Always run html.escape on
+    user-controlled segments before splicing into the HTML body.
+    """
+    import html as _html
+    safe_inviter = _html.escape(inviter_name or "", quote=True)
+    safe_community = _html.escape(community_name or "", quote=True)
+    safe_app = _html.escape(app_name or "Kibbutznik", quote=True)
+    safe_url = _html.escape(invite_url or "", quote=True)
     subject = f"{inviter_name} invited you to {community_name}"
     text = (
         f"{inviter_name} invited you to join the {app_name} community "
@@ -205,9 +217,9 @@ def render_invite_email(
         "members decide whether to admit you."
     )
     html = (
-        f"<p><strong>{inviter_name}</strong> invited you to join the "
-        f"{app_name} community <em>{community_name}</em>.</p>"
-        f'<p><a href="{invite_url}">Open invitation</a></p>'
+        f"<p><strong>{safe_inviter}</strong> invited you to join the "
+        f"{safe_app} community <em>{safe_community}</em>.</p>"
+        f'<p><a href="{safe_url}">Open invitation</a></p>'
         "<p style=\"color:#666;font-size:.9em\">"
         "Your membership goes through a community vote — existing members "
         "decide whether to admit you."
