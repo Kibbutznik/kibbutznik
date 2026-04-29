@@ -100,9 +100,12 @@ def _set_session_cookie(
         max_age=minutes * 60,
         httponly=True,
         samesite="lax",
-        # secure=True should be set in prod via reverse proxy / TLS; we
-        # leave it False here so local dev over http works.
-        secure=False,
+        # Secure flag driven by config. Default True so accidental
+        # plaintext deploys don't ship cookies in clear; explicitly set
+        # KBZ_AUTH_COOKIE_SECURE=false ONLY for localhost dev over HTTP.
+        # Pre-fix this was hardcoded `False` so prod sessions could be
+        # captured on any plaintext path.
+        secure=settings.auth_cookie_secure,
         path="/",
     )
 

@@ -44,12 +44,24 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS: previously `allow_origins=["*"]` blanket-allowed every browser
+# origin. We never set `allow_credentials=True` so the wildcard never
+# combined with cookies — but keeping `*` was a latent footgun: any
+# future change to enable credentialed CORS would have instantly turned
+# every state-changing route into a CSRF target. Drive the origin list
+# from config and default to the empty string (no CORS header sent),
+# which is safe for an API consumed only by same-origin pages and
+# server-to-server clients.
+from kbz.config import settings as _cors_settings  # avoid shadow at top
+_origins = [o.strip() for o in (_cors_settings.cors_allow_origins or "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        allow_credentials=False,  # explicit; flip to True only with a CSRF token
+    )
 
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(communities.router, prefix="/communities", tags=["communities"])

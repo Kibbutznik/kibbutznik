@@ -52,6 +52,15 @@ class Settings(BaseSettings):
     auth_dev_expose_magic_link: bool = True
     # Cookie name used for the session. Keep stable.
     auth_session_cookie: str = "kbz_session"
+    # Set Secure=True on the session cookie. Default True so accidental
+    # plaintext deploys don't leak cookies; explicitly set
+    # KBZ_AUTH_COOKIE_SECURE=false ONLY for localhost dev over HTTP.
+    auth_cookie_secure: bool = True
+    # Comma-separated list of trusted CORS origins. "*" disables CORS
+    # entirely (no header sent) which is safe for an API-only deploy
+    # but means browsers won't send cookies cross-origin. Set to e.g.
+    # "https://kibbutznik.org" in prod.
+    cors_allow_origins: str = ""
 
     # --- Finance module (opt-in; Phase 1 = internal credits) ---
     # One-time gift to every new human user on first sign-in. Makes
