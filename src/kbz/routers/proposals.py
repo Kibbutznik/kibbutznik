@@ -189,15 +189,33 @@ async def withdraw_proposal(
             status_code=400,
             detail=f"Cannot withdraw — proposal is {proposal.proposal_status}",
         )
-    from datetime import datetime, timezone
-    await db.execute(
+    # Guard the UPDATE on the proposal still being withdrawable.
+    # Pre-fix two concurrent withdraws each computed `now()` in Python
+    # and ran an unconditional UPDATE; the second silently overwrote
+    # `decided_at` to a later timestamp, drifting the audit log
+    # forward. Now WHERE proposal_status IN (DRAFT, OUT_THERE) ensures
+    # the second UPDATE affects zero rows.
+    from sqlalchemy import func
+    result = await db.execute(
         update(Proposal)
-        .where(Proposal.id == proposal_id)
+        .where(
+            Proposal.id == proposal_id,
+            Proposal.proposal_status.in_(
+                [ProposalStatus.DRAFT, ProposalStatus.OUT_THERE]
+            ),
+        )
         .values(
             proposal_status=ProposalStatus.CANCELED,
-            decided_at=datetime.now(timezone.utc),
+            decided_at=func.now(),  # server-side timestamp, no Python clock drift
         )
     )
+    if result.rowcount == 0:
+        # Lost the race — another withdraw / pulse already canceled this.
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Proposal is no longer withdrawable (concurrent state change)",
+        )
     # Refund any Membership escrow before committing
     from kbz.enums import ProposalType as _PT
     if proposal.proposal_type == _PT.MEMBERSHIP:
