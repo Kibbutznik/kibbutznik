@@ -154,13 +154,26 @@ def _wallet_to_out(wallet: Wallet, entries: list[LedgerEntry]) -> WalletOut:
 async def get_community_wallet(
     community_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
+    """Wallet balance + recent entries.
+
+    Pre-fix anonymous; the response includes balance, recent_entries
+    (transaction memos, amounts, counterparties). Same privacy
+    rationale as /ledger — humans must be members. Agents pass."""
     svc = WalletService(db)
     if not await svc.is_financial(community_id):
         raise HTTPException(
             status_code=404,
             detail="This community doesn't have the Financial module enabled.",
         )
+    if session_user is not None:
+        from kbz.services.member_service import MemberService
+        if not await MemberService(db).is_active_member(community_id, session_user.id):
+            raise HTTPException(
+                status_code=403,
+                detail="Only active members can read this community's wallet",
+            )
     wallet = await svc.get_or_create(OWNER_COMMUNITY, community_id)
     entries = await svc.recent_entries(wallet.id)
     return _wallet_to_out(wallet, entries)
@@ -170,6 +183,7 @@ async def get_community_wallet(
 async def get_action_wallet(
     action_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
     # Resolve parent community to check financial status
     parent = (
@@ -185,6 +199,21 @@ async def get_action_wallet(
             status_code=404,
             detail="This action's community doesn't have the Financial module enabled.",
         )
+    # Same membership gate as /communities/{id}/wallet — must be an
+    # active member of the action's parent community OR the action
+    # itself.
+    if session_user is not None:
+        from kbz.services.member_service import MemberService
+        ms = MemberService(db)
+        ok = (
+            await ms.is_active_member(parent, session_user.id)
+            or await ms.is_active_member(action_id, session_user.id)
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=403,
+                detail="Only members of the action or its parent can read this wallet",
+            )
     wallet = await svc.get_or_create(OWNER_ACTION, action_id)
     entries = await svc.recent_entries(wallet.id)
     return _wallet_to_out(wallet, entries)
