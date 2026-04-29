@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.auth_deps import enforce_session_matches_body, get_current_user
@@ -14,9 +14,14 @@ router = APIRouter()
 
 
 @router.get("/communities/{community_id}/pulses", response_model=list[PulseResponse])
-async def list_pulses(community_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def list_pulses(
+    community_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
     svc = PulseService(db)
-    return await svc.list_by_community(community_id)
+    return await svc.list_by_community(community_id, limit=limit, offset=offset)
 
 
 @router.get("/pulses/{pulse_id}", response_model=PulseResponse)

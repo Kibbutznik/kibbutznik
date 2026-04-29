@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
@@ -11,9 +11,14 @@ router = APIRouter()
 
 
 @router.get("/communities/{community_id}/statements", response_model=list[StatementResponse])
-async def list_statements(community_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def list_statements(
+    community_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
     svc = StatementService(db)
-    return await svc.list_by_community(community_id)
+    return await svc.list_by_community(community_id, limit=limit, offset=offset)
 
 
 @router.get("/statements/{statement_id}", response_model=StatementResponse)
