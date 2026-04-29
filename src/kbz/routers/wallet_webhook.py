@@ -93,6 +93,20 @@ async def wallet_deposit(
     except (InvalidOperation, ValueError):
         raise HTTPException(status_code=400, detail="amount must be positive")
 
+    # Per-event amount cap as defense-in-depth: even with a valid HMAC
+    # signature (which is one global secret) a single event over this
+    # limit is rejected. Pre-fix a leaked KBZ_WEBHOOK_SECRET let an
+    # attacker mint unbounded credits in one call.
+    try:
+        max_amount = Decimal(settings.webhook_max_amount)
+    except (InvalidOperation, ValueError):
+        max_amount = Decimal("1000000")
+    if amount > max_amount:
+        raise HTTPException(
+            status_code=400,
+            detail=f"amount {amount} exceeds per-event cap ({max_amount})",
+        )
+
     svc = WalletService(db)
 
     # Dedupe by (event, idempotency_key). If we already processed this
