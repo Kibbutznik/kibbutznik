@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,7 +43,10 @@ class CreateInviteResponse(BaseModel):
 
 
 class ClaimRequest(BaseModel):
-    invite_code: str
+    # invite codes are token_urlsafe(24)[:48] = 48 chars. Cap at 64
+    # so a client can't submit a 10MB string and force the lookup
+    # query to scan a giant value through the unique-index path.
+    invite_code: str = Field(min_length=1, max_length=64)
     email: EmailStr
 
 
