@@ -81,16 +81,35 @@ async def test_timeline_filters_window(client, db_engine):
 
 
 @pytest.mark.asyncio
-async def test_prune_endpoint(client, db_engine):
+async def test_prune_endpoint_requires_admin_allowlist(client, db_engine, monkeypatch):
+    """Prune is restricted to admin operators via
+    KBZ_ADMIN_USER_IDS. Any logged-in user (not on the allowlist)
+    gets 403; an admin sees the deletion go through."""
+    from kbz.config import settings
     await _seed(db_engine)
-    # ALLIED_WITH is the only closed edge (closed at 7). Prune older_than=100.
-    # Prune now requires authentication — log in first.
+    # Log in as a non-admin user.
     r = await client.post(
         "/auth/request-magic-link", json={"email": "tkg-pruner@example.com"},
     )
-    await client.get(r.json()["link"])
+    body = await client.get(r.json()["link"])
+    user_id = body.json()["user"]["user_id"]
+
+    # No allowlist configured → 403.
+    monkeypatch.setattr(settings, "admin_user_ids", "")
     resp = await client.delete("/tkg/prune", params={"older_than_round": 100})
-    assert resp.status_code == 200
+    assert resp.status_code == 403
+
+    # Allowlist has someone else → 403.
+    monkeypatch.setattr(
+        settings, "admin_user_ids", "00000000-0000-0000-0000-000000000099",
+    )
+    resp = await client.delete("/tkg/prune", params={"older_than_round": 100})
+    assert resp.status_code == 403
+
+    # Add this user to the allowlist → 200.
+    monkeypatch.setattr(settings, "admin_user_ids", user_id)
+    resp = await client.delete("/tkg/prune", params={"older_than_round": 100})
+    assert resp.status_code == 200, resp.text
     assert resp.json() == {"deleted": 1}
 
 

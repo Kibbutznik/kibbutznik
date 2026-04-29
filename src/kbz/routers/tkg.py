@@ -300,11 +300,24 @@ async def prune(
 ) -> dict[str, int]:
     """Delete closed edges whose valid_to_round < `older_than_round`.
 
-    Requires an authenticated session — pre-fix this was open to
-    anyone, so a single anonymous DELETE could wipe historical edges
-    from the temporal knowledge graph wholesale (anyone passing
-    older_than_round=999999 deletes every closed edge ever).
+    Restricted to admin operators. Pre-fix any logged-in user could
+    DELETE the entire historical edge log by passing a large
+    `older_than_round` — wiping the semantic-search index and the
+    governance-history TKG wholesale. The dependency requires a valid
+    session AND that the caller's user_id appears in the
+    `KBZ_ADMIN_USER_IDS` allowlist; an empty allowlist disables the
+    endpoint entirely (403).
     """
+    from kbz.config import settings as _cfg
+    allowlist = {
+        s.strip() for s in (_cfg.admin_user_ids or "").split(",") if s.strip()
+    }
+    if not allowlist or str(user.id) not in allowlist:
+        raise HTTPException(
+            status_code=403,
+            detail="prune is restricted to admin operators",
+        )
+
     from kbz.services.tkg_service import TKGService
 
     svc = TKGService(db)
