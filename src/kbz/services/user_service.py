@@ -25,12 +25,18 @@ class UserService:
         # from this column even if the DB is breached. If a real
         # password-auth path ever lands, it should use bcrypt/argon2
         # via auth_service, not this column.
+        # `wallet_address` is intentionally NOT taken from `data` here.
+        # POST /users is anonymous (agents register themselves), so any
+        # client could supply someone else's wallet address and have
+        # future payouts route to it. The column is set to "" on create;
+        # if/when authenticated wallet-claim flows ship, they should
+        # write this column directly under a verified-ownership proof.
         user = User(
             id=uuid.uuid4(),
             user_name=data.user_name,
             password_hash="",
             about=data.about,
-            wallet_address=data.wallet_address,
+            wallet_address="",
         )
         self.db.add(user)
         try:
