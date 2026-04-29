@@ -251,6 +251,21 @@ class CommunitySnapshot:
 
         status_label = {1: "OPEN", 2: "PENDING_PARENT (frozen)", 3: "COMMITTED"}
 
+        # Pre-compute artifact_id → in-flight EditArtifact proposal so we
+        # can flag "edit already in flight, support don't duplicate"
+        # right next to each artifact. Shown the same way as the existing
+        # JoinAction / AddAction duplicate warnings further down. After
+        # PR #96 unlocked artifact-id resolution, the dominant new
+        # failure was 5+ agents racing to file competing EditArtifacts
+        # for the same artifact in the same pulse.
+        edit_in_flight: dict[str, dict] = {}
+        commit_in_flight: dict[str, dict] = {}
+        for p in self.proposals_out_there + self.proposals_on_the_air + self.proposals_draft:
+            if p.get("proposal_type") == "EditArtifact" and p.get("val_uuid"):
+                edit_in_flight.setdefault(p["val_uuid"], p)
+            elif p.get("proposal_type") == "CommitArtifact" and p.get("val_uuid"):
+                commit_in_flight.setdefault(p["val_uuid"], p)
+
         # Count total empty artifacts across all child-action containers so we
         # can emit a top-level urgent banner when this IS an action community.
         is_action_container = any(c.get("delegated_from_artifact_id") for c in self.containers)
@@ -350,11 +365,27 @@ class CommunitySnapshot:
                             f"⚡ EMPTY — DelegateArtifact preferred (val_uuid={tag_id('artifact', aid)}, val_text=K-<action_id>), "
                             f"or EditArtifact directly if no suitable Action exists (val_uuid={tag_id('artifact', aid)})"
                         )
+                    edit_p = edit_in_flight.get(aid)
+                    if edit_p:
+                        edit_author = users_cache.get(edit_p["user_id"], edit_p["user_id"][:8])
+                        lines.append(
+                            f"      🔒 EditArtifact ALREADY IN FLIGHT by {edit_author} "
+                            f"(id: {tag_id('proposal', edit_p['id'])}) — "
+                            f"SUPPORT THAT proposal, do NOT file a duplicate."
+                        )
                 else:
                     full_content = (a.get("content") or "").strip()
                     lines.append(f"    [{tag_id('artifact', aid)}] \"{title}\" by {author} — current content:")
                     lines.append(f"      {full_content}")
                     lines.append(f"      → To improve: EditArtifact val_uuid={tag_id('artifact', aid)}")
+                    edit_p = edit_in_flight.get(aid)
+                    if edit_p:
+                        edit_author = users_cache.get(edit_p["user_id"], edit_p["user_id"][:8])
+                        lines.append(
+                            f"      🔒 EditArtifact ALREADY IN FLIGHT by {edit_author} "
+                            f"(id: {tag_id('proposal', edit_p['id'])}) — "
+                            f"SUPPORT THAT proposal, do NOT file a duplicate."
+                        )
             if c.get("status") == 1 and arts:
                 # Exclude plan from "all filled" check
                 non_plan = [a for a in arts if not a.get("is_plan")]
@@ -368,6 +399,15 @@ class CommunitySnapshot:
                     lines.append(
                         f"    → To commit: CommitArtifact with val_uuid={tag_id('container', cid)} "
                         f"and val_text=JSON list of artifact ids in chosen order"
+                    )
+                # Same race-warning for CommitArtifact in flight on this container.
+                commit_p = commit_in_flight.get(cid)
+                if commit_p:
+                    commit_author = users_cache.get(commit_p["user_id"], commit_p["user_id"][:8])
+                    lines.append(
+                        f"    🔒 CommitArtifact ALREADY IN FLIGHT by {commit_author} "
+                        f"(id: {tag_id('proposal', commit_p['id'])}) — "
+                        f"SUPPORT THAT proposal, do NOT file a duplicate."
                     )
             if c.get("status") == 2:
                 lines.append("    → Frozen pending parent verdict — no mutations allowed.")

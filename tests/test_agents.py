@@ -1060,6 +1060,59 @@ class TestIdPrefixes:
         assert "C-33333333" in out
 
 
+class TestEditArtifactDedup:
+    """The dominant new failure after PR #96 was 5+ agents racing to file
+    competing EditArtifacts on the same artifact in the same pulse —
+    each one a real working id, but only one can win at execution time
+    and the rest 409. The pre-flight now detects an in-flight
+    EditArtifact for the same val_uuid and:
+      - if the existing one was filed by another user, auto-supports it
+        (so the turn isn't wasted)
+      - returns do_nothing if support fails or the existing is the
+        agent's own
+    Plus the snapshot now flags the in-flight edit prominently next to
+    the artifact so the LLM sees it before deciding."""
+
+    def test_snapshot_flags_in_flight_editartifact_on_artifact(self):
+        full_a = "11111111-1111-1111-1111-111111111111"
+        full_p = "22222222-2222-2222-2222-222222222222"
+        full_c = "33333333-3333-3333-3333-333333333333"
+        snap = CommunitySnapshot(
+            community={"id": "c", "name": "Test", "member_count": 1, "status": 1},
+            variables={"PulseSupport": "50", "ProposalSupport": "50", "MaxAge": "2"},
+            containers=[{"id": full_c, "title": "Root", "status": 1, "mission": "m"}],
+            container_artifacts={full_c: [
+                {"id": full_a, "title": "Onboarding", "content": "",
+                 "author_user_id": "u", "is_plan": False},
+            ]},
+            proposals_out_there=[{
+                "id": full_p, "proposal_type": "EditArtifact",
+                "val_uuid": full_a, "val_text": "Onboarding",
+                "proposal_text": "draft content", "user_id": "u-other",
+                "support_count": 1, "age": 0,
+            }],
+        )
+        out = snap.summarize(my_user_id="u")
+        assert "EditArtifact ALREADY IN FLIGHT" in out
+        assert "P-22222222" in out
+        assert "SUPPORT THAT proposal, do NOT file a duplicate" in out
+
+
+class TestSendChatRateLimit:
+    """Cap chat to 1 per round (was 2). In prod 86 chats / 16 rounds was
+    8.6 chats per round across 6 agents — over-allocated relative to
+    productive actions."""
+
+    def test_message_says_max_1(self):
+        # Sanity: the rate-limit message in agent.py reflects the cap.
+        from pathlib import Path
+        src = Path(__file__).parent.parent / "agents" / "agent.py"
+        text = src.read_text()
+        # The string the user sees in failure logs:
+        assert 'Rate limited (max 1 per round)' in text
+        assert 'self._chat_this_round >= 1' in text
+
+
 def test_prompt_disambiguates_update_intention_field_vs_action():
     """The prompt's `update_intention` section is rendered into every
     turn's prompt. Cheap LLMs (lunaris-8b) misread the original
