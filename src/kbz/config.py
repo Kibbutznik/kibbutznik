@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # internal credits; override with KBZ_WEBHOOK_MAX_AMOUNT for prod
     # rails that legitimately move more.
     webhook_max_amount: str = "1000000"
+    # Comma-separated list of user_id UUIDs allowed to call ops-style
+    # endpoints (TKG prune, future fleet-wide DELETEs). Empty list
+    # disables those endpoints entirely (returns 403). Set to a small
+    # list of trusted operator UUIDs in prod.
+    admin_user_ids: str = ""
     # Which WalletBacking to instantiate when a community's
     # `Financial` variable is "internal". Phase 2+ will route to
     # "safe" / "stripe" based on the variable value itself.
