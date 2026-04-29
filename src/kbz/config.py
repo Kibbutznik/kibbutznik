@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # but means browsers won't send cookies cross-origin. Set to e.g.
     # "https://kibbutznik.org" in prod.
     cors_allow_origins: str = ""
+    # Trust X-Forwarded-For only when the immediate peer is on a trusted
+    # proxy. Prod sits behind nginx on 127.0.0.1, so default to loopback
+    # subnets. Anyone hitting FastAPI directly (or via a malicious
+    # downstream) cannot spoof their IP.
+    trusted_proxy_cidrs: str = "127.0.0.0/8,::1/128"
 
     # --- Finance module (opt-in; Phase 1 = internal credits) ---
     # One-time gift to every new human user on first sign-in. Makes

@@ -139,8 +139,26 @@ class AuthService:
     # ---- token issuance / verification ------------------------------
 
     async def issue_magic_link(self, user: User) -> IssuedToken:
+        # Invalidate any prior unused magic-link tokens for this user
+        # before minting a new one. Pre-fix, an attacker who phished an
+        # old (still-valid) link could sign in inside its 15-minute TTL
+        # even after the user had requested a fresh link. Now: each
+        # `request-magic-link` retires every prior unconsumed magic link
+        # for the user, shrinking the use-after-phish window to zero
+        # outside of the most recent issue.
+        now = _now()
+        await self.db.execute(
+            update(AuthToken)
+            .where(
+                AuthToken.user_id == user.id,
+                AuthToken.token_type == TOKEN_TYPE_MAGIC,
+                AuthToken.used_at.is_(None),
+                AuthToken.expires_at > now,
+            )
+            .values(used_at=now)
+        )
         raw = _random_token()
-        expires = _now() + timedelta(minutes=settings.auth_magic_link_ttl_minutes)
+        expires = now + timedelta(minutes=settings.auth_magic_link_ttl_minutes)
         token = AuthToken(
             id=uuid.uuid4(),
             user_id=user.id,

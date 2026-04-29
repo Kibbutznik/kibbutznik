@@ -119,17 +119,35 @@ def _clear_session_cookie(resp: Response) -> None:
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP. Honors X-Forwarded-For when present (we sit
-    behind nginx in prod which sets it), else falls back to the raw peer.
+    """Best-effort client IP. Honors X-Forwarded-For ONLY when the
+    immediate peer is in `settings.trusted_proxy_cidrs` (loopback by
+    default; nginx in prod). Otherwise an attacker hitting FastAPI
+    directly could spoof their IP and slip past per-IP rate limits on
+    the magic-link issuance / sign-in endpoints.
 
     Only the LEFTMOST X-Forwarded-For entry is used — that's the client
-    the edge proxy saw. Intermediate proxies append, so anything after
-    the first comma is infrastructure, not the caller.
+    the edge proxy saw. Intermediate proxies append.
     """
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
+    import ipaddress
+    peer = request.client.host if request.client else None
+    if peer:
+        try:
+            peer_ip = ipaddress.ip_address(peer)
+            for cidr in (settings.trusted_proxy_cidrs or "").split(","):
+                cidr = cidr.strip()
+                if not cidr:
+                    continue
+                try:
+                    if peer_ip in ipaddress.ip_network(cidr, strict=False):
+                        xff = request.headers.get("x-forwarded-for")
+                        if xff:
+                            return xff.split(",", 1)[0].strip()
+                        break
+                except ValueError:
+                    continue
+        except ValueError:
+            pass
+    return peer or "unknown"
 
 
 @router.post("/request-magic-link", response_model=MagicLinkResponse)
