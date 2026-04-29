@@ -49,23 +49,29 @@ class CommentService:
     async def add_comment(
         self, entity_id: uuid.UUID, entity_type: str, data: CommentCreate
     ) -> Comment:
-        # The entity itself must exist. Without this guard, a POST to
-        # /entities/proposal/<bogus-uuid>/comments lands a ghost
-        # comment in the DB attached to a non-existent proposal_id —
-        # nobody is notified (the recipient lookup hits prop_row=None
-        # and silently bails), and the comment is functionally
-        # invisible except via direct GET against that bogus id.
-        # Same shape applies to the "community" entity_type.
+        # Resolve the comment's host community so we can:
+        #   (1) 404 on phantom proposals/communities (existing
+        #       behavior — kept)
+        #   (2) require the commenter to be an ACTIVE member of that
+        #       community (new). Pre-fix any user_id (including a
+        #       drive-by anonymous registration) could post comments
+        #       on any proposal in any community, fanning out a
+        #       notification to every active member — turning the
+        #       comment endpoint into an unauthenticated harassment
+        #       broadcaster.
+        host_community_id: uuid.UUID | None = None
         if entity_type == "proposal":
-            exists = (
+            row = (
                 await self.db.execute(
-                    select(Proposal.id).where(Proposal.id == entity_id)
+                    select(Proposal.id, Proposal.community_id)
+                    .where(Proposal.id == entity_id)
                 )
-            ).scalar_one_or_none()
-            if exists is None:
+            ).first()
+            if row is None:
                 raise HTTPException(
                     status_code=404, detail="proposal not found",
                 )
+            _, host_community_id = row
         elif entity_type == "community":
             from kbz.models.community import Community
             exists = (
@@ -76,6 +82,22 @@ class CommentService:
             if exists is None:
                 raise HTTPException(
                     status_code=404, detail="community not found",
+                )
+            host_community_id = entity_id
+
+        # Membership gate. The reply-from-non-member case still
+        # surfaces a clear 403 instead of silent fan-out.
+        if host_community_id is not None:
+            from kbz.services.member_service import MemberService
+            if not await MemberService(self.db).is_active_member(
+                host_community_id, data.user_id,
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Only active members of the host community can "
+                        "comment here"
+                    ),
                 )
         # If this is a reply, the parent must exist AND be attached to the
         # same (entity_id, entity_type). Otherwise a reply can jump threads
