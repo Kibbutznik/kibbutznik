@@ -46,9 +46,15 @@ _DEFAULT_POST_LOGIN = "/app/#/dashboard"
 
 
 def _safe_next_path(candidate: str | None) -> str:
-    """Anti-open-redirect: accept only relative paths starting with a
-    single '/'. Reject protocol-relative ('//evil.com/...') and anything
-    with a scheme. Falls back to the default post-login destination.
+    """Anti-open-redirect AND anti-side-effect-CSRF.
+
+    Pre-fix accepted any relative path. While `://` and protocol-
+    relative were blocked, the candidate was free to land on ANY
+    internal path — including any future GET endpoint that mutated
+    state (none today, but the CSRF surface was latent). Now
+    additionally restricts the destination to a small whitelist of UI
+    prefixes: `/app/`, `/viewer/`, `/login`, and the bare default. The
+    rest fall back to the default post-login destination.
     """
     if not candidate:
         return _DEFAULT_POST_LOGIN
@@ -65,6 +71,18 @@ def _safe_next_path(candidate: str | None) -> str:
         return _DEFAULT_POST_LOGIN
     # Disallow any scheme-like prefix (e.g. "/http://..." after decoding)
     if "://" in candidate:
+        return _DEFAULT_POST_LOGIN
+    # Whitelist of allowed UI prefixes. Anything else falls back to
+    # the default — keeps the verify-redirect flow restricted to
+    # legitimate landings even if a future GET route is added that
+    # has side effects.
+    _ALLOWED_PREFIXES = ("/app/", "/viewer/", "/login")
+    if candidate == _DEFAULT_POST_LOGIN:
+        return candidate
+    if not any(
+        candidate == p.rstrip("/") or candidate.startswith(p)
+        for p in _ALLOWED_PREFIXES
+    ):
         return _DEFAULT_POST_LOGIN
     return candidate
 
