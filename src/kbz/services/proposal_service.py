@@ -81,6 +81,14 @@ _ACTIVE_DEDUPE_STATUSES = (
 PROPOSAL_RATE_LIMIT_VAR = "ProposalRateLimit"
 PROPOSAL_RATE_LIMIT_DEFAULT = 5
 THROW_OUT_COOLDOWN_HOURS = 24
+# Cap on in-flight Membership proposals per applicant across the whole
+# platform. Pre-fix Membership was exempt from the per-community
+# in-flight cap and there was no global cap, so an attacker who'd
+# registered many emails could file unbounded Membership applications,
+# flooding every community member's notification inbox. 10 in-flight
+# is generous (a real human can join 10 communities at once); spammers
+# get throttled at the 11th.
+MEMBERSHIP_GLOBAL_CAP = 10
 
 # Variables whose value MUST parse as a finite number. pulse_service
 # does `int(float(value))` on them every cycle; a non-numeric string
@@ -554,6 +562,44 @@ class ProposalService:
                             f"proposal to raise '{PROPOSAL_RATE_LIMIT_VAR}'."
                         ),
                     )
+
+        # Global Membership rate limit. Membership proposals are
+        # exempt from the per-community in-flight cap above (a non-
+        # member can't file other proposal types, so the cap
+        # wouldn't apply in the first place). But that exemption let
+        # an attacker register many emails via magic-link and file
+        # arbitrarily many Membership proposals — each one fans out
+        # a notification to every active member, flooding inboxes.
+        # Cap a single applicant to MEMBERSHIP_GLOBAL_CAP in-flight
+        # Membership proposals across ALL communities. Membership's
+        # `applicant` is coalesce(val_uuid, user_id), matching the
+        # DEDUPE rule.
+        if data.proposal_type == ProposalType.MEMBERSHIP:
+            applicant_id = data.val_uuid or data.user_id
+            global_cap = MEMBERSHIP_GLOBAL_CAP
+            global_count = (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(Proposal)
+                    .where(
+                        Proposal.proposal_type == ProposalType.MEMBERSHIP,
+                        func.coalesce(
+                            Proposal.val_uuid, Proposal.user_id
+                        ) == applicant_id,
+                        Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+                    )
+                )
+            ).scalar_one()
+            if global_count >= global_cap:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Membership cap: applicant already has "
+                        f"{global_count} in-flight Membership proposals "
+                        f"across the platform (max {global_cap}). Wait "
+                        f"for some to be decided before applying again."
+                    ),
+                )
 
         # ThrowOut cooldown: per (community, target) pair. After a
         # ThrowOut against user X is decided (Accepted / Rejected /
