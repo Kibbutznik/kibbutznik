@@ -128,9 +128,20 @@ class MemberService:
         member = await self.get(community_id, user_id)
         return member is not None and member.status == MemberStatus.ACTIVE
 
-    async def list_by_community(self, community_id: uuid.UUID) -> list[SimpleNamespace]:
+    async def list_by_community(
+        self,
+        community_id: uuid.UUID,
+        *,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> list[SimpleNamespace]:
         """Return active members joined with user_name and the optional
         per-community bot display_name.
+
+        Pre-fix this endpoint was unbounded — a community with N=100k
+        members (sim run / inbound spam / accepted Membership flood)
+        would dump every row on every request. Cap at ``limit`` (max
+        1000 by default; the route enforces a hard upper bound).
 
         Returns SimpleNamespace objects so callers can use attribute
         access (`m.user_id`) and pydantic CommunityMemberResponse can
@@ -148,6 +159,9 @@ class MemberService:
                 Member.community_id == community_id,
                 Member.status == MemberStatus.ACTIVE,
             )
+            .order_by(Member.joined_at.asc(), Member.user_id.asc())
+            .limit(limit)
+            .offset(offset)
         )
         rows = await self.db.execute(stmt)
         return [

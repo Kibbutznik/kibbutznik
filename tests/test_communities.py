@@ -189,3 +189,18 @@ async def test_create_user_does_not_store_password_hash(client, db):
     # And specifically, it must NOT be SHA-256 of the password.
     sha = hashlib.sha256(b"supersecret123").hexdigest()
     assert user.password_hash != sha
+
+
+@pytest.mark.asyncio
+async def test_member_list_paginates_and_caps_limit(client):
+    """Pre-fix `GET /communities/{id}/members` was unbounded; an
+    anon reader could exhaust server memory in a loop. Now: hard
+    upper bound 1000, default 200, offset is honored."""
+    user_ = await create_test_user(client)
+    community = await create_test_community(client, user_["id"])
+    r = await client.get(f"/communities/{community['id']}/members?limit=1500")
+    assert r.status_code == 422, r.text
+    r = await client.get(f"/communities/{community['id']}/members?limit=0")
+    assert r.status_code == 422
+    r = await client.get(f"/communities/{community['id']}/members?limit=200&offset=0")
+    assert r.status_code == 200
