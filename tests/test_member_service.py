@@ -76,3 +76,38 @@ async def test_throw_out_noop_on_already_thrown_out_member(db):
         await db.execute(select(Community).where(Community.id == community.id))
     ).scalar_one()
     assert final.member_count == 1
+
+
+@pytest.mark.asyncio
+async def test_throw_out_deactivates_bot_profiles(db):
+    """A thrown-out member's BotProfile must be set inactive — pre-fix
+    the bot kept voting, supporting, and commenting on its owner's
+    behalf even after the community had explicitly removed them,
+    defeating the entire point of ThrowOut. Cascade also covers child
+    actions where a parent ThrowOut removes the user."""
+    from kbz.models.bot_profile import BotProfile
+    founder = await _mk_user(db, "tobot-founder")
+    joiner = await _mk_user(db, "tobot-joiner")
+    community = await _mk_community(db, founder.id)
+    svc = MemberService(db)
+    await svc.create(community.id, joiner.id)
+    await db.flush()
+
+    # Seed an ACTIVE bot for the joiner in this community.
+    bot = BotProfile(
+        user_id=joiner.id, community_id=community.id, active=True,
+        display_name="Joiner Bot",
+    )
+    db.add(bot)
+    await db.flush()
+
+    await svc.throw_out(community.id, joiner.id)
+    await db.flush()
+
+    refreshed = (
+        await db.execute(select(BotProfile).where(BotProfile.id == bot.id))
+    ).scalar_one()
+    assert refreshed.active is False, (
+        "BotProfile must be deactivated when its owner is thrown out — "
+        "otherwise the bot keeps acting after the human is removed."
+    )

@@ -94,6 +94,25 @@ class MemberService:
                     .values(member_count=Community.member_count - 1)
                 )
 
+        # 3. Deactivate any active BotProfile rows the user owns in
+        # this community (and its child actions). Pre-fix, a thrown-out
+        # member's bot kept acting on their behalf — voting, supporting,
+        # commenting — until the human signed in to disable it. This
+        # defeated the entire point of ThrowOut: the offender's
+        # automation continued participating in governance even after
+        # the community had explicitly removed them.
+        from kbz.models.bot_profile import BotProfile
+        all_affected = [community_id, *child_ids]
+        await self.db.execute(
+            update(BotProfile)
+            .where(
+                BotProfile.user_id == user_id,
+                BotProfile.community_id.in_(all_affected),
+                BotProfile.active.is_(True),
+            )
+            .values(active=False)
+        )
+
         await self.db.flush()
 
     async def get(self, community_id: uuid.UUID, user_id: uuid.UUID) -> Member | None:
