@@ -52,3 +52,19 @@ async def test_create_user_rejects_oversized_fields(client):
         "user_name": "okname", "password": "pw", "about": "x" * 5000,
     })
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_user_drops_wallet_address(client):
+    """Pre-fix `POST /users` is anonymous and stored the body's
+    `wallet_address` verbatim — anyone could register a user pointing
+    at someone else's payout address. Field is now ignored on create."""
+    r = await client.post("/users", json={
+        "user_name": "wallet-discard-test",
+        "password": "x",
+        "wallet_address": "0xATTACKER",
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["wallet_address"] == "", (
+        f"wallet_address must be discarded; got {r.json()['wallet_address']!r}"
+    )

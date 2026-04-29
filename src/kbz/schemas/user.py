@@ -8,6 +8,12 @@ class UserCreate(BaseModel):
     user_name: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=1, max_length=1024)
     about: str = Field(default="", max_length=4000)
+    # Pre-fix `wallet_address` was accepted on this anonymous endpoint
+    # and stored verbatim — any caller could register a user pointing
+    # at someone else's payout address. Field is now ignored on create
+    # (always stored as ""). Kept on the schema for backwards-compat
+    # so old clients don't 422 when they send it; the value is dropped
+    # in UserService.create.
     wallet_address: str = Field(default="", max_length=255)
 
     @field_validator("user_name")
