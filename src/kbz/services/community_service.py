@@ -19,6 +19,23 @@ class CommunityService:
     async def create(self, data: CommunityCreate) -> Community:
         community_id = uuid.uuid4()
 
+        # Validate founder_user_id points at a real User. Pre-fix the
+        # `enforce_session_matches_body` layer let agents (no cookie)
+        # supply ANY UUID, so a community could materialize with a
+        # Member row pointing at a non-existent user_id (no FK on
+        # members) — the community had a phantom "active member"
+        # forever and member_count was permanently stuck >= 1.
+        from kbz.models.user import User
+        founder_exists = (
+            await self.db.execute(
+                select(User.id).where(User.id == data.founder_user_id)
+            )
+        ).scalar_one_or_none()
+        if founder_exists is None:
+            raise ValueError(
+                f"founder_user_id {data.founder_user_id} does not exist"
+            )
+
         # Validate parent_id: non-zero parent must point at an existing
         # community. Without this, callers can spawn orphan sub-communities
         # under any random UUID and dangle the action tree.
