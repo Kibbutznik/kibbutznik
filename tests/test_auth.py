@@ -258,3 +258,28 @@ async def test_logout_invalidates_cookie_value(client):
     client.cookies.set("kbz_session", cookie_val)
     r = await client.get("/auth/me")
     assert r.json()["user"] is None
+
+
+@pytest.mark.asyncio
+async def test_request_magic_link_invalidates_prior_unused_tokens(client):
+    """Pre-fix, an attacker who phished an old magic-link could sign in
+    inside its 15-min window even AFTER the legitimate user had requested
+    a fresh one. Now `request-magic-link` retires every prior unconsumed
+    magic-link for the user, so only the most recent link works."""
+    email = "fiona@example.com"
+    r1 = await client.post("/auth/request-magic-link", json={"email": email})
+    link1 = r1.json()["link"]
+    r2 = await client.post("/auth/request-magic-link", json={"email": email})
+    link2 = r2.json()["link"]
+    assert link1 != link2
+
+    # The OLD link must be treated as invalid: dev links carry no
+    # `next`, so verify returns a 400 with "invalid or expired" body.
+    r = await client.get(link1, follow_redirects=False)
+    assert r.status_code == 400, r.text
+    assert "invalid" in r.json()["detail"].lower() or "expired" in r.json()["detail"].lower()
+
+    # The NEW link still works (returns the user payload).
+    r = await client.get(link2, follow_redirects=False)
+    assert r.status_code == 200
+    assert r.json()["user"]["email"] == email
