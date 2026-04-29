@@ -192,6 +192,23 @@ async def test_create_user_does_not_store_password_hash(client, db):
 
 
 @pytest.mark.asyncio
+async def test_create_community_rejects_phantom_founder(client):
+    """Pre-fix `CommunityService.create` did not validate
+    `founder_user_id` against the users table. Agent paths (no cookie)
+    bypass `enforce_session_matches_body`, so any caller could
+    materialize a community with a Member row pointing at a
+    non-existent user_id — phantom "active member" forever, member_count
+    permanently >= 1."""
+    bogus = "11111111-1111-1111-1111-111111111111"
+    r = await client.post("/communities", json={
+        "name": "Phantom",
+        "founder_user_id": bogus,
+    })
+    assert r.status_code == 400, r.text
+    assert "does not exist" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_member_list_paginates_and_caps_limit(client):
     """Pre-fix `GET /communities/{id}/members` was unbounded; an
     anon reader could exhaust server memory in a loop. Now: hard
