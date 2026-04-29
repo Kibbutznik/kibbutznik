@@ -228,8 +228,14 @@ class SupportService:
 
         return {"status": "supported", "pulse_triggered": False}
 
-    async def get_proposal_supporters(self, proposal_id: uuid.UUID) -> list[dict]:
-        """Return list of {user_id, user_name, display_name, created_at} for all supporters."""
+    async def get_proposal_supporters(
+        self, proposal_id: uuid.UUID,
+        *, limit: int = 1000, offset: int = 0,
+    ) -> list[dict]:
+        """Return list of {user_id, user_name, display_name, created_at} for all supporters.
+
+        Capped — pre-fix unbounded; a popular proposal in a large
+        community could dump hundreds of rows on every read."""
         # Join Proposal first — BotProfile's ON clause references
         # Proposal.community_id, so Proposal must already be in the FROM.
         result = await self.db.execute(
@@ -242,6 +248,8 @@ class SupportService:
                 & (BotProfile.community_id == Proposal.community_id),
             )
             .where(Support.proposal_id == proposal_id)
+            .order_by(Support.created_at.asc())
+            .limit(limit).offset(offset)
         )
         return [
             {
@@ -253,8 +261,13 @@ class SupportService:
             for s, user_name, display_name in result.all()
         ]
 
-    async def get_pulse_supporters(self, pulse_id: uuid.UUID) -> list[dict]:
-        """Return list of {user_id, user_name, display_name, created_at} for all supporters."""
+    async def get_pulse_supporters(
+        self, pulse_id: uuid.UUID,
+        *, limit: int = 1000, offset: int = 0,
+    ) -> list[dict]:
+        """Return list of {user_id, user_name, display_name, created_at} for all supporters.
+
+        Capped — pre-fix unbounded."""
         # Join Pulse first — BotProfile's ON clause references
         # Pulse.community_id, so Pulse must already be in the FROM.
         result = await self.db.execute(
@@ -267,6 +280,8 @@ class SupportService:
                 & (BotProfile.community_id == Pulse.community_id),
             )
             .where(PulseSupport.pulse_id == pulse_id)
+            .order_by(PulseSupport.created_at.asc())
+            .limit(limit).offset(offset)
         )
         return [
             {
