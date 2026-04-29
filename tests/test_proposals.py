@@ -1418,3 +1418,26 @@ async def test_create_community_rejects_whitespace_only_name(client):
         assert r.status_code == 422, (
             f"name={bad!r} should 422; got {r.status_code} {r.text}"
         )
+
+
+@pytest.mark.asyncio
+async def test_ghost_support_endpoint_removed(client):
+    """Pre-fix `POST /proposals/{id}/ghost_support` was anonymous and
+    bumped `support_count` with no membership check, no audit row, no
+    dedupe — letting any unauthenticated visitor force any in-flight
+    proposal (ChangeVariable, ThrowOut, Funding, Dividend, …) through
+    the support threshold. The endpoint must be gone — 404, not 200/201."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "ghost-support regression target",
+    })
+    pid = r.json()["id"]
+    await client.patch(f"/proposals/{pid}/submit")
+    # Hitting the dead endpoint must NOT be 201/200.
+    r = await client.post(f"/proposals/{pid}/ghost_support", json={})
+    assert r.status_code == 404, (
+        f"ghost_support must not exist; got {r.status_code} {r.text}"
+    )
