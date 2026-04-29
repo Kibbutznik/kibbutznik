@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -405,7 +405,12 @@ async def delete_bot(
 # ═══════════════════════════════════════════════════════════════════
 
 class ApiTokenCreate(BaseModel):
-    name: str  # user-chosen label, e.g. "claude-code-skill"
+    # User-chosen label. Cap at 200 chars (matches the auth_tokens.name
+    # column type) — pre-fix this had no upper bound, and the value is
+    # echoed verbatim in the GET /tokens response. A user could store
+    # a multi-megabyte "name" and bloat their own tokens-list payload
+    # (and the column).
+    name: str = Field(min_length=1, max_length=200)
 
 
 class ApiTokenOut(BaseModel):
