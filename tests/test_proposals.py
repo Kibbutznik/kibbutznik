@@ -1421,6 +1421,27 @@ async def test_create_community_rejects_whitespace_only_name(client):
 
 
 @pytest.mark.asyncio
+async def test_set_membership_handler_rejects_phantom_val_uuid(client):
+    """Pre-fix `SetMembershipHandler` accepted any UUID as val_uuid and
+    upserted it as the community's `membershipHandler` variable — a
+    malicious member could soft-brick the community by pointing the
+    handler at a non-existent UUID, breaking future Membership
+    dispatch. Now val_uuid must reference an existing community."""
+    import uuid as _uuid
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    bogus = str(_uuid.uuid4())
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "SetMembershipHandler",
+        "proposal_text": "set handler",
+        "val_uuid": bogus,
+    })
+    assert r.status_code == 422, r.text
+    assert "not a known community" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_amend_rejects_oversized_pitch(client):
     """Pre-fix `ProposalAmend.pitch` had no max_length cap — a single
     author could write multi-megabyte rows via amend, side-stepping
