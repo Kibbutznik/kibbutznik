@@ -192,6 +192,22 @@ async def test_create_user_does_not_store_password_hash(client, db):
 
 
 @pytest.mark.asyncio
+async def test_create_community_rejects_control_chars_in_name(client):
+    """Pre-fix the validator only blocked whitespace-only names. A
+    name with embedded \\n / \\t / \\x00 / \\x7f breaks UI list
+    rendering, log lines, and email subjects (which inline the
+    community name into outgoing mail). Reject at the schema layer."""
+    user = await create_test_user(client)
+    for bad in ("good\nname", "tab\there", "\x00null", "DEL\x7fhere"):
+        r = await client.post("/communities", json={
+            "name": bad, "founder_user_id": user["id"],
+        })
+        assert r.status_code == 422, (
+            f"name={bad!r} should 422; got {r.status_code} {r.text}"
+        )
+
+
+@pytest.mark.asyncio
 async def test_create_community_rejects_phantom_founder(client):
     """Pre-fix `CommunityService.create` did not validate
     `founder_user_id` against the users table. Agent paths (no cookie)
