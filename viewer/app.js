@@ -429,21 +429,15 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
 
     const isEdit = proposal.proposal_type === "EditArtifact";
     const isActive = proposal.proposal_status === "OutThere" || proposal.proposal_status === "OnTheAir";
-    // Ghost-support: BB viewer can bump the count without being a member.
-    // Track per-session clicks in localStorage so the viewer can't spam +1
-    // on the same proposal across reloads.
-    const ghostKey = `bb_ghost_support_${proposal.id}`;
-    const alreadyGhostSupported = typeof localStorage !== "undefined" && localStorage.getItem(ghostKey) === "1";
-    const canSupport = isActive && !alreadyGhostSupported && (isEdit ? diffReviewed : true);
+    // Spectator support button is disabled — the underlying ghost_support
+    // endpoint was unauthenticated and let any visitor bump support_count
+    // (forcing proposals through OutThere → OnTheAir → ACCEPTED). Removed
+    // for safety; spectators view-only, members support via the agent API.
+    const canSupport = false;
+    const alreadyGhostSupported = false;
 
     const handleSupport = async () => {
-        setSupportBusy(true);
-        try {
-            await API.post(`/proposals/${proposal.id}/ghost_support`, {});
-            try { localStorage.setItem(ghostKey, "1"); } catch {}
-            setProposal(prev => ({ ...prev, support_count: (prev.support_count || 0) + 1 }));
-        } catch (e) { alert("Support failed: " + e); }
-        finally { setSupportBusy(false); }
+        // Disabled — see comment above.
     };
 
     return (
