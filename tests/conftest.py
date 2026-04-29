@@ -13,6 +13,12 @@ from kbz.services.rate_limit import magic_link_limiter
 
 TEST_DB_URL = settings.test_database_url
 
+# Tests run over plain HTTP via httpx ASGITransport, so the session
+# cookie's `Secure` flag must be False or browsers/clients won't echo
+# it back. Prod default in `Settings.auth_cookie_secure` is True; we
+# flip it to False here so the test client can roundtrip cookies.
+settings.auth_cookie_secure = False
+
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limits():
