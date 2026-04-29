@@ -82,7 +82,20 @@ async def get_memories(
     min_importance: float = Query(0.0, ge=0.0, le=1.0),
     order_by: str = Query("recent"),
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
+    """Read a user's persistent agent-memory store.
+
+    Memories include private context the agent has stored about
+    itself (plans, intentions, persona-shaped reasoning, comments
+    about other members). Pre-fix this endpoint was anonymous — any
+    visitor could read every memory of every user / agent on the
+    platform by walking user_ids. Now: human callers (cookie) can
+    only read their own; agents (no cookie) are still allowed
+    through with the URL user_id, matching the spoof-guard pattern
+    used by the write endpoints in this same router.
+    """
+    enforce_session_matches_body(user_id, session_user)
     svc = MemoryService(db)
     return await svc.get_memories(
         user_id=user_id,
