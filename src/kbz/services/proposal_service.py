@@ -438,6 +438,33 @@ class ProposalService:
                     ),
                 )
 
+        # SetMembershipHandler: val_uuid is upserted into the
+        # community's `membershipHandler` Variable, which downstream
+        # readers will use to dispatch Membership processing. Pre-fix
+        # there was zero validation — a malicious member could file
+        # SetMembershipHandler(val_uuid=<random>) and soft-brick the
+        # community by pointing it at a non-existent handler. Until a
+        # registry of valid handler kinds exists, require val_uuid to
+        # reference a real Community (the simplest currently-meaningful
+        # value: another community whose pulse-rule processes the
+        # membership). Future kinds (artifact-driven, plugin-driven)
+        # extend this check.
+        if data.proposal_type == ProposalType.SET_MEMBERSHIP_HANDLER:
+            target = (
+                await self.db.execute(
+                    select(Community.id).where(Community.id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if target is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"SetMembershipHandler val_uuid {data.val_uuid} is "
+                        f"not a known community — handler must reference an "
+                        f"existing community"
+                    ),
+                )
+
         # AddAction with val_uuid: optional shortcut that auto-delegates
         # the named parent artifact into the new action on accept (see
         # _exec_add_action). When val_uuid is supplied, validate it's a
