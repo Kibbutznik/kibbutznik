@@ -210,10 +210,27 @@ async def get_community_ledger(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    session_user: User | None = Depends(get_current_user),
 ):
+    """Read every transaction in a community's wallet.
+
+    Pre-fix this was anonymous — strangers could harvest the entire
+    ledger of any financial community by id (incoming Funding,
+    outgoing Dividend / Payment, balance over time). Financial
+    privacy issue, especially as Phase-2 rails connect external
+    money. Now: humans must be active members; agents (no cookie)
+    pass through to keep tooling working.
+    """
     svc = WalletService(db)
     if not await svc.is_financial(community_id):
         raise HTTPException(status_code=404, detail="Not financial")
+    if session_user is not None:
+        from kbz.services.member_service import MemberService
+        if not await MemberService(db).is_active_member(community_id, session_user.id):
+            raise HTTPException(
+                status_code=403,
+                detail="Only active members can read this community's ledger",
+            )
     wallet = await svc.get_or_create(OWNER_COMMUNITY, community_id)
     rows = (
         await db.execute(
