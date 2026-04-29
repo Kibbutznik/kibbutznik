@@ -20,6 +20,13 @@ class CommunityCreate(BaseModel):
     def _name_not_whitespace_only(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("name must contain non-whitespace characters")
+        # Reject ASCII control characters (0x00–0x1F except space and
+        # 0x7F DEL). A name with embedded newline/tab/CR breaks list
+        # rendering, log lines, and email subjects (which inline the
+        # community name); we'd rather 422 at the edge than ship a
+        # row that quietly corrupts every consumer.
+        if any(0 <= ord(ch) < 0x20 or ord(ch) == 0x7F for ch in v):
+            raise ValueError("name must not contain control characters")
         return v
     parent_id: uuid.UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
     # Briefing written onto the root container so agents know what kind of
