@@ -95,7 +95,7 @@ class Agent:
         self.eager_front: str = "observe" # current eager front
         self.rounds_since_acted: int = 0  # for orchestrator starvation prevention
         self.interview_history: list[tuple[str, str]] = []  # (question, answer) from viewer
-        self._chat_this_round: int = 0  # rate limit: max 2 send_chat per round
+        self._chat_this_round: int = 0  # rate limit: max 1 send_chat per round (was 2; chats were over-allocated relative to productive actions in prod)
         self._last_chat_read: datetime | None = None  # track when we last read chat for diff
         self.rounds_since_pulse: int = 0  # set by orchestrator before each round
         # Memory system
@@ -529,15 +529,67 @@ class Agent:
                 pitch = (decision.reason or "").strip() or None
 
                 # --- EditArtifact pre-flight validation ---
+                # Three guards for EditArtifact:
+                #  (1) target artifact must exist in this community
+                #  (2) DEDUP: if another EditArtifact is already in flight
+                #      against the same artifact, support that one instead
+                #      of filing a competing edit (the convergence
+                #      "race-to-edit" was the dominant new failure after
+                #      PR #96 unlocked artifact-id resolution — 22 of 81
+                #      fails / 4 rounds were duplicate EditArtifacts).
+                #  (3) if val_text is empty, default to the artifact's
+                #      existing title — otherwise the UI shows "Edit:
+                #      <8-char-id>" which is unreadable for human spectators.
                 if ptype == "EditArtifact":
-                    all_artifact_ids = {
-                        a["id"]
+                    artifacts_by_id = {
+                        a["id"]: a
                         for arts in snapshot.container_artifacts.values()
                         for a in arts
                     }
-                    if not val_uuid or val_uuid not in all_artifact_ids:
+                    if not val_uuid or val_uuid not in artifacts_by_id:
                         return ActionLog(now, "do_nothing", decision.reason,
                             f"EditArtifact skipped: artifact {(val_uuid or '')[:8]} not found in community", False)
+
+                    # (2) dedup: scan in-flight proposals for an existing
+                    # EditArtifact targeting the same artifact.
+                    in_flight = (
+                        snapshot.proposals_out_there
+                        + snapshot.proposals_on_the_air
+                        + snapshot.proposals_draft
+                    )
+                    existing = next(
+                        (p for p in in_flight
+                         if p.get("proposal_type") == "EditArtifact"
+                         and p.get("val_uuid") == val_uuid),
+                        None,
+                    )
+                    if existing and existing.get("user_id") != self.user_id:
+                        # Auto-support the existing edit so this turn
+                        # isn't wasted, then return.
+                        existing_id = existing["id"]
+                        if existing_id not in self.supported_proposals:
+                            try:
+                                await self.client.support_proposal(existing_id, self.user_id)
+                                self.supported_proposals.add(existing_id)
+                                return ActionLog(now, "support_proposal", decision.reason,
+                                    f"Auto-supported existing EditArtifact "
+                                    f"{existing_id[:8]} on artifact {val_uuid[:8]} "
+                                    f"(don't duplicate)", True, ref_id=existing_id)
+                            except Exception as e:
+                                logger.info(
+                                    f"[{self.persona.name}] Auto-support of existing "
+                                    f"EditArtifact {existing_id[:8]} failed: {e}"
+                                )
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"EditArtifact skipped: another in-flight edit "
+                            f"({existing_id[:8]}) covers artifact {val_uuid[:8]} — "
+                            f"support that one", False, ref_id=existing_id)
+
+                    # (3) default val_text to existing title if missing.
+                    if not (val_text or "").strip():
+                        existing_title = (artifacts_by_id[val_uuid].get("title") or "").strip()
+                        if existing_title:
+                            val_text = existing_title
 
                 # --- CreateArtifact pre-flight validation ---
                 if ptype == "CreateArtifact":
@@ -641,16 +693,56 @@ class Agent:
                         return ActionLog(now, "do_nothing", decision.reason,
                             f"DelegateArtifact skipped: delegation of {artifact_id[:8]} → {action_community_id[:8]} already exists", False)
 
-                # --- CommitArtifact: resolve short artifact IDs in val_text JSON list ---
-                if ptype == "CommitArtifact" and val_text:
-                    import json as _json
-                    try:
-                        art_ids = _json.loads(val_text)
-                        if isinstance(art_ids, list):
-                            resolved_ids = [self._resolve_val_uuid(aid, snapshot) for aid in art_ids]
-                            val_text = _json.dumps(resolved_ids)
-                    except (ValueError, TypeError):
-                        pass  # leave val_text as-is if not valid JSON
+                # --- CommitArtifact: dedup + resolve short artifact IDs ---
+                # Dedup: if another CommitArtifact for the same container
+                # is in flight, support it instead. Same race-to-edit
+                # convergence pattern as EditArtifact, smaller volume but
+                # equally wasteful — saw it firing on the same container
+                # within seconds of the first proposal in prod.
+                if ptype == "CommitArtifact":
+                    in_flight = (
+                        snapshot.proposals_out_there
+                        + snapshot.proposals_on_the_air
+                        + snapshot.proposals_draft
+                    )
+                    existing = next(
+                        (p for p in in_flight
+                         if p.get("proposal_type") == "CommitArtifact"
+                         and p.get("val_uuid") == val_uuid),
+                        None,
+                    )
+                    if existing and existing.get("user_id") != self.user_id:
+                        existing_id = existing["id"]
+                        if existing_id not in self.supported_proposals:
+                            try:
+                                await self.client.support_proposal(existing_id, self.user_id)
+                                self.supported_proposals.add(existing_id)
+                                return ActionLog(now, "support_proposal", decision.reason,
+                                    f"Auto-supported existing CommitArtifact "
+                                    f"{existing_id[:8]} on container "
+                                    f"{(val_uuid or '')[:8]} (don't duplicate)",
+                                    True, ref_id=existing_id)
+                            except Exception as e:
+                                logger.info(
+                                    f"[{self.persona.name}] Auto-support of existing "
+                                    f"CommitArtifact {existing_id[:8]} failed: {e}"
+                                )
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"CommitArtifact skipped: another in-flight commit "
+                            f"({existing_id[:8]}) covers container "
+                            f"{(val_uuid or '?')[:8]} — support that one",
+                            False, ref_id=existing_id)
+
+                    # Resolve any short artifact ids inside val_text's JSON list.
+                    if val_text:
+                        import json as _json
+                        try:
+                            art_ids = _json.loads(val_text)
+                            if isinstance(art_ids, list):
+                                resolved_ids = [self._resolve_val_uuid(aid, snapshot) for aid in art_ids]
+                                val_text = _json.dumps(resolved_ids)
+                        except (ValueError, TypeError):
+                            pass  # leave val_text as-is if not valid JSON
 
                 proposal = await self.client.create_proposal(
                     community_id=self.community_id,
@@ -727,8 +819,8 @@ class Agent:
                 return ActionLog(now, "vote_comment", decision.reason, "Missing comment_id", False)
 
             elif decision.action_type == "send_chat":
-                if self._chat_this_round >= 2:
-                    return ActionLog(now, "send_chat", decision.reason, "Rate limited (max 2 per round)", False)
+                if self._chat_this_round >= 1:
+                    return ActionLog(now, "send_chat", decision.reason, "Rate limited (max 1 per round)", False)
                 text = decision.params.get("message_text", "")
                 if text and self.community_id:
                     await self.client.add_comment("community", self.community_id, self.user_id, text)
