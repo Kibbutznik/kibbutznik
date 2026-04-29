@@ -213,6 +213,26 @@ async def test_verify_next_rejects_open_redirect(client):
 
 
 @pytest.mark.asyncio
+async def test_verify_next_rejects_unwhitelisted_internal_path(client):
+    """Pre-fix `_safe_next_path` accepted ANY relative path. While that
+    blocked off-site redirects, it left every internal path as a
+    legitimate redirect target — a CSRF surface latent if any future
+    GET endpoint mutates state. Now restrict to a small whitelist of
+    UI prefixes (`/app/`, `/viewer/`, `/login`); other paths fall
+    back to the default dashboard."""
+    r = await client.post(
+        "/auth/request-magic-link", json={"email": "safe-internal@example.com"}
+    )
+    link = r.json()["link"]
+    # /api/internal/anything is NOT whitelisted — must fall back.
+    r = await client.get(
+        link + "&next=/api/internal/dangerous", follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/app/#/dashboard", r.headers
+
+
+@pytest.mark.asyncio
 async def test_verify_next_rejects_backslash_bypass(client):
     """Browsers normalize backslash to '/' in Location headers, so a
     candidate like `/\\evil.com/…` decodes to `//evil.com/…` in the
