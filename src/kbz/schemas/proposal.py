@@ -78,9 +78,14 @@ class ProposalAmend(BaseModel):
     almost certainly a client bug).
     """
     user_id: uuid.UUID
-    proposal_text: str | None = None
-    pitch: str | None = None
-    val_text: str | None = None
+    # ProposalCreate / ProposalEdit cap each text field at _TEXT_MAX
+    # (10k). Pre-fix `ProposalAmend` had NO caps, so a single member
+    # could write multi-megabyte rows via amend, bloating list/audit
+    # responses and pinning enrich queries. Caps must match the create
+    # path exactly so amend cannot be used to side-step them.
+    proposal_text: str | None = Field(default=None, max_length=_TEXT_MAX)
+    pitch: str | None = Field(default=None, max_length=_TEXT_MAX)
+    val_text: str | None = Field(default=None, max_length=_TEXT_MAX)
     val_uuid: uuid.UUID | None = None
 
 
