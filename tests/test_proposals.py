@@ -1421,6 +1421,28 @@ async def test_create_community_rejects_whitespace_only_name(client):
 
 
 @pytest.mark.asyncio
+async def test_amend_rejects_oversized_pitch(client):
+    """Pre-fix `ProposalAmend.pitch` had no max_length cap — a single
+    author could write multi-megabyte rows via amend, side-stepping
+    the 10k cap on the create path. The amend schema must enforce the
+    same _TEXT_MAX as ProposalCreate / ProposalEdit."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"])
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "AddStatement",
+        "proposal_text": "amend-cap target",
+    })
+    assert r.status_code == 201
+    pid = r.json()["id"]
+    # Try to amend with a 50k-char pitch — must 422 at the schema layer.
+    r = await client.post(f"/proposals/{pid}/amend", json={
+        "user_id": user["id"], "pitch": "x" * 50_000,
+    })
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
 async def test_ghost_support_endpoint_removed(client):
     """Pre-fix `POST /proposals/{id}/ghost_support` was anonymous and
     bumped `support_count` with no membership check, no audit row, no
