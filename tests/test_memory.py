@@ -223,7 +223,10 @@ async def test_update_memory_session_spoof_blocked(client):
     await _login_email(client, "mem-update-attacker@example.com")
     r = await client.put(f"/memories/{mem_id}", json={"content": "hijacked"})
     assert r.status_code == 403
-    # Victim's memory is unchanged. (Re-read via GET — public.)
+    # Victim's memory is unchanged. GET is now also bound to the
+    # caller — clear the attacker's cookie and re-read as no-cookie
+    # (agent path), which still works.
+    client.cookies.clear()
     r = await client.get(f"/memories/{victim['id']}")
     assert r.json()[0]["content"] == "original"
 
@@ -716,3 +719,22 @@ async def test_extractor_deduplicates_outcomes(db):
     mems = await svc.get_memories(uid, memory_type="episodic")
     outcome_mems = [m for m in mems if "ACCEPTED" in m["content"]]
     assert len(outcome_mems) == 1  # Only one, not two
+
+
+@pytest.mark.asyncio
+async def test_get_memories_session_spoof_blocked(client):
+    """Pre-fix `GET /memories/{user_id}` was anonymous — any visitor
+    could read every memory of every user / agent on the platform by
+    walking user_ids. Memories include private intent, plans, and
+    persona-shaped reasoning — a privacy leak. Now logged-in humans
+    can only read their own memories."""
+    victim = await create_test_user(client)
+    # Seed a memory for the victim (no cookie path).
+    await client.post("/memories", json={
+        "user_id": victim["id"], "memory_type": "goal",
+        "content": "private intent", "importance": 0.5,
+    })
+    # Attacker logs in and tries to read victim's memories.
+    await _login_email(client, "mem-read-attacker@example.com")
+    r = await client.get(f"/memories/{victim['id']}")
+    assert r.status_code == 403, r.text
