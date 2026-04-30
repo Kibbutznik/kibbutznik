@@ -211,6 +211,39 @@ def _validate_proposal_content(
                 detail="CreateArtifact requires non-empty proposal_text (the content)",
             )
 
+    # Financial proposals: val_text must parse as a positive finite
+    # numeric (the amount). Pre-fix _exec_payment / _exec_pay_back /
+    # _exec_dividend silently swallowed `Decimal()` parse errors with
+    # a `logger.warning` and returned — bots wasted a pulse cycle on
+    # an Accepted-but-no-op proposal that minted/burned nothing.
+    # FUNDING needs the same shape; we don't validate it here yet
+    # because FUNDING also requires val_uuid (the target action) and
+    # has its own escrow-open path that will reject malformed amounts
+    # at create-time. Payment / PayBack / Dividend have no such
+    # backstop, so catch them here.
+    if ptype in (
+        ProposalType.PAYMENT, ProposalType.PAY_BACK, ProposalType.DIVIDEND,
+    ):
+        from decimal import Decimal, InvalidOperation
+        raw = (val_text or "").strip()
+        if not raw:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{proposal_type} requires a numeric val_text (the amount)",
+            )
+        try:
+            amt = Decimal(raw)
+        except (InvalidOperation, TypeError, ValueError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{proposal_type} val_text must be a decimal amount; got {val_text!r}",
+            )
+        if not amt.is_finite() or amt <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{proposal_type} val_text must be positive and finite; got {val_text!r}",
+            )
+
     if ptype == ProposalType.CHANGE_VARIABLE:
         var_name = (proposal_text or "").split("\n", 1)[0].strip()
         if not var_name:
@@ -487,6 +520,115 @@ class ProposalService:
                         f"SetMembershipHandler val_uuid {data.val_uuid} is "
                         f"not a known community — handler must reference an "
                         f"existing community"
+                    ),
+                )
+
+        # PayBack: val_uuid must reference a prior ACCEPTED Payment in
+        # THIS community, and the cumulative sum of prior PayBacks
+        # against that Payment plus this one must not exceed the
+        # original Payment amount. Pre-fix PAY_BACK accepted any
+        # val_text and any (or no) val_uuid, then minted credits into
+        # the community wallet. Result: anyone able to land a
+        # majority-supported proposal could mint arbitrary credits
+        # labeled "PayBack" with no link to any real outflow — a hole
+        # straight through the financial module's accounting story.
+        # PAY_BACK is the only credit-minting proposal in Phase 1, so
+        # locking it down to "reverse a real prior Payment, up to the
+        # paid amount" closes the gap.
+        if data.proposal_type == ProposalType.PAY_BACK:
+            from decimal import Decimal, InvalidOperation
+            if data.val_uuid is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "PayBack requires val_uuid pointing at the prior "
+                        "accepted Payment proposal being refunded"
+                    ),
+                )
+            prior_payment = (
+                await self.db.execute(
+                    select(Proposal).where(Proposal.id == data.val_uuid)
+                )
+            ).scalar_one_or_none()
+            if prior_payment is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"PayBack val_uuid {data.val_uuid} is not a known "
+                        f"proposal"
+                    ),
+                )
+            if prior_payment.community_id != community_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"PayBack val_uuid {data.val_uuid} belongs to a "
+                        f"different community ({prior_payment.community_id}) — "
+                        f"a community can only refund its own Payments"
+                    ),
+                )
+            if prior_payment.proposal_type != ProposalType.PAYMENT:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"PayBack val_uuid {data.val_uuid} is a "
+                        f"{prior_payment.proposal_type}, not a Payment — "
+                        f"only Payments can be paid back"
+                    ),
+                )
+            if prior_payment.proposal_status != ProposalStatus.ACCEPTED:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"PayBack val_uuid {data.val_uuid} references a "
+                        f"Payment that has not been accepted (status "
+                        f"{prior_payment.proposal_status}) — nothing to "
+                        f"refund"
+                    ),
+                )
+            # The total of prior PayBacks against this Payment plus
+            # the new one must not exceed the original amount. We
+            # count both ACCEPTED PayBacks (already minted) and
+            # in-flight ones (DRAFT / OUT_THERE / ON_THE_AIR) — if all
+            # currently-pending refunds were granted, the books would
+            # still balance. Without this guard a community could file
+            # five PayBack(payment_X, $100) against a $100 Payment and
+            # mint $500.
+            try:
+                cap = Decimal(prior_payment.val_text or "0")
+                requested = Decimal(data.val_text or "0")
+            except (InvalidOperation, TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail="PayBack: malformed amounts in val_text",
+                )
+            already_q = (
+                await self.db.execute(
+                    select(Proposal.val_text).where(
+                        Proposal.community_id == community_id,
+                        Proposal.proposal_type == ProposalType.PAY_BACK,
+                        Proposal.val_uuid == data.val_uuid,
+                        Proposal.proposal_status.in_((
+                            ProposalStatus.ACCEPTED,
+                            *_ACTIVE_DEDUPE_STATUSES,
+                        )),
+                    )
+                )
+            ).scalars().all()
+            already = Decimal("0")
+            for vt in already_q:
+                try:
+                    already += Decimal(vt or "0")
+                except (InvalidOperation, TypeError, ValueError):
+                    pass  # tolerate legacy bad rows in the sum
+            if already + requested > cap:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"PayBack: cumulative refunds against Payment "
+                        f"{data.val_uuid} would exceed original amount "
+                        f"(prior={already}, requested={requested}, "
+                        f"original={cap})"
                     ),
                 )
 

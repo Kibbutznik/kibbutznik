@@ -1464,6 +1464,198 @@ async def test_amend_rejects_oversized_pitch(client):
 
 
 @pytest.mark.asyncio
+async def test_payback_requires_val_uuid_referencing_payment(client, db):
+    """PayBack is the only credit-MINTING proposal in Phase 1. Pre-fix
+    it accepted any val_text and any (or no) val_uuid, then minted
+    into the community wallet — anyone able to land a majority-
+    supported proposal could mint arbitrary credits with no link to
+    a real outflow. The fix: PayBack must reference an ACCEPTED
+    Payment in this same community, and cumulative refunds against
+    that Payment may not exceed the original amount."""
+    import uuid as _uuid
+    from kbz.enums import ProposalStatus, ProposalType
+    from kbz.models.proposal import Proposal
+    from kbz.models.variable import Variable
+
+    user = await create_test_user(client, "pb-val-f")
+    community = await create_test_community(client, user["id"])
+    cid = _uuid.UUID(community["id"])
+
+    # Make community financial so PayBack is a valid type.
+    # Flip Financial on for this community (default is "false" / off).
+    from sqlalchemy import update as _update
+    await db.execute(
+        _update(Variable)
+        .where(Variable.community_id == cid, Variable.name == "Financial")
+        .values(value="internal")
+    )
+
+    # Inject an ACCEPTED Payment of 100 into this community.
+    payment_id = _uuid.uuid4()
+    db.add(
+        Proposal(
+            id=payment_id,
+            community_id=cid,
+            user_id=_uuid.UUID(user["id"]),
+            proposal_type=ProposalType.PAYMENT,
+            proposal_status=ProposalStatus.ACCEPTED,
+            proposal_text="paid out",
+            val_text="100",
+            age=0,
+            support_count=0,
+        )
+    )
+    await db.commit()
+
+    # 1. PayBack with no val_uuid → 422.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "payBack",
+        "proposal_text": "refund",
+        "val_text": "10",
+    })
+    assert r.status_code == 422, r.text
+    assert "val_uuid" in r.json()["detail"].lower()
+
+    # 2. PayBack pointing at a non-existent proposal → 422.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "payBack",
+        "proposal_text": "refund",
+        "val_text": "10",
+        "val_uuid": str(_uuid.uuid4()),
+    })
+    assert r.status_code == 422, r.text
+    assert "not a known proposal" in r.json()["detail"].lower()
+
+    # 3. PayBack pointing at a non-Payment proposal → 422. Use any
+    # other proposal type in this community.
+    other = _uuid.uuid4()
+    db.add(
+        Proposal(
+            id=other,
+            community_id=cid,
+            user_id=_uuid.UUID(user["id"]),
+            proposal_type=ProposalType.ADD_STATEMENT,
+            proposal_status=ProposalStatus.ACCEPTED,
+            proposal_text="some statement",
+            val_text=None,
+            age=0,
+            support_count=0,
+        )
+    )
+    await db.commit()
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "payBack",
+        "proposal_text": "refund",
+        "val_text": "10",
+        "val_uuid": str(other),
+    })
+    assert r.status_code == 422, r.text
+    assert "not a payment" in r.json()["detail"].lower()
+
+    # 4. PayBack happy path → 201.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "payBack",
+        "proposal_text": "refund",
+        "val_text": "30",
+        "val_uuid": str(payment_id),
+    })
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_payback_cumulative_refund_capped_at_original(client, db):
+    """Multiple PayBacks against the same Payment are allowed (split
+    refund), but their sum must not exceed the original amount.
+    Pre-fix: a $100 Payment could be paid back five times at $100
+    each, minting $500 with full audit-trail plausibility."""
+    import uuid as _uuid
+    from kbz.enums import ProposalStatus, ProposalType
+    from kbz.models.proposal import Proposal
+    from kbz.models.variable import Variable
+
+    user = await create_test_user(client, "pb-cap-f")
+    community = await create_test_community(client, user["id"])
+    cid = _uuid.UUID(community["id"])
+    # Flip Financial on for this community (default is "false" / off).
+    from sqlalchemy import update as _update
+    await db.execute(
+        _update(Variable)
+        .where(Variable.community_id == cid, Variable.name == "Financial")
+        .values(value="internal")
+    )
+
+    payment_id = _uuid.uuid4()
+    db.add(
+        Proposal(
+            id=payment_id,
+            community_id=cid,
+            user_id=_uuid.UUID(user["id"]),
+            proposal_type=ProposalType.PAYMENT,
+            proposal_status=ProposalStatus.ACCEPTED,
+            proposal_text="paid out",
+            val_text="100",
+            age=0,
+            support_count=0,
+        )
+    )
+    await db.commit()
+
+    # First $60 PayBack — fine.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "payBack",
+        "proposal_text": "refund1", "val_text": "60",
+        "val_uuid": str(payment_id),
+    })
+    assert r.status_code == 201, r.text
+
+    # Second $50 — would push cumulative to $110, exceeds $100. Must 422.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "payBack",
+        "proposal_text": "refund2", "val_text": "50",
+        "val_uuid": str(payment_id),
+    })
+    assert r.status_code == 422, r.text
+    assert "exceed original" in r.json()["detail"].lower()
+
+    # $40 fits exactly — must succeed.
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"], "proposal_type": "payBack",
+        "proposal_text": "refund3", "val_text": "40",
+        "val_uuid": str(payment_id),
+    })
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_financial_proposals_reject_non_numeric_val_text(client):
+    """Payment / PayBack / Dividend val_text MUST be a positive
+    finite Decimal. Pre-fix the executor swallowed parse errors with
+    a logger.warning and returned — the proposal landed Accepted but
+    no money moved, wasting a pulse cycle."""
+    user = await create_test_user(client, "fin-validate-f")
+    community = await create_test_community(client, user["id"])
+
+    for ptype in ("Payment", "Dividend"):
+        for bad in ("", "abc", "-5", "0", "NaN", "inf"):
+            r = await client.post(
+                f"/communities/{community['id']}/proposals",
+                json={
+                    "user_id": user["id"],
+                    "proposal_type": ptype,
+                    "proposal_text": "x",
+                    "val_text": bad,
+                },
+            )
+            assert r.status_code == 422, (
+                f"{ptype} val_text={bad!r} should 422; got {r.status_code} {r.text}"
+            )
+
+
+@pytest.mark.asyncio
 async def test_ghost_support_endpoint_removed(client):
     """Pre-fix `POST /proposals/{id}/ghost_support` was anonymous and
     bumped `support_count` with no membership check, no audit row, no
