@@ -114,17 +114,63 @@ class PulseService:
         member_svc = MemberService(self.db)
         closeness_svc = ClosenessService(self.db)
 
-        # --- Step 1: Process Active pulse proposals (accept/reject) ---
+        # --- Step 0: Snapshot ALL governance-affecting variables ---
+        # Pre-fix the threshold for each OnTheAir proposal was read
+        # LIVE inside the for-loop in step 1, AFTER `execute_proposal`
+        # for an earlier accepted ChangeVariable could have already
+        # mutated the very variable being read. Concrete repro:
+        # P1 = ChangeVariable(Membership, "10") at support 4/6,
+        # P2 = Membership(Eve) at support 2/6. P1 accepts under OLD
+        # 50% threshold and flushes Variable(Membership)=10. The
+        # next loop iteration reads 10% as P2's threshold and
+        # ACCEPTS Eve at 33% — even though under same-pulse rules
+        # P2 should reject. Same shape applied to MaxAge and
+        # ProposalSupport between step 1 (OnTheAir verdicts) and
+        # step 3 (OutThere aging+promote).
+        #
+        # Design invariant: a ChangeVariable accepted on this pulse
+        # affects the NEXT pulse, not the current one. Snapshot
+        # every var that the rest of the pulse reads, BEFORE step 1
+        # runs. Step 5's NEW pulse threshold still reads live —
+        # that's the legitimate place a same-pulse ChangeVariable
+        # lands.
+        snapshot_max_age = int(float(await self._get_variable_value(community_id, "MaxAge")))
+        snapshot_proposal_support_pct = int(float(await self._get_variable_value(community_id, "ProposalSupport")))
+        # Per-OnTheAir-proposal threshold dict, snapshotted before
+        # any handler runs.
         active_pulse = await self.get_active_pulse(community_id)
+        on_air_proposals: list = []
+        snapshot_thresholds: dict = {}
         if active_pulse:
             on_air_proposals = await self._get_proposals_by_status(
                 community_id, ProposalStatus.ON_THE_AIR
             )
+            # Snapshot threshold per proposal — distinct variable lookups,
+            # cached so the loop below uses pre-execution values.
             for proposal in on_air_proposals:
                 threshold_var = PROPOSAL_TYPE_THRESHOLDS.get(
                     ProposalType(proposal.proposal_type)
                 )
-                threshold_pct = int(float(await self._get_variable_value(community_id, threshold_var)))
+                threshold_pct = int(float(
+                    await self._get_variable_value(community_id, threshold_var)
+                ))
+                # Floor at 1 — see comment in step 1 below.
+                snapshot_thresholds[proposal.id] = max(
+                    1, math.ceil(member_count * threshold_pct / 100)
+                )
+
+            # Defense in depth: ChangeVariable proposals execute LAST
+            # within step 1. Even if a future change re-introduces a
+            # live read inside the loop, the variable mutations land
+            # only after every other proposal has been verdicted.
+            on_air_proposals = sorted(
+                on_air_proposals,
+                key=lambda p: 1 if p.proposal_type == ProposalType.CHANGE_VARIABLE.value else 0,
+            )
+
+        # --- Step 1: Process Active pulse proposals (accept/reject) ---
+        if active_pulse:
+            for proposal in on_air_proposals:
                 # Floor at 1 — `ceil(0 * pct / 100) == 0`, and "support_count
                 # >= 0" is always true. Without this floor, a community whose
                 # member_count somehow hit zero (everyone thrown out, or a
@@ -132,7 +178,7 @@ class PulseService:
                 # proposal on the next pulse with no real support behind it.
                 # Mirrors the same defense already used at the new-pulse
                 # threshold computation below.
-                threshold = max(1, math.ceil(member_count * threshold_pct / 100))
+                threshold = snapshot_thresholds[proposal.id]
 
                 from datetime import datetime, timezone
                 _decided_now = datetime.now(timezone.utc)
@@ -186,8 +232,12 @@ class PulseService:
         await self.db.flush()
 
         # --- Step 3: Move qualified OutThere proposals to the new Active pulse ---
-        max_age = int(float(await self._get_variable_value(community_id, "MaxAge")))
-        proposal_support_pct = int(float(await self._get_variable_value(community_id, "ProposalSupport")))
+        # Use the values snapshotted at step 0, NOT live reads —
+        # otherwise a ChangeVariable(MaxAge / ProposalSupport, …)
+        # accepted in step 1 would change aging/promotion behavior
+        # for THIS pulse, violating the same-pulse design invariant.
+        max_age = snapshot_max_age
+        proposal_support_pct = snapshot_proposal_support_pct
 
         out_there_proposals = await self._get_proposals_by_status(
             community_id, ProposalStatus.OUT_THERE

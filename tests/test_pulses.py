@@ -392,6 +392,119 @@ async def test_membership_proposal_adds_member(client):
 
 
 @pytest.mark.asyncio
+async def test_same_pulse_change_variable_does_not_leak_into_other_verdicts(db):
+    """Pre-fix `_execute_pulse_unsafe` read each OnTheAir proposal's
+    threshold LIVE inside the for-loop, AFTER `execute_proposal` for
+    earlier accepted ChangeVariable proposals had already flushed
+    their Variable updates. Concrete repro: a ChangeVariable
+    lowering AddStatement threshold from 50% to 10% on the same
+    pulse as an AddStatement at 30% support — under same-pulse
+    rules the AddStatement should REJECT (30% < 50%), but pre-fix
+    the variable change leaked into the AddStatement's threshold
+    check and it ACCEPTED at 30% < new 10%.
+
+    Design invariant (per user): a ChangeVariable accepted on this
+    pulse affects the NEXT pulse, not the current one. This test
+    pins the invariant."""
+    import uuid as _uuid
+    import math
+    from kbz.enums import (
+        CommunityStatus, MemberStatus, ProposalStatus, ProposalType,
+        PulseStatus, DEFAULT_VARIABLES,
+    )
+    from kbz.models.community import Community
+    from kbz.models.member import Member
+    from kbz.models.proposal import Proposal
+    from kbz.models.pulse import Pulse
+    from kbz.models.variable import Variable
+    from kbz.models.user import User
+    from kbz.services.pulse_service import PulseService
+    from sqlalchemy import select as _sel
+
+    cid = _uuid.uuid4()
+    db.add(Community(
+        id=cid, parent_id=_uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="snap-test", status=CommunityStatus.ACTIVE, member_count=10,
+    ))
+    # Members
+    user_ids = [_uuid.uuid4() for _ in range(10)]
+    for uid in user_ids:
+        db.add(User(id=uid, user_name=f"u-{uid.hex[:6]}", password_hash=""))
+        db.add(Member(community_id=cid, user_id=uid, status=MemberStatus.ACTIVE, seniority=0))
+    # Variables — defaults except both starting thresholds at 50%.
+    for name, value in DEFAULT_VARIABLES.items():
+        db.add(Variable(community_id=cid, name=name, value=value))
+
+    # Active pulse with both proposals OnTheAir.
+    active_pulse = Pulse(
+        id=_uuid.uuid4(), community_id=cid,
+        status=PulseStatus.ACTIVE, support_count=10, threshold=5,
+    )
+    db.add(active_pulse)
+    next_pulse = Pulse(
+        id=_uuid.uuid4(), community_id=cid,
+        status=PulseStatus.NEXT, support_count=0, threshold=5,
+    )
+    db.add(next_pulse)
+
+    # P1: ChangeVariable(AddStatement, "10") — at 6 supporters (60%) → ACCEPTS at 50% threshold.
+    p1 = Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=user_ids[0],
+        proposal_type=ProposalType.CHANGE_VARIABLE,
+        proposal_text="AddStatement", val_text="10",
+        proposal_status=ProposalStatus.ON_THE_AIR,
+        pulse_id=active_pulse.id, support_count=6, age=1,
+    )
+    db.add(p1)
+
+    # P2: AddStatement at 3 supporters (30%) → REJECTS at 50% threshold.
+    # Under the bug it would ACCEPT because P1 lowers threshold to 10%
+    # and 30% > 10%.
+    p2 = Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=user_ids[1],
+        proposal_type=ProposalType.ADD_STATEMENT,
+        proposal_text="we are a kind community", val_text="",
+        proposal_status=ProposalStatus.ON_THE_AIR,
+        pulse_id=active_pulse.id, support_count=3, age=1,
+    )
+    db.add(p2)
+    await db.flush()
+
+    # Run the pulse.
+    await PulseService(db).execute_pulse(cid)
+    await db.flush()
+
+    # Re-fetch.
+    p1_after = (await db.execute(_sel(Proposal).where(Proposal.id == p1.id))).scalar_one()
+    p2_after = (await db.execute(_sel(Proposal).where(Proposal.id == p2.id))).scalar_one()
+
+    # P1 (ChangeVariable) MUST accept at the OLD 50% threshold.
+    assert p1_after.proposal_status == ProposalStatus.ACCEPTED, (
+        f"ChangeVariable at 60% support must accept under 50% threshold; "
+        f"got {p1_after.proposal_status}"
+    )
+    # P2 (AddStatement) MUST reject — under the snapshot rule, P1's
+    # variable change does NOT affect P2's threshold check on the same
+    # pulse.
+    assert p2_after.proposal_status == ProposalStatus.REJECTED, (
+        f"AddStatement at 30% support must REJECT under same-pulse 50% "
+        f"threshold (NOT the new 10% set by P1 on this same pulse); "
+        f"got {p2_after.proposal_status} — same-pulse threshold leak."
+    )
+    # And the variable HAS been updated for FUTURE pulses.
+    var_now = (
+        await db.execute(_sel(Variable.value).where(
+            Variable.community_id == cid, Variable.name == "AddStatement"
+        ))
+    ).scalar_one()
+    assert var_now == "10", (
+        f"ChangeVariable did execute (variable now '{var_now}') — "
+        f"the snapshot only protects same-pulse verdicts, not the "
+        f"actual variable update."
+    )
+
+
+@pytest.mark.asyncio
 async def test_change_variable_proposal(client):
     """Change a governance variable through proposal."""
     user = await create_test_user(client)
