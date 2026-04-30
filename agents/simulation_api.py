@@ -179,7 +179,11 @@ LLM_PRESETS = {
     "ollama-gemma4-e4b":    {"backend": "ollama",     "model": "gemma4:e4b",                         "think": False},
     "ollama-qwen3":         {"backend": "ollama",     "model": "qwen3:8b",                           "think": False},
     "ollama-qwen3-think":   {"backend": "ollama",     "model": "qwen3:8b",                           "think": True},
-    "or-mistral-small":     {"backend": "openrouter", "model": "mistralai/mistral-small-creative",         "think": False},
+    # OpenRouter retired `mistralai/mistral-small-creative` (404s on
+    # all calls as of 2026-04-30 — see commit history). Switched to
+    # the current dated alias `mistral-small-2603` (March 2026 build),
+    # which is the live successor on the OpenRouter catalog.
+    "or-mistral-small":     {"backend": "openrouter", "model": "mistralai/mistral-small-2603",               "think": False},
     # `or-lunaris` (sao10k/l3-lunaris-8b) was tested over 6 prompt-
     # tuning cycles in 2026-04-30. The model is a creative-writing
     # fine-tune that hallucinates ids ("12345678", "P-7f3a91c4")
