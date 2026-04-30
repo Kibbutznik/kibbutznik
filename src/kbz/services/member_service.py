@@ -263,8 +263,22 @@ class MemberService:
             )
         return out
 
-    async def increment_seniority(self, community_id: uuid.UUID) -> None:
-        await self.db.execute(
+    async def increment_seniority(
+        self,
+        community_id: uuid.UUID,
+        *,
+        only_user_ids: list[uuid.UUID] | None = None,
+    ) -> None:
+        """Bump seniority for active members of a community.
+
+        When `only_user_ids` is provided, only those user_ids are
+        incremented — used by the pulse cycle to skip members who
+        were admitted on THIS pulse (they shouldn't get a free
+        +1 for a round they didn't experience). Pre-fix the unbounded
+        UPDATE bumped Membership-just-admitted users alongside
+        veterans, giving brand-new members a one-pulse head start.
+        """
+        stmt = (
             update(Member)
             .where(
                 Member.community_id == community_id,
@@ -272,4 +286,10 @@ class MemberService:
             )
             .values(seniority=Member.seniority + 1)
         )
+        if only_user_ids is not None:
+            if not only_user_ids:
+                # Nothing to bump (no pre-existing members) — skip.
+                return
+            stmt = stmt.where(Member.user_id.in_(only_user_ids))
+        await self.db.execute(stmt)
         await self.db.flush()
