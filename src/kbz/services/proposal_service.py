@@ -378,6 +378,23 @@ class ProposalService:
         if data.proposal_type in (
             ProposalType.JOIN_ACTION, ProposalType.END_ACTION,
         ):
+            # Take the same advisory lock that `_exec_end_action`
+            # holds while sweeping orphans. Pre-fix a
+            # JoinAction/DelegateArtifact create against an action
+            # that an EndAction was just running (uncommitted) saw
+            # the action as still ACTIVE (READ COMMITTED), inserted,
+            # and that row outlived the orphan-sweep — sitting in
+            # OUT_THERE pointing at a dead action forever. With the
+            # lock, create-time either runs before EndAction starts
+            # sweeping (and EndAction picks the row up) or after
+            # EndAction has committed INACTIVE (and the
+            # CommunityStatus check below blocks the create).
+            from sqlalchemy import text as _text
+            await self.db.execute(
+                _text("SELECT pg_advisory_xact_lock("
+                      "hashtextextended(:k, 0))"),
+                {"k": f"end-action:{data.val_uuid}"},
+            )
             from kbz.models.action import Action
             action_parent = (
                 await self.db.execute(
