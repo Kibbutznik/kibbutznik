@@ -386,6 +386,50 @@ async def test_payback_mints_into_community(sf):
         assert w.balance == Decimal("15")
 
 
+@pytest.mark.asyncio
+async def test_payback_idempotent_on_double_execute(sf):
+    """A PayBack proposal that fires twice (pulse retry / outer-tx
+    rollback re-fire / manual admin re-run) must mint exactly once.
+
+    Pre-fix: each `_exec_pay_back` call inserted a fresh LedgerEntry
+    and bumped the wallet by `val_text` — N executions = N × amount
+    minted into the community wallet, silently inflating supply."""
+    async with sf() as db:
+        cid = await _mk_community(db, financial=True, name="pb-dup")
+        await db.commit()
+        svc = WalletService(db)
+        await svc.get_or_create(OWNER_COMMUNITY, cid)
+        await db.commit()
+
+        prop = await _mk_proposal(
+            db,
+            community_id=cid,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.PAY_BACK,
+            val_text="20",
+        )
+        await db.commit()
+
+        # First execution: mints 20.
+        await ExecutionService(db)._exec_pay_back(prop)
+        await db.commit()
+        # Second execution: must be a no-op (dedupe row already exists).
+        await ExecutionService(db)._exec_pay_back(prop)
+        await db.commit()
+        # Third for good measure.
+        await ExecutionService(db)._exec_pay_back(prop)
+        await db.commit()
+
+        w = (
+            await db.execute(
+                select(Wallet).where(
+                    Wallet.owner_kind == OWNER_COMMUNITY, Wallet.owner_id == cid,
+                )
+            )
+        ).scalar_one()
+        assert w.balance == Decimal("20")
+
+
 # ── Dividend: split community balance across members ───────────────
 
 @pytest.mark.asyncio

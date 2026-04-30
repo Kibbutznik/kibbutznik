@@ -547,7 +547,18 @@ class ExecutionService:
         into the community wallet (e.g. a refund, a reversal). In
         Phase 1 we model this as a mint authorized by proposal id
         (via `webhook_event='proposal.payback'` placeholder, since
-        the schema CHECK requires external_ref OR proposal_id)."""
+        the schema CHECK requires external_ref OR proposal_id).
+
+        Idempotency: before minting we record a `wallet_webhook_events`
+        row keyed on `(event="proposal.payback", idempotency_key=<proposal id>)`
+        to claim the slot. The unique index on `(event, idempotency_key)`
+        means a second invocation for the same proposal — pulse retry,
+        outer-tx rollback that re-fires pulse promotion, manual admin
+        re-run, future at-least-once task queue — raises IntegrityError
+        and we skip the mint. Without this guard `execute_proposal`
+        re-firing for the same PAY_BACK row would mint twice and
+        silently inflate the community wallet by N × amount."""
+        from sqlalchemy.exc import IntegrityError
         from kbz.services.wallet_service import (
             WalletService, FinancialModuleDisabledError, OWNER_COMMUNITY,
         )
@@ -557,13 +568,47 @@ class ExecutionService:
         svc = WalletService(self.db)
         if not await svc.is_financial(proposal.community_id):
             return
+
+        # Fast-path dedupe: if this proposal already minted, skip.
+        # The IntegrityError below is the actual race-window guarantee;
+        # this read just gives us a clean log line in the common case.
+        existing = await svc.find_webhook(
+            event="proposal.payback", idempotency_key=str(proposal.id),
+        )
+        if existing is not None:
+            logger.info(
+                "PayBack %s already executed (ledger=%s) — skipping",
+                proposal.id, existing.ledger_entry_id,
+            )
+            return
+
         try:
-            dst = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
-            await svc.mint(
-                dst, proposal.val_text,
-                webhook_event="proposal.payback",
-                external_ref=str(proposal.id),
-                memo=f"PayBack: {(proposal.proposal_text or '')[:120]}",
+            # SAVEPOINT around mint + dedupe insert. If a parallel
+            # execution already inserted the dedupe row (or the outer
+            # tx is replaying), the unique index on
+            # (event, idempotency_key) raises IntegrityError on flush
+            # and the savepoint rolls back BOTH the mint AND the
+            # webhook row — leaving the outer pulse transaction intact
+            # so other proposals in the pulse still execute.
+            async with self.db.begin_nested():
+                dst = await svc.get_or_create(
+                    OWNER_COMMUNITY, proposal.community_id,
+                )
+                entry = await svc.mint(
+                    dst, proposal.val_text,
+                    webhook_event="proposal.payback",
+                    external_ref=str(proposal.id),
+                    memo=f"PayBack: {(proposal.proposal_text or '')[:120]}",
+                )
+                await svc.record_webhook(
+                    event="proposal.payback",
+                    idempotency_key=str(proposal.id),
+                    ledger_entry_id=entry.id,
+                )
+        except IntegrityError:
+            logger.info(
+                "PayBack %s already minted (concurrent execute) — skipped",
+                proposal.id,
             )
         except (FinancialModuleDisabledError, ValueError) as e:
             logger.warning("PayBack %s failed: %s", proposal.id, e)
