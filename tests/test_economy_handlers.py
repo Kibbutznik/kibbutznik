@@ -478,6 +478,74 @@ async def test_dividend_splits_evenly_across_members(sf):
         assert c_w.balance == Decimal("40")  # 100 - 60
 
 
+@pytest.mark.asyncio
+async def test_dividend_rounding_balances_to_last_microunit(sf):
+    """Pre-fix the per-member share was quantized with ROUND_HALF_EVEN,
+    so amount/N values that didn't divide cleanly rounded UP — the
+    sum of the per-member transfers exceeded `amount`, the source
+    wallet's FOR-UPDATE balance went short, and the LAST recipient
+    got InsufficientFundsError. Result: silent partial distribution
+    where the books were short one share and the late member just
+    got skipped.
+
+    Now we ROUND_DOWN the share and fan the (always non-negative)
+    micro-unit remainder out to the first K recipients in
+    deterministic (sorted) order. Invariant: sum of transfers == amount.
+    """
+    async with sf() as db:
+        cid = await _mk_community(db, financial=True, name="div-round")
+        await db.commit()
+        svc = WalletService(db)
+        w = await svc.get_or_create(OWNER_COMMUNITY, cid)
+        # Seed exactly the amount we'll dividend out — leaves zero
+        # slack so any over-distribution would IMMEDIATELY trip
+        # InsufficientFundsError on the last member. With the fix the
+        # books MUST balance to the microunit.
+        await svc.mint(w, "2", webhook_event="seed", external_ref="r2")
+
+        # Three members and a 2-credit dividend — 2/3 = 0.666666... .
+        # Pre-fix: 0.666667 each * 3 = 2.000001 > source.
+        # Post-fix: share=0.666666, remainder=0.000002, fan-out
+        # gives recipient[0]=0.666667, recipient[1]=0.666667,
+        # recipient[2]=0.666666 (sorted by str(uuid)). Total=2.
+        u1, u2, u3 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        for u in (u1, u2, u3):
+            db.add(Member(community_id=cid, user_id=u, status=1, seniority=0))
+        await db.commit()
+
+        prop = await _mk_proposal(
+            db,
+            community_id=cid,
+            user_id=uuid.uuid4(),
+            ptype=ProposalType.DIVIDEND,
+            val_text="2",
+        )
+        await db.commit()
+        await ExecutionService(db)._exec_dividend(prop)
+        await db.commit()
+
+        balances = []
+        for u in (u1, u2, u3):
+            row = (
+                await db.execute(
+                    select(Wallet).where(
+                        Wallet.owner_kind == OWNER_USER, Wallet.owner_id == u,
+                    )
+                )
+            ).scalar_one_or_none()
+            balances.append(row.balance if row else Decimal("0"))
+        community_balance = (
+            await db.execute(select(Wallet).where(Wallet.id == w.id))
+        ).scalar_one().balance
+
+        # Source must be exactly drained — every microunit accounted for.
+        assert community_balance == Decimal("0"), community_balance
+        # Sum of recipient shares equals amount.
+        assert sum(balances) == Decimal("2"), balances
+        # No member skipped (pre-fix the loop broke after recipient[1]).
+        assert all(b > 0 for b in balances), balances
+
+
 # ── EndAction: sweep action balance back to parent ─────────────────
 
 @pytest.mark.asyncio

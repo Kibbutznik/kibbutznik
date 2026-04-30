@@ -614,8 +614,26 @@ class ExecutionService:
             logger.warning("PayBack %s failed: %s", proposal.id, e)
 
     async def _exec_dividend(self, proposal: Proposal) -> None:
-        """Split `val_text` amount equally among active members."""
-        from decimal import Decimal, InvalidOperation
+        """Split `val_text` amount equally among active members.
+
+        Rounding (F3): we quantize the per-member share with
+        ROUND_DOWN so `share * N <= amount` always — and distribute
+        the remainder (in micro-units) one-by-one to the first K
+        recipients in deterministic order so the books balance to
+        the last microunit.
+
+        Pre-fix: the share was quantized with the default
+        ROUND_HALF_EVEN. For e.g. amount=2 / N=3, share rounded UP to
+        0.666667 → total = 2.000001 > source. The first two
+        recipients got their share, the third hit InsufficientFunds
+        on the FOR-UPDATE'd community wallet, and the loop broke
+        early — silent partial distribution where N-1 of N members
+        got paid and the last was just skipped. Worst case for
+        amount=Decimal("0.000001") / N=2, share rounded to 0.000001,
+        recipient 1 got it, recipient 2 got InsufficientFunds, and
+        nobody noticed. With ROUND_DOWN + remainder fan-out, the
+        invariant `sum(transfers) == amount` holds exactly."""
+        from decimal import Decimal, InvalidOperation, ROUND_DOWN
         from kbz.services.wallet_service import (
             WalletService, FinancialModuleDisabledError, InsufficientFundsError,
             OWNER_COMMUNITY, OWNER_USER,
@@ -660,18 +678,34 @@ class ExecutionService:
             recipient_user_ids = [m.user_id for m in members]
         if not recipient_user_ids:
             return
-        share = (amount / Decimal(len(recipient_user_ids))).quantize(Decimal("0.000001"))
-        if share <= 0:
-            return
+        # Sort recipients to make the remainder distribution
+        # deterministic and reproducible — same Dividend re-run
+        # against the same snapshot must produce the same per-member
+        # transfers (helps audit + replay).
+        recipient_user_ids = sorted(recipient_user_ids, key=str)
+
+        n = Decimal(len(recipient_user_ids))
+        unit = Decimal("0.000001")  # 6dp matches schema + _parse_amount
+        # ROUND_DOWN guarantees share * N <= amount. The leftover
+        # micro-units (0..N-1 of them) get given out one-each to the
+        # first K recipients so the total transferred equals amount.
+        share = (amount / n).quantize(unit, rounding=ROUND_DOWN)
+        distributed = share * n
+        remainder = (amount - distributed).quantize(unit, rounding=ROUND_DOWN)
+        # remainder is in [0, n) micro-units. Convert to int.
+        leftover_units = int(remainder / unit)
         try:
             src = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
         except FinancialModuleDisabledError:
             return
-        for uid in recipient_user_ids:
+        for i, uid in enumerate(recipient_user_ids):
+            this_share = share + (unit if i < leftover_units else Decimal("0"))
+            if this_share <= 0:
+                continue
             dst = await svc.get_or_create(OWNER_USER, uid, gate=False)
             try:
                 await svc.transfer(
-                    src, dst, share,
+                    src, dst, this_share,
                     proposal_id=proposal.id,
                     memo=f"Dividend {proposal.id}",
                 )
