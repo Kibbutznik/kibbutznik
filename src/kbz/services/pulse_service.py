@@ -233,13 +233,42 @@ class PulseService:
                 await closeness_svc.apply_proposal_outcome(community_id, proposal.id)
                 await self.db.flush()
 
-            # Mark active pulse as Done
+            # Mark active pulse as Done — guarded UPDATE so a stale
+            # pointer can't double-flip a pulse already DONE back
+            # through the lifecycle. The partial unique index on
+            # (community_id) WHERE status=ACTIVE protects against
+            # multiple ACTIVE pulses, but the unconditional ORM
+            # `pulse.status = DONE` would still issue a write even
+            # if the row was no longer ACTIVE — defensive guard.
+            res = await self.db.execute(
+                update(Pulse)
+                .where(Pulse.id == active_pulse.id, Pulse.status == PulseStatus.ACTIVE)
+                .values(status=PulseStatus.DONE)
+            )
+            if res.rowcount == 0:
+                # Lost the race — another path already flipped it.
+                # Roll back this pulse's work and bail gracefully.
+                # The other path is responsible for the outcome.
+                await self.db.rollback()
+                return
+            # Refresh the in-memory ORM instance so subsequent reads
+            # see the new status value.
             active_pulse.status = PulseStatus.DONE
             await self.db.flush()
 
         # --- Step 2: Promote Next pulse to Active ---
         next_pulse = await self.get_next_pulse(community_id)
         if not next_pulse:
+            return
+        # Same guard pattern: the NEXT → ACTIVE flip must hit a row
+        # still in NEXT, otherwise something raced us.
+        res = await self.db.execute(
+            update(Pulse)
+            .where(Pulse.id == next_pulse.id, Pulse.status == PulseStatus.NEXT)
+            .values(status=PulseStatus.ACTIVE)
+        )
+        if res.rowcount == 0:
+            await self.db.rollback()
             return
         next_pulse.status = PulseStatus.ACTIVE
         await self.db.flush()
