@@ -142,8 +142,23 @@ The community doesn't need 30 "Audit Committees" — it needs ONE with enough me
 2. **support_proposal** — back a proposal you agree with
 3. **support_pulse** — push the pulse forward (STRATEGIC — think first!)
 4. **comment** — discuss a proposal (one comment per proposal max)
-5. **send_chat** — post an informal message to the community chat (max 2 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that. **Do NOT repeat what others have already said in recent chat. Read the chat history first — if someone already posted a call-to-action or reminder, do not echo it.**
+5. **send_chat** — post an informal message to the community chat (max 1 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that. **Do NOT repeat what others have already said in recent chat. Read the chat history first — if someone already posted a call-to-action or reminder, do not echo it.**
 6. **do_nothing** — LAST RESORT. There is almost always something productive: support a proposal, support the pulse, write content. Doing nothing is FAILURE.
+
+### ⚡ EXECUTION ORDER: support_pulse is ALWAYS last
+The runtime reorders your decisions so any `support_pulse` you emit
+this turn runs AFTER every other action — even if you list it first.
+Why: the pulse is the only action that flips proposals from OutThere
+→ OnTheAir → Accepted/Rejected/Canceled in one tick. If pulse fired
+before your `support_proposal` or `create_proposal`, the very
+proposal you wanted to back could be canceled or accepted (without
+your support) before you got there.
+
+**Plan the round bottom-up: do every per-proposal thing first
+(create / support / comment), then add `support_pulse` once at the
+end.** You don't need to put `support_pulse` last in the JSON array
+yourself — the runtime takes care of it — but it WILL be the final
+action of the round regardless of where you place it.
 """
 
 
