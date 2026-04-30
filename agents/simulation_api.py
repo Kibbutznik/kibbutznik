@@ -180,7 +180,16 @@ LLM_PRESETS = {
     "ollama-qwen3":         {"backend": "ollama",     "model": "qwen3:8b",                           "think": False},
     "ollama-qwen3-think":   {"backend": "ollama",     "model": "qwen3:8b",                           "think": True},
     "or-mistral-small":     {"backend": "openrouter", "model": "mistralai/mistral-small-creative",         "think": False},
-    "or-lunaris":           {"backend": "openrouter", "model": "sao10k/l3-lunaris-8b",               "think": False},
+    # `or-lunaris` (sao10k/l3-lunaris-8b) was tested over 6 prompt-
+    # tuning cycles in 2026-04-30. The model is a creative-writing
+    # fine-tune that hallucinates ids ("12345678", "P-7f3a91c4")
+    # rather than copying real ones from state — even when a literal
+    # ready-to-paste JSON object sits adjacent in the prompt. After
+    # 6 cycles the community produced 0 statements / 0 actions / 0
+    # non-Membership Accepted. Capability ceiling, not a prompting
+    # problem. Removed from the preset list to prevent accidental
+    # reuse; if you want to re-test, re-add the line — the prefix
+    # system + SUPPORT QUEUE branch on `lunaris-tuning` is preserved.
     "or-gemini-flash-lite": {"backend": "openrouter", "model": "google/gemini-2.5-flash-lite-preview","think": False},
     # OpenAI gpt-oss-20b via OpenRouter's :nitro lane — same weights
     # as the local Ollama gpt-oss:20b but routed through providers
