@@ -341,10 +341,21 @@ class PulseService:
     async def _get_proposals_by_status(
         self, community_id: uuid.UUID, status: ProposalStatus
     ) -> list[Proposal]:
+        # Deterministic ORDER BY (created_at, id) so:
+        #  - the order in which step 1 verdicts are applied is
+        #    reproducible across snapshot restores and re-tests;
+        #  - handlers that side-effect each other (e.g. Membership
+        #    admitting a member, Dividend distributing to the active
+        #    set) run in a stable order that's easy to reason about;
+        #  - the audit log shows pulses in a canonical order even when
+        #    Postgres VACUUM has rearranged physical row order.
+        # Pre-fix the SELECT had no ORDER BY → DB-undefined order →
+        # non-reproducible cross-handler effects.
         result = await self.db.execute(
             select(Proposal).where(
                 Proposal.community_id == community_id,
                 Proposal.proposal_status == status,
             )
+            .order_by(Proposal.created_at.asc(), Proposal.id.asc())
         )
         return list(result.scalars().all())
