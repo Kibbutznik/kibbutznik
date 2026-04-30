@@ -153,12 +153,22 @@ class SupportService:
         if not await member_svc.is_active_member(community_id, user_id):
             raise HTTPException(status_code=403, detail="User is not an active member")
 
-        # Get next pulse
+        # Get next pulse with row lock. Pre-fix two concurrent
+        # threshold-crossing supports both saw stale support_count,
+        # both decided to fire execute_pulse, and the loser hit the
+        # partial-unique-index IntegrityError on the new NEXT pulse
+        # insert and rolled back. State was correct (the unique
+        # index protected against duplicate NEXT pulses) but the
+        # work was wasted. With `with_for_update()` the second
+        # supporter waits for the first to commit, so only one
+        # path proceeds to execute_pulse — at most one IntegrityError
+        # path survives, and it's the legitimate "the pulse is now
+        # in DONE state" case.
         result = await self.db.execute(
             select(Pulse).where(
                 Pulse.community_id == community_id,
                 Pulse.status == PulseStatus.NEXT,
-            )
+            ).with_for_update()
         )
         pulse = result.scalar_one_or_none()
         if not pulse:
