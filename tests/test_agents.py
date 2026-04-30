@@ -1140,3 +1140,58 @@ def test_prompt_disambiguates_update_intention_field_vs_action():
     assert '"action": "update_intention"' in prompt
     # Must show the correct attach-to-real-action shape.
     assert "side-field" in prompt.lower() or "sibling field" in prompt.lower()
+
+
+class TestPulseAlwaysLast:
+    """The runtime reorders decisions so `support_pulse` ALWAYS runs
+    last in the turn, regardless of where the LLM put it. Pre-fix,
+    a pulse emitted first could fire before the agent's
+    support_proposal / create_proposal, canceling or accepting the
+    proposal it intended to back — wasting the rest of the turn."""
+
+    def test_sort_moves_pulse_to_end(self):
+        """The actual sort key used in agent.think_and_act."""
+        decisions = [
+            AgentAction(action_type="support_pulse", reason="pulse first"),
+            AgentAction(action_type="create_proposal", reason="prop"),
+            AgentAction(action_type="support_proposal", reason="back x"),
+            AgentAction(action_type="comment", reason="discuss"),
+        ]
+        ordered = sorted(
+            decisions,
+            key=lambda d: 1 if d.action_type == "support_pulse" else 0,
+        )
+        assert [d.action_type for d in ordered] == [
+            "create_proposal", "support_proposal", "comment", "support_pulse",
+        ], "support_pulse must be last; other actions must keep their order"
+
+    def test_sort_is_stable_among_non_pulse_actions(self):
+        """Sort must be stable so the LLM's emitted order is preserved
+        for everything that isn't `support_pulse` — otherwise a
+        DelegateArtifact emitted before its EditArtifact could land
+        afterwards and lose its pre-flight context."""
+        decisions = [
+            AgentAction(action_type="create_proposal", reason="A"),
+            AgentAction(action_type="support_pulse", reason="middle"),
+            AgentAction(action_type="comment", reason="B"),
+            AgentAction(action_type="create_proposal", reason="C"),
+        ]
+        ordered = sorted(
+            decisions,
+            key=lambda d: 1 if d.action_type == "support_pulse" else 0,
+        )
+        reasons = [d.reason for d in ordered]
+        assert reasons == ["A", "B", "C", "middle"], reasons
+
+    def test_prompt_documents_reorder(self):
+        """The prompt must tell the model the runtime reorders
+        support_pulse to last so it doesn't waste reasoning on the
+        in-array placement."""
+        prompt = build_decision_prompt(
+            persona_name="T", persona_role="r", persona_background="b",
+            persona_decision_style="d", persona_communication_style="c",
+            persona_trait_summary="t", community_summary="s",
+            action_history=[],
+        )
+        assert "support_pulse is ALWAYS last" in prompt
+        assert "runtime reorders" in prompt

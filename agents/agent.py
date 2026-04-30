@@ -263,7 +263,27 @@ class Agent:
             recent_failures=recent_failures,
         )
 
-        # 3. ACT — execute each decision, applying guards per action
+        # 3. ACT — execute each decision, applying guards per action.
+        #
+        # Reorder decisions so `support_pulse` ALWAYS runs LAST.
+        # support_pulse is the only action that mutates community
+        # state outside the proposal it owns (it can flip
+        # OutThere → OnTheAir → Accepted/Rejected/Canceled in a
+        # single tick), and the LLM frequently emits it before the
+        # follow-up support_proposal / comment / create_proposal
+        # actions in the same turn. Pre-fix, a pulse fired first
+        # could cancel the very proposal the agent intended to
+        # support — the agent then 409s on a now-canceled row,
+        # wasting the rest of the turn.
+        #
+        # Stable sort: support_pulse → 1 (last), everything else → 0
+        # (preserves the LLM's emitted order within the non-pulse
+        # group).
+        decisions = sorted(
+            decisions,
+            key=lambda d: 1 if d.action_type == "support_pulse" else 0,
+        )
+
         logs: list[ActionLog] = []
         best_eagerness = 5
         best_eager_front = "observe"
