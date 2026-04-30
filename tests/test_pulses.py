@@ -505,6 +505,87 @@ async def test_same_pulse_change_variable_does_not_leak_into_other_verdicts(db):
 
 
 @pytest.mark.asyncio
+async def test_membership_admitted_this_pulse_does_not_get_seniority_bump(db):
+    """Pre-fix `increment_seniority` ran a community-wide UPDATE
+    bumping every active member to seniority+1. A Membership
+    proposal accepted earlier in step 1 of the SAME pulse admitted
+    a new member with seniority=0. Step 4 then bumped that
+    brand-new member to 1 — a free pulse of seniority for a round
+    they didn't experience."""
+    import uuid as _uuid
+    from kbz.enums import (
+        CommunityStatus, MemberStatus, ProposalStatus, ProposalType,
+        PulseStatus, DEFAULT_VARIABLES,
+    )
+    from kbz.models.community import Community
+    from kbz.models.member import Member
+    from kbz.models.proposal import Proposal
+    from kbz.models.pulse import Pulse
+    from kbz.models.variable import Variable
+    from kbz.models.user import User
+    from kbz.services.pulse_service import PulseService
+    from sqlalchemy import select as _sel
+
+    cid = _uuid.uuid4()
+    db.add(Community(
+        id=cid, parent_id=_uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        name="seniority-test", status=CommunityStatus.ACTIVE, member_count=2,
+    ))
+    veteran_id = _uuid.uuid4()
+    founder_id = _uuid.uuid4()
+    applicant_id = _uuid.uuid4()  # the brand-new member admitted on this pulse
+    for uid, name in [(founder_id, "founder"), (veteran_id, "vet"), (applicant_id, "newcomer")]:
+        db.add(User(id=uid, user_name=name, password_hash=""))
+    db.add(Member(community_id=cid, user_id=founder_id, status=MemberStatus.ACTIVE, seniority=5))
+    db.add(Member(community_id=cid, user_id=veteran_id, status=MemberStatus.ACTIVE, seniority=5))
+    for name, value in DEFAULT_VARIABLES.items():
+        db.add(Variable(community_id=cid, name=name, value=value))
+
+    active_pulse = Pulse(
+        id=_uuid.uuid4(), community_id=cid,
+        status=PulseStatus.ACTIVE, support_count=2, threshold=1,
+    )
+    db.add(active_pulse)
+    db.add(Pulse(
+        id=_uuid.uuid4(), community_id=cid,
+        status=PulseStatus.NEXT, support_count=0, threshold=1,
+    ))
+
+    membership = Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=applicant_id,
+        proposal_type=ProposalType.MEMBERSHIP,
+        proposal_text="newcomer wants in", val_uuid=applicant_id,
+        proposal_status=ProposalStatus.ON_THE_AIR,
+        pulse_id=active_pulse.id, support_count=2, age=1,
+    )
+    db.add(membership)
+    await db.flush()
+
+    await PulseService(db).execute_pulse(cid)
+    await db.flush()
+
+    # Veterans bumped from 5 → 6.
+    vet_after = (
+        await db.execute(_sel(Member).where(
+            Member.community_id == cid, Member.user_id == veteran_id,
+        ))
+    ).scalar_one()
+    assert vet_after.seniority == 6, (
+        f"veteran must have seniority+1; got {vet_after.seniority}"
+    )
+    # Newcomer admitted this pulse stays at 0 (NOT bumped to 1).
+    newcomer_after = (
+        await db.execute(_sel(Member).where(
+            Member.community_id == cid, Member.user_id == applicant_id,
+        ))
+    ).scalar_one()
+    assert newcomer_after.seniority == 0, (
+        f"newcomer admitted on this pulse must stay at 0; "
+        f"got {newcomer_after.seniority} — same-pulse seniority leak."
+    )
+
+
+@pytest.mark.asyncio
 async def test_change_variable_proposal(client):
     """Change a governance variable through proposal."""
     user = await create_test_user(client)

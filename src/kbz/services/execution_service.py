@@ -21,6 +21,13 @@ class ExecutionService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        # Snapshot of active member user_ids captured by the pulse
+        # at step 0 (before any handler runs). Used by handlers like
+        # `_exec_dividend` whose recipient set MUST be the pre-pulse
+        # members — not whoever's been admitted earlier in this same
+        # step 1 loop. None means "no snapshot available; fall back
+        # to live query" (legitimate for non-pulse callers).
+        self.pulse_member_snapshot: list[uuid.UUID] | None = None
 
     async def execute_proposal(self, proposal: Proposal) -> None:
         ptype = ProposalType(proposal.proposal_type)
@@ -572,19 +579,32 @@ class ExecutionService:
                 proposal.id, proposal.val_text,
             )
             return
-        member_svc = MemberService(self.db)
-        members = await member_svc.list_by_community(proposal.community_id)
-        if not members:
+        # Use the pulse-time member snapshot when available — it's
+        # the active member set as of pulse start, BEFORE any
+        # Membership earlier in this same step 1 loop admitted a new
+        # member. Without the snapshot, a fresh `list_by_community`
+        # SELECT autoflushes pending INSERTs and includes brand-new
+        # members in the dividend recipient list, leaking funds to
+        # users who joined a few milliseconds earlier on this very
+        # pulse. Non-pulse callers (e.g. ad-hoc admin) keep the
+        # live-query fallback.
+        if self.pulse_member_snapshot is not None:
+            recipient_user_ids = list(self.pulse_member_snapshot)
+        else:
+            member_svc = MemberService(self.db)
+            members = await member_svc.list_by_community(proposal.community_id)
+            recipient_user_ids = [m.user_id for m in members]
+        if not recipient_user_ids:
             return
-        share = (amount / Decimal(len(members))).quantize(Decimal("0.000001"))
+        share = (amount / Decimal(len(recipient_user_ids))).quantize(Decimal("0.000001"))
         if share <= 0:
             return
         try:
             src = await svc.get_or_create(OWNER_COMMUNITY, proposal.community_id)
         except FinancialModuleDisabledError:
             return
-        for m in members:
-            dst = await svc.get_or_create(OWNER_USER, m.user_id, gate=False)
+        for uid in recipient_user_ids:
+            dst = await svc.get_or_create(OWNER_USER, uid, gate=False)
             try:
                 await svc.transfer(
                     src, dst, share,
@@ -594,7 +614,7 @@ class ExecutionService:
             except InsufficientFundsError:
                 logger.warning(
                     "Dividend %s: ran out of funds mid-distribution at member %s",
-                    proposal.id, m.user_id,
+                    proposal.id, uid,
                 )
                 break
 

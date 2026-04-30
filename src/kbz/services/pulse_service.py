@@ -11,7 +11,9 @@ from kbz.enums import (
     PROPOSAL_TYPE_THRESHOLDS,
     ProposalType,
 )
+from kbz.enums import MemberStatus
 from kbz.models.community import Community
+from kbz.models.member import Member
 from kbz.models.proposal import Proposal
 from kbz.models.pulse import Pulse
 from kbz.services.closeness_service import ClosenessService
@@ -113,6 +115,29 @@ class PulseService:
         execution_svc = ExecutionService(self.db)
         member_svc = MemberService(self.db)
         closeness_svc = ClosenessService(self.db)
+
+        # --- Step 0: Snapshot the active member set ---
+        # Pre-fix handlers that need the recipient/affected list
+        # (Dividend distribution, vote-missing fanout, seniority
+        # bump) re-queried the Member table mid-pulse. Autoflush
+        # made any Membership accepted earlier in step 1 visible to
+        # those queries — Eve, admitted at iteration N, would
+        # appear in the Dividend recipient set evaluated at
+        # iteration N+1. Capture the active member id list here,
+        # ONCE, and thread it through ExecutionService and through
+        # `increment_seniority(only_user_ids=...)`.
+        snapshot_member_ids: list[uuid.UUID] = [
+            row[0]
+            for row in (
+                await self.db.execute(
+                    select(Member.user_id).where(
+                        Member.community_id == community_id,
+                        Member.status == MemberStatus.ACTIVE,
+                    )
+                )
+            ).all()
+        ]
+        execution_svc.pulse_member_snapshot = snapshot_member_ids
 
         # --- Step 0: Snapshot ALL governance-affecting variables ---
         # Pre-fix the threshold for each OnTheAir proposal was read
@@ -349,8 +374,15 @@ class PulseService:
                 )
             await self.db.flush()
 
-        # --- Step 4: Increment seniority for all active members ---
-        await member_svc.increment_seniority(community_id)
+        # --- Step 4: Increment seniority for active members ---
+        # Bump only the members who existed at pulse start. A
+        # Membership accepted in step 1 admitted brand-new members
+        # who shouldn't get a free seniority point for a round they
+        # didn't experience. Pre-fix `increment_seniority` was a
+        # community-wide UPDATE that included those new admits.
+        await member_svc.increment_seniority(
+            community_id, only_user_ids=snapshot_member_ids,
+        )
 
         # --- Step 5: Create new Next pulse ---
         # Refresh community for updated member count
