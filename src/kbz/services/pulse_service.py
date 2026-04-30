@@ -367,19 +367,36 @@ class PulseService:
         )
         self.db.add(new_pulse)
 
+        # Capture every value we want to emit BEFORE the commit. After
+        # `db.commit()` SQLAlchemy expires all attached instances, so
+        # any subsequent attribute access on `next_pulse` /
+        # `on_air_proposals[i]` issues a fresh SELECT — and if another
+        # pulse cycle has fired between our commit and our emit, those
+        # SELECTs return stale or surprising state. Snapshot every
+        # value into plain tuples now, then emit from the tuples after
+        # commit. The events are advisory (TKG ingestor, viewer
+        # broadcast); they should describe THIS pulse's outcome, not
+        # whatever the DB says half a second later.
+        next_pulse_id = next_pulse.id
+        emitted_outcomes: list[tuple] = []
+        if active_pulse:
+            emitted_outcomes = [
+                (p.id, p.user_id, p.proposal_type, p.proposal_status.lower())
+                for p in on_air_proposals
+            ]
+
         await self.db.commit()
 
-        # Emit events
-        await event_bus.emit("pulse.executed", community_id=community_id, pulse_id=next_pulse.id)
-        if active_pulse:
-            for p in on_air_proposals:
-                await event_bus.emit(
-                    f"proposal.{p.proposal_status.lower()}",
-                    community_id=community_id,
-                    user_id=p.user_id,
-                    proposal_id=p.id,
-                    proposal_type=p.proposal_type,
-                )
+        # Emit events using the captured snapshot.
+        await event_bus.emit("pulse.executed", community_id=community_id, pulse_id=next_pulse_id)
+        for pid, uid, ptype, status_lower in emitted_outcomes:
+            await event_bus.emit(
+                f"proposal.{status_lower}",
+                community_id=community_id,
+                user_id=uid,
+                proposal_id=pid,
+                proposal_type=ptype,
+            )
 
     async def _get_proposals_by_status(
         self, community_id: uuid.UUID, status: ProposalStatus
