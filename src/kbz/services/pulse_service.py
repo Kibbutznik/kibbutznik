@@ -136,6 +136,19 @@ class PulseService:
         # lands.
         snapshot_max_age = int(float(await self._get_variable_value(community_id, "MaxAge")))
         snapshot_proposal_support_pct = int(float(await self._get_variable_value(community_id, "ProposalSupport")))
+
+        # Snapshot the OUT_THERE proposal set at step 0 too. Pre-fix
+        # step 3 ran a fresh `_get_proposals_by_status(OUT_THERE)`
+        # AFTER step 1 had already done DB work, so any proposal
+        # submitted by a concurrent transaction in the gap (READ
+        # COMMITTED isolation) was picked up here, got `age += 1`
+        # IMMEDIATELY, and either aged out one round earlier or was
+        # promoted on its zeroth round of existence — no chance to
+        # gather support before its first round was burned.
+        out_there_proposals_snapshot = await self._get_proposals_by_status(
+            community_id, ProposalStatus.OUT_THERE
+        )
+
         # Per-OnTheAir-proposal threshold dict, snapshotted before
         # any handler runs.
         active_pulse = await self.get_active_pulse(community_id)
@@ -239,9 +252,10 @@ class PulseService:
         max_age = snapshot_max_age
         proposal_support_pct = snapshot_proposal_support_pct
 
-        out_there_proposals = await self._get_proposals_by_status(
-            community_id, ProposalStatus.OUT_THERE
-        )
+        # Use the snapshot taken at step 0 (NOT a fresh query) so
+        # proposals submitted concurrently during this pulse aren't
+        # punished one cycle early — see step 0 comment.
+        out_there_proposals = out_there_proposals_snapshot
         for proposal in out_there_proposals:
             # Increment age
             proposal.age += 1
