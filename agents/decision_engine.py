@@ -24,6 +24,30 @@ KBZ_RULES = """
 
 You are a member of a KBZ (Kibutznik) community — a pulse-based direct democracy.
 
+### 🛑 STOP — TWO ABSOLUTE RULES BEFORE YOU OUTPUT 🛑
+
+**RULE 1 — NO ANGLE-BRACKET TEXT IN YOUR JSON.**
+This prompt teaches you using placeholders like `A-<artifact_id>` or
+`C-<container_id from state>`. Those `<...>` parts are EXPLANATION, not
+values. **Your JSON output must contain ZERO `<` and ZERO `>` characters.**
+If you would emit `<artifact_id>`, `<container_id>`, `<exact-id>`,
+`<plan_artifact>`, `<some-uuid>`, or anything resembling a placeholder —
+STOP and pick a different action. The action you wanted is not yet
+possible because you don't have the real id from the Community State
+section.
+
+**RULE 2 — `action` HAS ONLY 6 LEGAL VALUES.**
+The `action` field in every JSON object is ONE of:
+`do_nothing`, `create_proposal`, `support_proposal`, `support_pulse`,
+`comment`, `send_chat`.
+ANY other value — `update_intention`, `intention`, `propose`, `support`,
+`vote`, `vote_comment`, `reply_comment`, `observe`, `act` — is REJECTED.
+`update_intention` is a SIBLING FIELD you can attach to a real action
+(see "update_intention SIDE-FIELD" near the end). It is never the value
+of `action`.
+
+Violations of either rule are silently dropped, wasting your turn.
+
 ### 🆔 ID PREFIXES — READ THIS FIRST 🆔
 Every id you see in the community state is tagged with a single-letter
 prefix that names its TYPE. Pass the tag back verbatim — the runtime
@@ -84,7 +108,7 @@ Every member implicitly "signs" them by joining.
 
 ### Proposal Types
 - **AddStatement** — community principle/rule (constitution) — defines what members agree to follow
-- **ChangeVariable** — change governance thresholds (proposal_text=variable name, val_text=new value)
+- **ChangeVariable** — change governance thresholds. **STRICT FORMAT:** `proposal_text` MUST start with EXACTLY ONE variable name on the FIRST LINE — nothing else, no sentence, no description. Allowed names (one of these, copied verbatim, case-sensitive): `PulseSupport`, `ProposalSupport`, `MaxAge`, `Membership`, `ThrowOut`, `AddStatement`, `RemoveStatement`, `ReplaceStatement`, `AddAction`, `JoinAction`, `EndAction`, `Funding`, `Payment`, `payBack`, `Dividend`, `SetMembershipHandler`, `CreateArtifact`, `EditArtifact`, `RemoveArtifact`, `DelegateArtifact`, `CommitArtifact`, `ChangeVariable`, `MinCommittee`, `ProposalRateLimit`, `seniorityWeight`, `membershipFee`, `dividendBySeniority`, `proposalCooldown`, `quorumThreshold`. Any reasoning/explanation goes on lines 2+ of `proposal_text`. `val_text` is the new numeric value. Example proposal_text: `"MaxAge\\nIncrease to 3 because proposals need more time to gather support"`. Wrong: `"Increase MaxAge by 1 pulse..."` (that whole sentence is being read as the variable name, which fails 422).
 - **AddAction** — create a working group/committee (becomes its own sub-community with members, pulses, proposals!). **Optional one-step shortcut: include `val_uuid=A-<parent artifact id>` to ALSO auto-delegate that artifact to the new action on accept** — saves a pulse cycle vs. AddAction-then-DelegateArtifact. **CRITICAL: only include `val_uuid` if you can copy an `A-…` id VERBATIM from the community state's "Artifact Containers" section AND it is not the 📋 Plan. NEVER invent a UUID. If you don't see an eligible artifact, OMIT `val_uuid` entirely — the action will be created bare and a separate DelegateArtifact can attach work later.**
 - **JoinAction** — join an existing, already-accepted action — val_uuid=K-<action_id from "Actions You Can Join" or "Active Actions" in state — NEVER use an AddAction proposal's id (P-…); if the AddAction is still OutThere/OnTheAir the action doesn't exist yet!> — proposal goes to ROOT community. **If "Actions You Can Join" is empty AND "Active Actions" is empty, do NOT propose JoinAction — there's nothing to join. Propose AddAction first (with an `A-…` artifact id if you have one).** Wanting to "help" is not a reason to file a JoinAction with no target — that just wastes a turn.
 - **Membership** — welcome a new member (val_uuid=U-<the new user's id>)
@@ -480,36 +504,79 @@ the proposal's "pitch" and shown to everyone in the community. Write it as a
 1–3-sentence case for accepting the proposal (not a log line to yourself).
 Speak in first-person, make the "why" concrete, and keep it short.
 
-Examples:
+Examples (the ids below are FAKE — used only to show JSON shape; you must
+copy a real id from your Community State, never reuse these strings):
 [
-  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "How We Onboard a New Member", "val_uuid": "C-<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
-  {{"action": "support_proposal", "proposal_id": "P-<exact-id>", "reason": "This aligns with our values", "eagerness": 7, "eager_front": "support"}},
+  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "How We Onboard a New Member", "val_uuid": "C-FAKE-EXAMPLE-CONTAINER", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "support_proposal", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "reason": "This aligns with our values", "eagerness": 7, "eager_front": "support"}},
   {{"action": "support_pulse", "reason": "The proposals I support have enough votes — lock in acceptance now!", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "A-<artifact_id marked EMPTY>", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "A-FAKE-EXAMPLE-ARTIFACT", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}},
   {{"action": "support_pulse", "reason": "Keep the governance cycle moving — proposals need pulses to advance", "eagerness": 7, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "A-<artifact_id>", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "A-FAKE-EXAMPLE-ARTIFACT", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
   {{"action": "support_pulse", "reason": "Need the pulse to fire so the AddAction-with-delegation can land", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "K-<action_id from 'Actions You Can Join' in state>", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
+  {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "K-FAKE-EXAMPLE-ACTION", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
 ]
+
+⚠️ The strings `C-FAKE-EXAMPLE-CONTAINER`, `A-FAKE-EXAMPLE-ARTIFACT`,
+`K-FAKE-EXAMPLE-ACTION`, `P-FAKE-EXAMPLE-PROPOSAL`, `S-FAKE-EXAMPLE-...`,
+`U-FAKE-EXAMPLE-...` are FAKE. Do not put them in your output. Copy the
+real id from the Community State above. If no real id of the right kind
+exists in state, the action you wanted is not yet possible — pick
+something else.
 [
   {{"action": "send_chat", "message_text": "Hey everyone — should we delegate the onboarding artifact to a new Action? It needs detailed work.", "reason": "Coordinating artifact workflow", "eagerness": 5, "eager_front": "comment"}},
-  {{"action": "support_proposal", "proposal_id": "P-<id>", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
+  {{"action": "support_proposal", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
 ]
 [
-  {{"action": "comment", "proposal_id": "P-<EditArtifact id>", "comment_text": "Love 'She arrived on the last train of the year' — sharper than the original. But cutting the sister's letter loses her motive. Mixed. Restore the letter in para 2.", "reason": "Praise the prose lift but flag the lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
+  {{"action": "comment", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "comment_text": "Love 'She arrived on the last train of the year' — sharper than the original. But cutting the sister's letter loses her motive. Mixed. Restore the letter in para 2.", "reason": "Praise the prose lift but flag the lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
   {{"action": "support_pulse", "reason": "Keep the cycle moving", "eagerness": 6, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "comment", "proposal_id": "P-<EditArtifact id>", "comment_text": "Hate it. Replaces 'rusted gate, dog with one eye, woodsmoke' with 'atmosphere, foreboding, history' — telling, not showing. 'I sense great evil' is a cliché. Keep the sensory detail.", "reason": "Telling-vs-showing critique with concrete quoted evidence", "eagerness": 9, "eager_front": "comment"}}
+  {{"action": "comment", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "comment_text": "Hate it. Replaces 'rusted gate, dog with one eye, woodsmoke' with 'atmosphere, foreboding, history' — telling, not showing. 'I sense great evil' is a cliché. Keep the sensory detail.", "reason": "Telling-vs-showing critique with concrete quoted evidence", "eagerness": 9, "eager_front": "comment"}}
 ]
 [{{"action": "do_nothing", "reason": "Waiting ONE round — my key proposal needs 1 more supporter before I pulse", "eagerness": 3, "eager_front": "observe"}}]
-REMEMBER: include `support_pulse` in MOST of your turns. A turn without `support_pulse` should be the exception, not the rule."""
+
+═══════════════════════════════════════════════════════════════════
+🚨 FINAL CHECK BEFORE YOU OUTPUT — read these three rules again:
+═══════════════════════════════════════════════════════════════════
+
+1. **`action` is ONE of:** `do_nothing`, `create_proposal`, `support_proposal`,
+   `support_pulse`, `comment`, `send_chat`. Nothing else.
+   - If you wrote `"action": "update_intention"` — DELETE that object,
+     put `update_intention` as a SIBLING FIELD on a real action.
+     Wrong: `{{"action": "update_intention", "text": "..."}}`
+     Right: `{{"action": "do_nothing", "reason": "...", "update_intention": "..."}}`
+   - If you wrote `"action": "intention"`, `"action": "vote"`,
+     `"action": "propose"`, `"action": "support"`, or anything else
+     not in the list above — same fix: pick one of the 6 legal values.
+
+2. **No `<` or `>` characters anywhere in your JSON values.**
+   Scan your output. If any value contains `<` or `>`, that value is a
+   placeholder you copied from this prompt by mistake. Fix it: either
+   put a REAL id from the Community State, or change the action.
+
+3. **Ids are full 36-character UUIDs with a single-letter prefix.**
+   - Real id: `K-7d793320-08f4-4b48-8c1a-8e25f9c0a7e2`
+   - NOT a real id: `K-marketin`, `K-audience`, `K-a7b397ec`,
+     `K-brand_me`, `marketin`, `audience` (these are name slugs or
+     truncations — NOT ids). If you only see a name in state, that
+     action does not have an id you can use yet. Pick a different action.
+   - Same rule for A-, C-, P-, S-, U-, M- ids: full UUID after the prefix.
+
+4. **The 📋 Plan artifact is special — it CANNOT be the `val_uuid` of
+   `AddAction` or `DelegateArtifact`.** Plans stay in their container
+   forever and guide the work; they don't get delegated. If you want
+   AddAction to come with an artifact, use a NON-Plan A- id from state
+   (or omit val_uuid).
+
+REMEMBER: include `support_pulse` in MOST of your turns. A turn without
+`support_pulse` should be the exception, not the rule."""
 
 
 class DecisionEngine:
@@ -772,10 +839,63 @@ class DecisionEngine:
             logger.warning("[OLLAMA] Both content and thinking fields are empty!")
         return raw
 
+    # Models (notably Mistral Small 4) routinely emit `"action":
+    # "update_intention"` despite the prompt explaining that
+    # update_intention is a SIBLING FIELD, not an action. The prompt
+    # cycle 2 made this WORSE (13 hits / round). Coerce it server-side:
+    # promote the `update_intention` value into a sibling field on a
+    # do_nothing action and keep the turn productive instead of dropping
+    # it as Unknown. Same shape for the other near-miss action verbs
+    # ("intention", "vote", "propose", "support", "observe", "act") —
+    # map them to the closest legal action so the bot's intent isn't
+    # silently lost.
+    _ACTION_COERCIONS = {
+        "update_intention": "do_nothing",
+        "intention":        "do_nothing",
+        "observe":          "do_nothing",
+        "act":              "do_nothing",
+        "vote":             "support_proposal",   # if proposal_id present
+        "vote_comment":     "do_nothing",         # field-only, not action
+        "reply_comment":    "comment",
+        "propose":          "create_proposal",
+        "support":          "support_proposal",
+        "pulse":            "support_pulse",
+        "chat":             "send_chat",
+        "message":          "send_chat",
+    }
+    _LEGAL_ACTIONS = {
+        "do_nothing", "create_proposal", "support_proposal",
+        "support_pulse", "comment", "send_chat",
+    }
+
     def _parse_single_action(self, data: dict) -> AgentAction:
         """Convert a single action dict into an AgentAction."""
-        action_type = data.get("action", "do_nothing")
+        raw_action = data.get("action", "do_nothing")
+        action_type = raw_action
         reason = data.get("reason", "")
+        # Coerce common near-miss action names. If the model emitted
+        # `"action": "update_intention"` with the intent text in some
+        # field (`text`, `update_intention`, `intention`, `value`),
+        # promote that text into the canonical `update_intention`
+        # sibling field on a do_nothing.
+        if action_type not in self._LEGAL_ACTIONS:
+            mapped = self._ACTION_COERCIONS.get(action_type)
+            if mapped is not None:
+                if action_type in ("update_intention", "intention") and "update_intention" not in data:
+                    intent = (
+                        data.get("text") or data.get("intention")
+                        or data.get("value") or data.get("update_intention")
+                        or reason
+                    )
+                    if intent:
+                        data = {**data, "update_intention": intent}
+                if action_type == "vote" and "proposal_id" not in data:
+                    mapped = "do_nothing"
+                logger.debug(
+                    "[LLM] coerced action %r -> %r (model near-miss)",
+                    action_type, mapped,
+                )
+                action_type = mapped
         raw_eagerness = data.get("eagerness", 5)
         try:
             eagerness = max(1, min(10, int(raw_eagerness)))
