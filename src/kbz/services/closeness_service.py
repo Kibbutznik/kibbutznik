@@ -97,14 +97,39 @@ class ClosenessService:
     async def apply_proposal_outcome(
         self, community_id: uuid.UUID, proposal_id: uuid.UUID,
     ) -> None:
-        """Update every active pair's EMA of agreement using this proposal."""
+        """Update every active pair's EMA of agreement using this proposal.
+
+        Concurrency: pre-fix `_get_score` issued a plain SELECT and
+        `_set_score` issued an upsert with no row locks. Two pulses
+        running on overlapping member sets (e.g. parent community A
+        and child action B with shared members u1, u2) would both
+        read the (u1, u2) score, both compute their own EMA, both
+        upsert — last writer wins, the other update silently lost.
+        Worse: parent and child iterated their member lists in
+        DB-undefined orders, so concurrent locks were acquired in
+        different orders → Postgres deadlock detector fired
+        (40P01), one transaction was killed mid-pulse, half the
+        side effects in that pulse rolled back.
+
+        Fix: sort `member_ids` deterministically, then acquire a
+        FOR UPDATE lock on every existing pair row upfront in
+        lexicographic order. Lock acquisition order matches across
+        all transactions → no deadlock. Once locks are held, other
+        transactions block on the same pairs until we commit, so
+        no lost updates. New pairs (no existing row) are still
+        inserted atomically via the upsert ON CONFLICT path.
+        """
         members_result = await self.db.execute(
             select(Member.user_id).where(
                 Member.community_id == community_id,
                 Member.status == MemberStatus.ACTIVE,
             )
         )
-        member_ids = [row[0] for row in members_result.all()]
+        # Sort member_ids deterministically — the pair-iteration
+        # order downstream is derived from this list, and we need it
+        # to be stable across transactions to avoid cross-pulse
+        # deadlocks.
+        member_ids = sorted([row[0] for row in members_result.all()], key=str)
         n = len(member_ids)
         if n < 2:
             return
@@ -122,6 +147,30 @@ class ClosenessService:
         if weight < _MIN_WEIGHT:
             return
         step = _ALPHA * weight
+
+        # Build the list of (u1, u2) pair keys we plan to touch,
+        # sorted lexicographically. Lock all existing rows in one
+        # ordered SELECT FOR UPDATE — Postgres acquires the row
+        # locks in the SELECT's iteration order, which matches
+        # across transactions when the input set is sorted the
+        # same way everywhere.
+        pair_keys: list[tuple[uuid.UUID, uuid.UUID]] = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                pair_keys.append(self._ordered(member_ids[i], member_ids[j]))
+        # Sort as (str(u1), str(u2)) — same comparator the upsert sees.
+        pair_keys.sort(key=lambda p: (str(p[0]), str(p[1])))
+
+        if pair_keys:
+            from sqlalchemy import tuple_ as _tuple
+            await self.db.execute(
+                select(Closeness.user_id1, Closeness.user_id2)
+                .where(
+                    _tuple(Closeness.user_id1, Closeness.user_id2).in_(pair_keys)
+                )
+                .order_by(Closeness.user_id1.asc(), Closeness.user_id2.asc())
+                .with_for_update()
+            )
 
         # EMA update per pair: score ← (1−step)·score + step·signal
         for i in range(n):
