@@ -423,16 +423,29 @@ class WalletService:
         return escrow
 
     async def _escrow_for_proposal(
-        self, proposal_id: uuid.UUID
+        self, proposal_id: uuid.UUID,
+        *, lock: bool = False,
     ) -> Wallet | None:
-        return (
-            await self.db.execute(
-                select(Wallet).where(
-                    Wallet.owner_kind == OWNER_ESCROW,
-                    Wallet.owner_id == proposal_id,
-                )
-            )
-        ).scalar_one_or_none()
+        """Look up the ephemeral escrow wallet for a proposal.
+
+        When `lock=True`, takes a `FOR UPDATE` row lock on the
+        escrow row. Used by `escrow_release` and `escrow_refund` so
+        two concurrent terminal-state callers (e.g. a pulse
+        rejecting the Membership and a parent EndAction's
+        orphan-sweep canceling it the same wall-clock instant) can't
+        both fetch the same escrow, both call `transfer` (which
+        succeeds on the first call and finds an empty escrow on the
+        second), and both `db.delete(escrow)` against the same row
+        — the second hits a stale ORM instance that's already been
+        deleted.
+        """
+        stmt = select(Wallet).where(
+            Wallet.owner_kind == OWNER_ESCROW,
+            Wallet.owner_id == proposal_id,
+        )
+        if lock:
+            stmt = stmt.with_for_update()
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def _escrow_source(self, escrow_id: uuid.UUID) -> uuid.UUID | None:
         """Recover the original source wallet id from the memo of the
@@ -459,7 +472,10 @@ class WalletService:
         to_wallet: Wallet,
     ) -> LedgerEntry | None:
         """Membership accepted → escrow flows to the community wallet."""
-        escrow = await self._escrow_for_proposal(proposal_id)
+        # Lock the escrow row so a concurrent escrow_refund / second
+        # release can't race us to the transfer + delete. See
+        # `_escrow_for_proposal(lock=True)` docstring.
+        escrow = await self._escrow_for_proposal(proposal_id, lock=True)
         if escrow is None or escrow.balance <= 0:
             return None
         entry = await self.transfer(
@@ -476,7 +492,9 @@ class WalletService:
     ) -> LedgerEntry | None:
         """Membership rejected / canceled → escrow goes back to the
         original applicant's user wallet."""
-        escrow = await self._escrow_for_proposal(proposal_id)
+        # Lock the escrow row so a concurrent release / second refund
+        # can't race us to the transfer + delete.
+        escrow = await self._escrow_for_proposal(proposal_id, lock=True)
         if escrow is None or escrow.balance <= 0:
             return None
         src_id = await self._escrow_source(escrow.id)
