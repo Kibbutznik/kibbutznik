@@ -213,6 +213,25 @@ class ExecutionService:
             return
         ended_action_id = str(proposal.val_uuid)
 
+        # Hold an exclusive transaction-scoped advisory lock on the
+        # ending action's id for the rest of THIS transaction. This
+        # closes the orphan-create race window: a concurrent
+        # `proposal_service.create(JoinAction|DelegateArtifact, ...)`
+        # for the same action would pass its CommunityStatus.ACTIVE
+        # gate (we haven't committed INACTIVE yet) and INSERT a
+        # JoinAction/DelegateArtifact row. Our orphan-sweep below
+        # ran a SELECT, so it didn't see that row, and it would sit
+        # OUT_THERE pointing at a dead action forever.
+        # Both create-time and end-time take the same advisory lock
+        # keyed on the action's UUID, so the create either runs
+        # entirely before or entirely after EndAction's sweep.
+        from sqlalchemy import text as _text
+        await self.db.execute(
+            _text("SELECT pg_advisory_xact_lock("
+                  "hashtextextended(:k, 0))"),
+            {"k": f"end-action:{ended_action_id}"},
+        )
+
         # Sweep the ending action's wallet balance up to its parent
         # community BEFORE marking the action inactive. WalletService
         # no-ops if the parent community isn't financial.
