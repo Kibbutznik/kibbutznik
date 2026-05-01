@@ -184,6 +184,14 @@ LLM_PRESETS = {
     # the current dated alias `mistral-small-2603` (March 2026 build),
     # which is the live successor on the OpenRouter catalog.
     "or-mistral-small":     {"backend": "openrouter", "model": "mistralai/mistral-small-2603",               "think": False},
+    # Mistral Small 3.2 24B — same generation as the retired
+    # `mistral-small-creative` (Mistral Small 3 family). First fallback
+    # if M4 (`mistral-small-2603`) feels too flat / general-purpose.
+    "or-mistral-small-3.2": {"backend": "openrouter", "model": "mistralai/mistral-small-3.2-24b-instruct",   "think": False},
+    # TheDrummer's Cydonia 24B v4.1 — community creative-writing /
+    # roleplay fine-tune of Mistral Small 3 24B. Spiritual successor
+    # to the retired `mistral-small-creative` for persona-driven bots.
+    "or-cydonia-24b":       {"backend": "openrouter", "model": "thedrummer/cydonia-24b-v4.1",                "think": False},
     # `or-lunaris` (sao10k/l3-lunaris-8b) was tested over 6 prompt-
     # tuning cycles in 2026-04-30. The model is a creative-writing
     # fine-tune that hallucinates ids ("12345678", "P-7f3a91c4")
