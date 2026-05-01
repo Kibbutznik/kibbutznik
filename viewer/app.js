@@ -1650,13 +1650,27 @@ function llmLabelFor(presetKey) {
     return presetKey;
 }
 
-function LLMSwitcher({ currentPreset, presets }) {
+function LLMSwitcher({ currentPreset }) {
     const [switching, setSwitching] = React.useState(false);
     const [current, setCurrent] = React.useState(currentPreset || "custom");
+    // Fetch the preset list from the API on mount. /simulation/status
+    // returns only the CURRENT preset, not the full map, so the
+    // dropdown options have to come from /simulation/llm.
+    const [presets, setPresets] = React.useState(null);
 
     React.useEffect(() => {
         if (currentPreset) setCurrent(currentPreset);
     }, [currentPreset]);
+
+    React.useEffect(() => {
+        let cancelled = false;
+        API.get("/simulation/llm").then((data) => {
+            if (!cancelled) setPresets(data?.presets || {});
+        }).catch(() => {
+            if (!cancelled) setPresets({});
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     // Build the option list from the API's preset map. Always include
     // "custom" up top so the current selection still has a slot if
@@ -1739,7 +1753,7 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                     <span className="label">Events</span>
                     <span className="value">{status?.total_events || 0}</span>
                 </div>
-                <LLMSwitcher currentPreset={status?.llm?.preset} presets={status?.llm?.presets} />
+                <LLMSwitcher currentPreset={status?.llm?.preset} />
                 {status?.llm?.avg_latency_s > 0 && (
                     <div className="header-stat header-stat-latency" title={`${status.llm.calls} calls, ${status.llm.errors} errors`}>
                         <span className="label">Avg</span>
