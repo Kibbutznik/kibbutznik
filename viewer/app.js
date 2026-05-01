@@ -1622,11 +1622,11 @@ function VariablesTab({ communityId, openDetail }) {
 
 // ── LLM Switcher ────────────────────────────────────────
 // NOTE: keep these keys in sync with `LLM_PRESETS` in
-// agents/simulation_api.py — the dropdown is rendered from
-// THIS map, not from the API's `presets` field, so a backend-
-// only preset addition won't show up here without an entry below.
-// (TODO: drive the dropdown off `status.llm.presets` so the
-// two lists can't drift again.)
+// Display labels for known preset keys. The dropdown's option list
+// is now driven by the API's `status.llm.presets` map (so a backend
+// preset addition shows up here automatically), but emoji + nicer
+// display names live here. Unknown keys fall back to a generic
+// label derived from the preset key.
 const LLM_LABELS = {
     "custom":              "— custom —",
     "claude-haiku":        "⚡ Claude Haiku",
@@ -1635,18 +1635,34 @@ const LLM_LABELS = {
     "ollama-qwen3":        "🤖 Ollama qwen3:8b",
     "ollama-qwen3-think":  "🧠 Ollama qwen3:8b (think)",
     "or-mistral-small":    "🌐 OR mistral-small",
-    "or-lunaris":          "🌐 OR lunaris-8b",
+    "or-mistral-small-3.2":"🌐 OR mistral-small-3.2-24b",
+    "or-cydonia-24b":      "🌐 OR cydonia-24b (creative)",
     "or-gemini-flash-lite":"🌐 OR gemini-2.5-flash-lite",
     "or-gpt-oss-20b-nitro":"🌐 OR gpt-oss-20b :nitro",
 };
 
-function LLMSwitcher({ currentPreset }) {
+function llmLabelFor(presetKey) {
+    if (LLM_LABELS[presetKey]) return LLM_LABELS[presetKey];
+    // Unknown key — derive a readable label from the slug.
+    if (presetKey.startsWith("or-")) return "🌐 OR " + presetKey.slice(3);
+    if (presetKey.startsWith("ollama-")) return "🦙 Ollama " + presetKey.slice(7);
+    if (presetKey.startsWith("anthropic-")) return "⚡ " + presetKey.slice(10);
+    return presetKey;
+}
+
+function LLMSwitcher({ currentPreset, presets }) {
     const [switching, setSwitching] = React.useState(false);
     const [current, setCurrent] = React.useState(currentPreset || "custom");
 
     React.useEffect(() => {
         if (currentPreset) setCurrent(currentPreset);
     }, [currentPreset]);
+
+    // Build the option list from the API's preset map. Always include
+    // "custom" up top so the current selection still has a slot if
+    // the running model isn't a known preset (custom CLI deploy etc.).
+    const presetKeys = presets ? Object.keys(presets) : [];
+    const optionKeys = ["custom", ...presetKeys.filter(k => k !== "custom")];
 
     async function handleChange(e) {
         const preset = e.target.value;
@@ -1679,8 +1695,8 @@ function LLMSwitcher({ currentPreset }) {
                     opacity: switching ? 0.6 : 1,
                 }}
             >
-                {Object.entries(LLM_LABELS).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
+                {optionKeys.map((key) => (
+                    <option key={key} value={key}>{llmLabelFor(key)}</option>
                 ))}
             </select>
             {switching && <span style={{ marginLeft: 4, fontSize: "0.7rem", color: "var(--text-muted)" }}>…</span>}
@@ -1723,7 +1739,7 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                     <span className="label">Events</span>
                     <span className="value">{status?.total_events || 0}</span>
                 </div>
-                <LLMSwitcher currentPreset={status?.llm?.preset} />
+                <LLMSwitcher currentPreset={status?.llm?.preset} presets={status?.llm?.presets} />
                 {status?.llm?.avg_latency_s > 0 && (
                     <div className="header-stat header-stat-latency" title={`${status.llm.calls} calls, ${status.llm.errors} errors`}>
                         <span className="label">Avg</span>
