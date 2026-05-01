@@ -640,16 +640,34 @@ class Agent:
                 # action still gets created; a follow-up
                 # DelegateArtifact can attach work later.
                 if ptype == "AddAction" and val_uuid:
-                    all_artifact_ids = {
-                        a["id"]
+                    all_artifacts = [
+                        a
                         for arts in snapshot.container_artifacts.values()
                         for a in arts
-                    }
-                    if val_uuid not in all_artifact_ids:
+                    ]
+                    artifact_by_id = {a["id"]: a for a in all_artifacts}
+                    target = artifact_by_id.get(val_uuid)
+                    if target is None:
                         logger.info(
                             f"[{self.persona.name}] AddAction val_uuid "
                             f"{val_uuid[:8]} not in community artifacts — "
                             f"dropping val_uuid, filing as bare action"
+                        )
+                        val_uuid = None
+                    elif target.get("is_plan"):
+                        # M4 picks the 📋 Plan when it's the only
+                        # visible A- id (early rounds). Server
+                        # returns HTTP 422 "AddAction val_uuid points
+                        # at a Plan artifact" and the turn is wasted.
+                        # The bot's intent — create a focused team —
+                        # is still useful; just file the AddAction
+                        # bare and let DelegateArtifact attach a real
+                        # (non-Plan) artifact later.
+                        logger.info(
+                            f"[{self.persona.name}] AddAction val_uuid "
+                            f"{val_uuid[:8]} is the 📋 Plan artifact — "
+                            f"Plans cannot be delegated. Stripping val_uuid, "
+                            f"filing AddAction bare."
                         )
                         val_uuid = None
 
