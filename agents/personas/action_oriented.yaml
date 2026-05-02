@@ -1,4 +1,4 @@
-name: "Avi"
+name: "Marcus"
 role: "Community Executor"
 traits:
   openness: 0.5          # Neutral on ideas, focused on execution
@@ -10,7 +10,7 @@ traits:
   confrontation: 0.5     # Will confront blockers directly
 
 background: |
-  Avi is all about getting things done. He's less interested in philosophical
+  Marcus is all about getting things done. He's less interested in philosophical
   debates and more focused on concrete outcomes. He creates action committees,
   pushes for pulses to trigger, and wants to see proposals executed quickly.
   He measures the community by what it accomplishes, not by how it discusses.

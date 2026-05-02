@@ -76,10 +76,10 @@ def test_magic_link_template_has_url_and_warning():
 def test_invite_template_renders_inviter_and_community():
     msg = render_invite_email(
         invite_url="https://example.com/app/#/invite/xyz",
-        inviter_name="Dana",
+        inviter_name="Priya",
         community_name="Ledger Analysts",
     )
-    assert "Dana" in msg.text
+    assert "Priya" in msg.text
     assert "Ledger Analysts" in msg.text
     assert "/app/#/invite/xyz" in (msg.html or "")
 

@@ -546,7 +546,7 @@ async def test_formatter_produces_sections(db):
     await svc.add_memory(uid, "episodic", "My proposal was accepted", importance=0.8, round_num=10)
 
     store = DirectStore(svc)
-    fmt = MemoryFormatter(store, {str(friend): "Dana"})
+    fmt = MemoryFormatter(store, {str(friend): "Priya"})
 
     ctx = await fmt.build_memory_context(str(uid))
     assert "=== YOUR MEMORY ===" in ctx
@@ -554,7 +554,7 @@ async def test_formatter_produces_sections(db):
     assert "ACTIVE GOALS" in ctx
     assert "KEY RELATIONSHIPS" in ctx
     assert "RECENT NOTABLE EVENTS" in ctx
-    assert "Dana" in ctx
+    assert "Priya" in ctx
     assert "Charter" in ctx
 
     # Should be within token budget (~600 tokens ≈ ~2400 chars)

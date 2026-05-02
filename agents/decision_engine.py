@@ -483,7 +483,7 @@ real action this turn (support_pulse, support_proposal, comment, do_nothing, etc
 
 ✅ CORRECT — attach as a sibling field on a real action:
   {{"action": "support_pulse", "reason": "…", "update_intention": "Push the WG pulse this round"}}
-  {{"action": "do_nothing",    "reason": "…", "update_intention": "Wait for Rivka to support before supporting pulse"}}
+  {{"action": "do_nothing",    "reason": "…", "update_intention": "Wait for Mei to support before supporting pulse"}}
 
 ❌ WRONG — never use it as the value of `action`:
   {{"action": "update_intention", "update_intention": "..."}}   ← will be rejected as Unknown action
@@ -499,7 +499,7 @@ intention, which you can choose to continue, update, or abandon. If you don't at
 
 Good intentions (short, concrete, actionable next step):
   "Get the Onboarding Writers AddAction accepted, then JoinAction to it"
-  "Push back on Rivka's RemoveStatement — wait for 2 supporters before supporting pulse"
+  "Push back on Mei's RemoveStatement — wait for 2 supporters before supporting pulse"
   "Fill the empty 'Conflict Resolution' artifact this round"
 
 Bad intentions (vague, persona-shaped, not plan-shaped):
