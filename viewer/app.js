@@ -2479,6 +2479,7 @@ function WorkTab({ communityId, openDetail, bbUserId }) {
 // Auto-refreshes on the same kbz-refresh event as WorkTab.
 function MetricsTab({ communityId }) {
     const [data, setData] = useState(null);
+    const [agentStats, setAgentStats] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -2486,9 +2487,16 @@ function MetricsTab({ communityId }) {
         if (!communityId) return;
         if (showSpinner) setLoading(true);
         setError(null);
-        return API.get(`/metrics/community/${communityId}`)
+        const metricsPromise = API.get(`/metrics/community/${communityId}`)
             .then(setData)
-            .catch(e => { setError(String(e)); setData(null); })
+            .catch(e => { setError(String(e)); setData(null); });
+        // Per-agent action stats from the simulation run. Independent
+        // of the community-id metric — `orch.events` covers the whole
+        // run across all communities. Failure here is non-fatal.
+        const agentPromise = API.get(`/simulation/agent-stats`)
+            .then(setAgentStats)
+            .catch(() => setAgentStats(null));
+        return Promise.all([metricsPromise, agentPromise])
             .finally(() => { if (showSpinner) setLoading(false); });
     }, [communityId]);
 
@@ -2619,6 +2627,102 @@ function MetricsTab({ communityId }) {
             </div>
             <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                 Hover a card for its definition. Green = healthy, yellow = concerning, red = unhealthy. Live-refreshes on every pulse.
+            </div>
+            <AgentActionStats stats={agentStats} />
+        </div>
+    );
+}
+
+// Per-agent action breakdown. Sourced from /simulation/agent-stats
+// which aggregates orch.events for the full run (across all
+// communities, not just this one). Renders one row per agent with
+// total + success rate + count for each action_type the agent has
+// emitted. Hidden when no data has loaded yet.
+function AgentActionStats({ stats }) {
+    if (!stats || !stats.agents || stats.agents.length === 0) return null;
+    // Collect every action_type that appears anywhere so columns line up.
+    const allActions = Array.from(
+        new Set(stats.agents.flatMap(a => Object.keys(a.by_action)))
+    ).sort((a, b) => {
+        // Most-common-overall first.
+        const totA = stats.agents.reduce((n, x) => n + (x.by_action[a] || 0), 0);
+        const totB = stats.agents.reduce((n, x) => n + (x.by_action[b] || 0), 0);
+        return totB - totA;
+    });
+    const cell = {
+        padding: "6px 10px",
+        borderBottom: "1px solid #2a2a2a",
+        textAlign: "right",
+        fontVariantNumeric: "tabular-nums",
+        fontSize: "0.85rem",
+    };
+    const headerCell = { ...cell, color: "var(--text-muted)", textAlign: "left", fontWeight: 600, fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em" };
+    return (
+        <div style={{ marginTop: "1.5rem" }}>
+            <div style={{ marginBottom: "0.5rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                <strong style={{ color: "var(--text)" }}>Per-Agent Actions (this run)</strong> &middot; {stats.total_events} total events across all communities
+            </div>
+            <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 600 }}>
+                    <thead>
+                        <tr>
+                            <th style={{ ...headerCell, textAlign: "left" }}>Agent</th>
+                            <th style={{ ...headerCell, textAlign: "right" }}>Total</th>
+                            <th style={{ ...headerCell, textAlign: "right" }}>OK</th>
+                            <th style={{ ...headerCell, textAlign: "right" }}>Fail</th>
+                            <th style={{ ...headerCell, textAlign: "right" }}>OK %</th>
+                            {allActions.map(a => (
+                                <th key={a} style={{ ...headerCell, textAlign: "right" }}>{a}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {stats.agents.map(agent => {
+                            const okPct = (agent.success_rate * 100).toFixed(0);
+                            const okColor = agent.success_rate >= 0.8 ? "#4ecca3" : agent.success_rate >= 0.5 ? "#f0c040" : "#e94560";
+                            return (
+                                <tr key={agent.name}>
+                                    <td style={{ ...cell, textAlign: "left", fontWeight: 600, color: "var(--text)" }}>{agent.name}</td>
+                                    <td style={cell}>{agent.total}</td>
+                                    <td style={{ ...cell, color: "#4ecca3" }}>{agent.successes}</td>
+                                    <td style={{ ...cell, color: agent.failures > 0 ? "#e94560" : "var(--text-muted)" }}>{agent.failures}</td>
+                                    <td style={{ ...cell, color: okColor, fontWeight: 600 }}>{okPct}%</td>
+                                    {allActions.map(a => {
+                                        const n = agent.by_action[a] || 0;
+                                        return (
+                                            <td key={a} style={{ ...cell, color: n > 0 ? "var(--text)" : "var(--text-muted)" }}>{n || "—"}</td>
+                                        );
+                                    })}
+                                </tr>
+                            );
+                        })}
+                        {/* Totals row */}
+                        {(() => {
+                            const totals = { total: 0, successes: 0, failures: 0, by_action: {} };
+                            stats.agents.forEach(a => {
+                                totals.total += a.total;
+                                totals.successes += a.successes;
+                                totals.failures += a.failures;
+                                Object.entries(a.by_action).forEach(([k, v]) => {
+                                    totals.by_action[k] = (totals.by_action[k] || 0) + v;
+                                });
+                            });
+                            const okPct = totals.total ? ((totals.successes / totals.total) * 100).toFixed(0) : "0";
+                            return (
+                                <tr style={{ borderTop: "2px solid #444" }}>
+                                    <td style={{ ...cell, textAlign: "left", fontWeight: 700, color: "var(--text-muted)" }}>TOTAL</td>
+                                    <td style={{ ...cell, fontWeight: 700 }}>{totals.total}</td>
+                                    <td style={{ ...cell, color: "#4ecca3", fontWeight: 700 }}>{totals.successes}</td>
+                                    <td style={{ ...cell, color: totals.failures > 0 ? "#e94560" : "var(--text-muted)", fontWeight: 700 }}>{totals.failures}</td>
+                                    <td style={{ ...cell, fontWeight: 700 }}>{okPct}%</td>
+                                    {allActions.map(a => (
+                                        <td key={a} style={{ ...cell, fontWeight: 700 }}>{totals.by_action[a] || "—"}</td>
+                                    ))}
+                                </tr>
+                            );
+                        })()}
+                    </tbody>
+                </table>
             </div>
         </div>
     );
