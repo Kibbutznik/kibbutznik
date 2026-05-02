@@ -805,6 +805,7 @@ async def observe_community(
                     "author_user_id": a.get("author_user_id"),
                     "proposal_id": a.get("proposal_id"),
                     "status": a.get("status"),
+                    "is_plan": a.get("is_plan"),
                 })
                 # Record any delegations OUT of this artifact.
                 children = a.get("delegated_to") or []

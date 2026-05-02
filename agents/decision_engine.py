@@ -24,6 +24,30 @@ KBZ_RULES = """
 
 You are a member of a KBZ (Kibutznik) community — a pulse-based direct democracy.
 
+### 🛑 STOP — TWO ABSOLUTE RULES BEFORE YOU OUTPUT 🛑
+
+**RULE 1 — NO ANGLE-BRACKET TEXT IN YOUR JSON.**
+This prompt teaches you using placeholders like `A-<artifact_id>` or
+`C-<container_id from state>`. Those `<...>` parts are EXPLANATION, not
+values. **Your JSON output must contain ZERO `<` and ZERO `>` characters.**
+If you would emit `<artifact_id>`, `<container_id>`, `<exact-id>`,
+`<plan_artifact>`, `<some-uuid>`, or anything resembling a placeholder —
+STOP and pick a different action. The action you wanted is not yet
+possible because you don't have the real id from the Community State
+section.
+
+**RULE 2 — `action` HAS ONLY 6 LEGAL VALUES.**
+The `action` field in every JSON object is ONE of:
+`do_nothing`, `create_proposal`, `support_proposal`, `support_pulse`,
+`comment`, `send_chat`.
+ANY other value — `update_intention`, `intention`, `propose`, `support`,
+`vote`, `vote_comment`, `reply_comment`, `observe`, `act` — is REJECTED.
+`update_intention` is a SIBLING FIELD you can attach to a real action
+(see "update_intention SIDE-FIELD" near the end). It is never the value
+of `action`.
+
+Violations of either rule are silently dropped, wasting your turn.
+
 ### 🆔 ID PREFIXES — READ THIS FIRST 🆔
 Every id you see in the community state is tagged with a single-letter
 prefix that names its TYPE. Pass the tag back verbatim — the runtime
@@ -84,8 +108,8 @@ Every member implicitly "signs" them by joining.
 
 ### Proposal Types
 - **AddStatement** — community principle/rule (constitution) — defines what members agree to follow
-- **ChangeVariable** — change governance thresholds (proposal_text=variable name, val_text=new value)
-- **AddAction** — create a working group/committee (becomes its own sub-community with members, pulses, proposals!). **Optional one-step shortcut: include `val_uuid=A-<parent artifact id>` to ALSO auto-delegate that artifact to the new action on accept** — saves a pulse cycle vs. AddAction-then-DelegateArtifact. **CRITICAL: only include `val_uuid` if you can copy an `A-…` id VERBATIM from the community state's "Artifact Containers" section AND it is not the 📋 Plan. NEVER invent a UUID. If you don't see an eligible artifact, OMIT `val_uuid` entirely — the action will be created bare and a separate DelegateArtifact can attach work later.**
+- **ChangeVariable** — change governance thresholds. **STRICT FORMAT:** `proposal_text` MUST start with EXACTLY ONE variable name on the FIRST LINE — nothing else, no sentence, no description. Allowed names (one of these, copied verbatim, case-sensitive): `PulseSupport`, `ProposalSupport`, `MaxAge`, `Membership`, `ThrowOut`, `AddStatement`, `RemoveStatement`, `ReplaceStatement`, `AddAction`, `JoinAction`, `EndAction`, `Funding`, `Payment`, `payBack`, `Dividend`, `SetMembershipHandler`, `CreateArtifact`, `EditArtifact`, `RemoveArtifact`, `DelegateArtifact`, `CommitArtifact`, `ChangeVariable`, `MinCommittee`, `ProposalRateLimit`, `seniorityWeight`, `membershipFee`, `dividendBySeniority`, `proposalCooldown`, `quorumThreshold`. Any reasoning/explanation goes on lines 2+ of `proposal_text`. `val_text` is the new numeric value. Example proposal_text: `"MaxAge\\nIncrease to 3 because proposals need more time to gather support"`. Wrong: `"Increase MaxAge by 1 pulse..."` (that whole sentence is being read as the variable name, which fails 422).
+- **AddAction** — create a working group/committee (becomes its own sub-community with members, pulses, proposals!). Optional one-step shortcut: include `val_uuid` pointing at an A- artifact id to ALSO auto-delegate that artifact to the new action on accept — saves a pulse cycle vs. AddAction-then-DelegateArtifact. **CRITICAL Plan rule: the 📋 Plan artifact CANNOT be the val_uuid of AddAction. Look at the artifact's title/marker in state — anything tagged 📋 or named "Plan" is OFF LIMITS for val_uuid. The server returns HTTP 422 "AddAction val_uuid points at a Plan artifact" and your turn is wasted. If the only artifact you can see is the Plan, OMIT val_uuid entirely — file a bare AddAction and DelegateArtifact a non-Plan artifact later.** Other rules: only include val_uuid if you can copy an A-... id VERBATIM from the Artifact Containers section. If you don't see an eligible non-Plan artifact, OMIT val_uuid.
 - **JoinAction** — join an existing, already-accepted action — val_uuid=K-<action_id from "Actions You Can Join" or "Active Actions" in state — NEVER use an AddAction proposal's id (P-…); if the AddAction is still OutThere/OnTheAir the action doesn't exist yet!> — proposal goes to ROOT community. **If "Actions You Can Join" is empty AND "Active Actions" is empty, do NOT propose JoinAction — there's nothing to join. Propose AddAction first (with an `A-…` artifact id if you have one).** Wanting to "help" is not a reason to file a JoinAction with no target — that just wastes a turn.
 - **Membership** — welcome a new member (val_uuid=U-<the new user's id>)
 - **ThrowOut** — remove a member who violates community rules (needs 60%) — val_uuid=U-<the target member's user_id>. The thrown-out member is removed from ALL sub-communities too.
@@ -142,7 +166,7 @@ The community doesn't need 30 "Audit Committees" — it needs ONE with enough me
 2. **support_proposal** — back a proposal you agree with
 3. **support_pulse** — push the pulse forward (STRATEGIC — think first!)
 4. **comment** — discuss a proposal (one comment per proposal max)
-5. **send_chat** — post an informal message to the community chat (max 1 per round). Use chat to: float ideas before formalizing proposals, coordinate pulse timing, discuss what artifacts to write next, respond to other members' chat messages, or socialize. Chat is NOT for formal governance — use create_proposal for that. **Do NOT repeat what others have already said in recent chat. Read the chat history first — if someone already posted a call-to-action or reminder, do not echo it.**
+5. **send_chat** — post an informal message to the community chat (max 1 per round). Use chat SPARINGLY — only when you have something concrete and not-yet-said. Good chat: floating an idea before formalizing, coordinating pulse timing, naming a specific artifact gap. **Bad chat (do NOT post these): "let's all support the pulse", "great work everyone", "I think we should focus on X", general encouragement, restating what someone else said, calling for cooperation. If your chat would just be a vibe or a generic call-to-action, DO NOT POST IT — file a real proposal or support an existing one instead.** Chat is NOT for formal governance — use create_proposal for that.
 6. **do_nothing** — LAST RESORT. There is almost always something productive: support a proposal, support the pulse, write content. Doing nothing is FAILURE.
 
 ### ⚡ EXECUTION ORDER: support_pulse is ALWAYS last
@@ -480,36 +504,79 @@ the proposal's "pitch" and shown to everyone in the community. Write it as a
 1–3-sentence case for accepting the proposal (not a log line to yourself).
 Speak in first-person, make the "why" concrete, and keep it short.
 
-Examples:
+Examples (the ids below are FAKE — used only to show JSON shape; you must
+copy a real id from your Community State, never reuse these strings):
 [
-  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "How We Onboard a New Member", "val_uuid": "C-<container_id from Artifact Containers section>", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
-  {{"action": "support_proposal", "proposal_id": "P-<exact-id>", "reason": "This aligns with our values", "eagerness": 7, "eager_front": "support"}},
+  {{"action": "create_proposal", "proposal_type": "CreateArtifact", "proposal_text": "How We Onboard a New Member", "val_uuid": "C-FAKE-EXAMPLE-CONTAINER", "val_text": "How We Onboard a New Member", "reason": "The handbook needs an onboarding section — creating the title slot", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "support_proposal", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "reason": "This aligns with our values", "eagerness": 7, "eager_front": "support"}},
   {{"action": "support_pulse", "reason": "The proposals I support have enough votes — lock in acceptance now!", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "A-<artifact_id marked EMPTY>", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "EditArtifact", "val_uuid": "A-FAKE-EXAMPLE-ARTIFACT", "proposal_text": "## How We Onboard a New Member\\n\\nWhen a newcomer applies via a Membership proposal, the community enters a 1-pulse evaluation period. During this time, at least two existing members must meet with the applicant (via interview or async Q&A) and post a public comment on the proposal summarizing the conversation. The community then votes: if the proposal passes, the new member is assigned a buddy — the member who first supported the proposal — who walks them through their first three rounds of governance.", "val_text": "How We Onboard a New Member", "reason": "Filling the empty onboarding artifact with concrete procedures", "eagerness": 9, "eager_front": "produce"}},
   {{"action": "support_pulse", "reason": "Keep the governance cycle moving — proposals need pulses to advance", "eagerness": 7, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "A-<artifact_id>", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
+  {{"action": "create_proposal", "proposal_type": "AddAction", "proposal_text": "A focused team to write the onboarding and orientation sections of the handbook", "val_text": "Onboarding Writers", "val_uuid": "A-FAKE-EXAMPLE-ARTIFACT", "reason": "Need a dedicated team to flesh out the onboarding artifact — pairing AddAction with val_uuid so the new action is born owning the artifact (one accepted proposal instead of two).", "eagerness": 8, "eager_front": "produce"}},
   {{"action": "support_pulse", "reason": "Need the pulse to fire so the AddAction-with-delegation can land", "eagerness": 8, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "K-<action_id from 'Actions You Can Join' in state>", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
+  {{"action": "create_proposal", "proposal_type": "JoinAction", "proposal_text": "I want to help write the onboarding section", "val_uuid": "K-FAKE-EXAMPLE-ACTION", "reason": "Join the working group to contribute", "eagerness": 8, "eager_front": "propose"}}
 ]
+
+⚠️ The strings `C-FAKE-EXAMPLE-CONTAINER`, `A-FAKE-EXAMPLE-ARTIFACT`,
+`K-FAKE-EXAMPLE-ACTION`, `P-FAKE-EXAMPLE-PROPOSAL`, `S-FAKE-EXAMPLE-...`,
+`U-FAKE-EXAMPLE-...` are FAKE. Do not put them in your output. Copy the
+real id from the Community State above. If no real id of the right kind
+exists in state, the action you wanted is not yet possible — pick
+something else.
 [
   {{"action": "send_chat", "message_text": "Hey everyone — should we delegate the onboarding artifact to a new Action? It needs detailed work.", "reason": "Coordinating artifact workflow", "eagerness": 5, "eager_front": "comment"}},
-  {{"action": "support_proposal", "proposal_id": "P-<id>", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
+  {{"action": "support_proposal", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "reason": "Good artifact title for the handbook", "eagerness": 7, "eager_front": "support"}}
 ]
 [
-  {{"action": "comment", "proposal_id": "P-<EditArtifact id>", "comment_text": "Love 'She arrived on the last train of the year' — sharper than the original. But cutting the sister's letter loses her motive. Mixed. Restore the letter in para 2.", "reason": "Praise the prose lift but flag the lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
+  {{"action": "comment", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "comment_text": "Love 'She arrived on the last train of the year' — sharper than the original. But cutting the sister's letter loses her motive. Mixed. Restore the letter in para 2.", "reason": "Praise the prose lift but flag the lost motivation beat", "eagerness": 8, "eager_front": "comment"}},
   {{"action": "support_pulse", "reason": "Keep the cycle moving", "eagerness": 6, "eager_front": "pulse"}}
 ]
 [
-  {{"action": "comment", "proposal_id": "P-<EditArtifact id>", "comment_text": "Hate it. Replaces 'rusted gate, dog with one eye, woodsmoke' with 'atmosphere, foreboding, history' — telling, not showing. 'I sense great evil' is a cliché. Keep the sensory detail.", "reason": "Telling-vs-showing critique with concrete quoted evidence", "eagerness": 9, "eager_front": "comment"}}
+  {{"action": "comment", "proposal_id": "P-FAKE-EXAMPLE-PROPOSAL", "comment_text": "Hate it. Replaces 'rusted gate, dog with one eye, woodsmoke' with 'atmosphere, foreboding, history' — telling, not showing. 'I sense great evil' is a cliché. Keep the sensory detail.", "reason": "Telling-vs-showing critique with concrete quoted evidence", "eagerness": 9, "eager_front": "comment"}}
 ]
 [{{"action": "do_nothing", "reason": "Waiting ONE round — my key proposal needs 1 more supporter before I pulse", "eagerness": 3, "eager_front": "observe"}}]
-REMEMBER: include `support_pulse` in MOST of your turns. A turn without `support_pulse` should be the exception, not the rule."""
+
+═══════════════════════════════════════════════════════════════════
+🚨 FINAL CHECK BEFORE YOU OUTPUT — read these three rules again:
+═══════════════════════════════════════════════════════════════════
+
+1. **`action` is ONE of:** `do_nothing`, `create_proposal`, `support_proposal`,
+   `support_pulse`, `comment`, `send_chat`. Nothing else.
+   - If you wrote `"action": "update_intention"` — DELETE that object,
+     put `update_intention` as a SIBLING FIELD on a real action.
+     Wrong: `{{"action": "update_intention", "text": "..."}}`
+     Right: `{{"action": "do_nothing", "reason": "...", "update_intention": "..."}}`
+   - If you wrote `"action": "intention"`, `"action": "vote"`,
+     `"action": "propose"`, `"action": "support"`, or anything else
+     not in the list above — same fix: pick one of the 6 legal values.
+
+2. **No `<` or `>` characters anywhere in your JSON values.**
+   Scan your output. If any value contains `<` or `>`, that value is a
+   placeholder you copied from this prompt by mistake. Fix it: either
+   put a REAL id from the Community State, or change the action.
+
+3. **Ids are full 36-character UUIDs with a single-letter prefix.**
+   - Real id: `K-7d793320-08f4-4b48-8c1a-8e25f9c0a7e2`
+   - NOT a real id: `K-marketin`, `K-audience`, `K-a7b397ec`,
+     `K-brand_me`, `marketin`, `audience` (these are name slugs or
+     truncations — NOT ids). If you only see a name in state, that
+     action does not have an id you can use yet. Pick a different action.
+   - Same rule for A-, C-, P-, S-, U-, M- ids: full UUID after the prefix.
+
+4. **The 📋 Plan artifact is special — it CANNOT be the `val_uuid` of
+   `AddAction` or `DelegateArtifact`.** Plans stay in their container
+   forever and guide the work; they don't get delegated. If you want
+   AddAction to come with an artifact, use a NON-Plan A- id from state
+   (or omit val_uuid).
+
+REMEMBER: include `support_pulse` in MOST of your turns. A turn without
+`support_pulse` should be the exception, not the rule."""
 
 
 class DecisionEngine:
@@ -772,10 +839,132 @@ class DecisionEngine:
             logger.warning("[OLLAMA] Both content and thinking fields are empty!")
         return raw
 
+    # Models (notably Mistral Small 4) routinely emit `"action":
+    # "update_intention"` despite the prompt explaining that
+    # update_intention is a SIBLING FIELD, not an action. The prompt
+    # cycle 2 made this WORSE (13 hits / round). Coerce it server-side:
+    # promote the `update_intention` value into a sibling field on a
+    # do_nothing action and keep the turn productive instead of dropping
+    # it as Unknown. Same shape for the other near-miss action verbs
+    # ("intention", "vote", "propose", "support", "observe", "act") —
+    # map them to the closest legal action so the bot's intent isn't
+    # silently lost.
+    _ACTION_COERCIONS = {
+        "update_intention": "do_nothing",
+        "intention":        "do_nothing",
+        "observe":          "do_nothing",
+        "act":              "do_nothing",
+        "vote":             "support_proposal",   # if proposal_id present
+        "vote_comment":     "do_nothing",         # field-only, not action
+        "reply_comment":    "comment",
+        "propose":          "create_proposal",
+        "support":          "support_proposal",
+        "pulse":            "support_pulse",
+        "chat":             "send_chat",
+        "message":          "send_chat",
+    }
+    _LEGAL_ACTIONS = {
+        "do_nothing", "create_proposal", "support_proposal",
+        "support_pulse", "comment", "send_chat",
+    }
+
+    # M4 hallucinates id-shaped values: emits action-name slugs
+    # (`metrics_`, `onboardi`, `brand_me`) or 8-char UUID truncations
+    # (`d4f2e7c6`, `ba02a27f`) where a real 36-char UUID + prefix
+    # belongs. The server rejects them with confusing 4xx errors that
+    # waste a turn. Reject at parse time instead — convert the action
+    # to do_nothing with a clear reason so the agent's failure log
+    # gives the LLM useful "stop emitting fake ids" feedback next turn.
+    _ID_PARAM_PREFIXES = {
+        "val_uuid":    ("A", "C", "K", "S", "U"),
+        "proposal_id": ("P",),
+        "comment_id":  ("M",),
+        # val_text holds an id only for DelegateArtifact (K-…) and
+        # CommitArtifact (JSON list of A-… ids). The DelegateArtifact
+        # case is the M4 footgun — handled in _looks_like_real_id.
+    }
+    # The renderer tags ids with first 8 hex chars (see
+    # community_state.tag_id), so legitimate ids in model output
+    # often look like `K-d4f2e7c6` not full 36-char UUIDs. Accept
+    # any all-hex body of >= 6 chars (with optional dashes for full
+    # UUID form). Reject name-slug bodies like `metrics_`,
+    # `onboardi`, `brand_me`, `marketin` — those are never ids.
+    _HEX_ID_BODY_RE = re.compile(r"^[0-9a-fA-F]{6,}(-[0-9a-fA-F]+)*$")
+
+    @classmethod
+    def _looks_like_real_id(cls, value: str, allowed_prefixes: tuple[str, ...]) -> tuple[bool, str]:
+        """Return (ok, reason). ok=True iff value is `<allowed>-<hex>`
+        where <hex> is at least 6 hex chars (the snapshot's tagged
+        truncation form). The agent layer's resolver does prefix-match
+        against the snapshot to expand to a full UUID."""
+        if not isinstance(value, str) or len(value) < 4:
+            return False, f"empty or too short: {value!r}"
+        if "-" not in value:
+            return False, f"no prefix dash: {value!r}"
+        prefix, _, body = value.partition("-")
+        if prefix not in allowed_prefixes:
+            return False, (
+                f"prefix {prefix!r} not in {allowed_prefixes} (got {value!r})"
+            )
+        if not cls._HEX_ID_BODY_RE.match(body):
+            return False, (
+                f"body is not hex — looks like a name slug, not a "
+                f"real id: {value!r}"
+            )
+        return True, ""
+
+    @classmethod
+    def _validate_id_params(cls, action_type: str, data: dict) -> str | None:
+        """Return None if all id params are well-formed; otherwise an
+        error string. Skips do_nothing / send_chat / support_pulse
+        (which carry no ids)."""
+        if action_type in ("do_nothing", "send_chat", "support_pulse"):
+            return None
+        for key, prefixes in cls._ID_PARAM_PREFIXES.items():
+            if key in data and data[key] is not None:
+                ok, reason = cls._looks_like_real_id(data[key], prefixes)
+                if not ok:
+                    return f"{key} {reason}"
+        # DelegateArtifact: val_text must be a K- id (action UUID).
+        # Other proposal types use val_text as free text — leave alone.
+        if (
+            action_type == "create_proposal"
+            and data.get("proposal_type") == "DelegateArtifact"
+            and data.get("val_text")
+        ):
+            ok, reason = cls._looks_like_real_id(data["val_text"], ("K",))
+            if not ok:
+                return f"val_text (DelegateArtifact target) {reason}"
+        return None
+
     def _parse_single_action(self, data: dict) -> AgentAction:
         """Convert a single action dict into an AgentAction."""
-        action_type = data.get("action", "do_nothing")
+        raw_action = data.get("action", "do_nothing")
+        action_type = raw_action
         reason = data.get("reason", "")
+        # Coerce common near-miss action names. If the model emitted
+        # `"action": "update_intention"` with the intent text in some
+        # field (`text`, `update_intention`, `intention`, `value`),
+        # promote that text into the canonical `update_intention`
+        # sibling field on a do_nothing.
+        if action_type not in self._LEGAL_ACTIONS:
+            mapped = self._ACTION_COERCIONS.get(action_type)
+            if mapped is not None:
+                if action_type in ("update_intention", "intention") and "update_intention" not in data:
+                    intent = (
+                        data.get("text") or data.get("intention")
+                        or data.get("value") or data.get("update_intention")
+                        or reason
+                    )
+                    if intent:
+                        data = {**data, "update_intention": intent}
+                if action_type == "vote" and "proposal_id" not in data:
+                    mapped = "do_nothing"
+                logger.debug(
+                    "[LLM] coerced action %r -> %r (model near-miss)",
+                    action_type, mapped,
+                )
+                action_type = mapped
         raw_eagerness = data.get("eagerness", 5)
         try:
             eagerness = max(1, min(10, int(raw_eagerness)))
@@ -786,6 +975,31 @@ class DecisionEngine:
             eager_front = "observe"
         params = {k: v for k, v in data.items()
                   if k not in ("action", "reason", "eagerness", "eager_front")}
+
+        # Strict id-format gate. M4 hallucinates `K-marketin`,
+        # `K-onboardi`, 8-char UUID truncations, etc. — the server
+        # rejects them with confusing 4xx errors. Catch them here
+        # instead so the agent loop logs a clean "fake id" failure
+        # next turn instead of wasting a real action.
+        id_err = self._validate_id_params(action_type, params)
+        if id_err is not None:
+            logger.debug(
+                "[LLM] id validation rejected %s action: %s",
+                action_type, id_err,
+            )
+            return AgentAction(
+                action_type="do_nothing",
+                reason=(
+                    f"Skipped fabricated id ({id_err}). The id you "
+                    f"emitted is not a real 36-char UUID from the "
+                    f"Community State — pick a different action or "
+                    f"use a real id."
+                ),
+                params={},
+                eagerness=eagerness,
+                eager_front="observe",
+            )
+
         return AgentAction(action_type=action_type, reason=reason, params=params,
                            eagerness=eagerness, eager_front=eager_front)
 
