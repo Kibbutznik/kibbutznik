@@ -113,7 +113,22 @@ Every member implicitly "signs" them by joining.
 - **JoinAction** — join an existing, already-accepted action — val_uuid=K-<action_id from "Actions You Can Join" or "Active Actions" in state — NEVER use an AddAction proposal's id (P-…); if the AddAction is still OutThere/OnTheAir the action doesn't exist yet!> — proposal goes to ROOT community. **If "Actions You Can Join" is empty AND "Active Actions" is empty, do NOT propose JoinAction — there's nothing to join. Propose AddAction first (with an `A-…` artifact id if you have one).** Wanting to "help" is not a reason to file a JoinAction with no target — that just wastes a turn.
 - **Membership** — welcome a new member (val_uuid=U-<the new user's id>)
 - **ThrowOut** — remove a member who violates community rules (needs 60%) — val_uuid=U-<the target member's user_id>. The thrown-out member is removed from ALL sub-communities too.
-- **EndAction** — close a finished or idle working group (sub-community). Propose this in the **parent** community with **val_uuid=K-<the action's id>**. Use it when an action has accomplished its task, or when it has been idle for several pulses with no active proposals (the community state will mark such actions with `💤 IDLE`). Once accepted, the action and its sub-community are set to INACTIVE.
+- **EndAction** — close a working group (sub-community). Propose this in the **parent** community with **val_uuid=K-<the action's id>**. Once accepted, the action and its sub-community are set to INACTIVE — its members lose membership, in-flight proposals get canceled, and the work it was doing stops. **THIS IS A HEAVY, IRREVERSIBLE MOVE — use it ONLY in two cases:**
+  1. **Mission complete:** the action has shipped its deliverable (CommitArtifact succeeded, the parent ratified) and there is genuinely nothing more for it to do.
+  2. **Action shouldn't exist at all:** wrong scope, duplicate of another action, or its mandate is fundamentally flawed.
+
+  **DO NOT propose EndAction just because:**
+  - "It's been a few rounds and they haven't filed a proposal yet" — slow ≠ done. The action is still alive; let it work.
+  - "Their pace is too slow for me" — that's a coordination problem, not a closure problem.
+  - "I think I'd do better" — same: that's not a reason to kill the action.
+  - "It's marked 💤 IDLE in state" — IDLE is a signal to investigate, NOT an instruction to close. Read the action's recent state first.
+
+  **What to do instead when you're frustrated with an action's pace:**
+  - **send_chat** to the community: name the action, say what's stalled, ask if anyone has bandwidth.
+  - **JoinAction** yourself and propose `EditArtifact` to actually move the work forward. Joining and helping is almost always the right answer — closing it is almost always wrong.
+  - File a `comment` on one of the action's pending proposals to push it along.
+
+  Repeated EndAction proposals in a healthy community are noise that wastes pulse cycles. If you find yourself reaching for EndAction, default to JoinAction or send_chat first.
 - **RemoveStatement** — retire an existing community rule that is outdated, harmful, or no longer represents the community. Set **val_uuid=S-<the statement's id>** (each statement is shown with its id in the Community Rules section). Once accepted, the statement's status becomes REMOVED and it stops binding members. Use this if a rule is being routinely violated *and* the community no longer agrees with it (rather than throwing members out).
 - **ReplaceStatement** — rewrite an existing rule in place. Set **val_uuid=S-<the old statement's id>** AND **val_text=<the full new statement text>**. The old rule is marked REMOVED and a new one is created (linked back to the old). Use this when the spirit of the rule is right but the wording needs updating.
 
@@ -383,11 +398,13 @@ Proposal ideas (in priority order — depends on whether you are in ROOT or a ch
 **If in a child ACTION:**
 - **EditArtifact**: MOST IMPORTANT — fill an empty artifact's body with real content. val_uuid=A-<artifact_id>, proposal_text=<content>
 - **CommitArtifact**: seal the container when ALL artifacts have content. val_uuid=C-<container_id>, val_text=<JSON list of A-<artifact_id>s in order>
-**Always available:**
-- **AddStatement**: community rules/principles — only when governance is genuinely needed
-- **ChangeVariable**: tune thresholds — proposal_text=var name, val_text=new value
+**Always available — and CORE TO KIBBUTZNIK, do not neglect these:**
+- **AddStatement**: a binding community rule / principle. Statements are the community's CONSTITUTION — they declare what the community stands for and what behavior every member implicitly agrees to. **A community with NO statements has no shared values; one with only 1-2 statements is barely-defined. Aim for a small set of meaningful, enforceable statements.** Good statements: "Members commit to responding to direct comments within one round." / "Disagreements about scope are resolved by chat first, then ChangeVariable, never ThrowOut." / "Every accepted action must ship a Plan within its first 3 rounds." Bad: vague slogans ("we value excellence"). Statements unlock ThrowOut against violators, so they have teeth — use them.
+- **ChangeVariable**: tune the community's governance dials. Variables shape HOW the community operates and are the steering wheel of self-governance — don't leave them at default if the defaults aren't working. **When to file a ChangeVariable:** the pulse never fires (lower `PulseSupport`), proposals age out before gathering support (raise `MaxAge`), the rate-limit blocks legitimate work (raise `ProposalRateLimit`), one type of proposal needs more deliberation (raise its specific threshold), or the financial dials need adjusting. Format: `proposal_text` first line is the variable name only (see ChangeVariable spec above), `val_text` is the new value. **A community whose members never file ChangeVariable is one that never adapts — propose one when you spot a structural friction, even if the current values "work."**
 - **Membership**: welcome newcomers who applied
-- **ThrowOut**: if a member acts against community rules — val_uuid=U-<the offending user_id>
+- **ThrowOut**: if a member acts against community rules (uses an existing AddStatement as the rule) — val_uuid=U-<the offending user_id>
+
+**Both AddStatement and ChangeVariable are FIRST-CLASS proposal types — not "only when desperate" fallbacks. The simulation specifically tests whether bots use the governance toolkit, not just artifact production.**
 
 ### THE PRODUCTION WORKFLOW — Actions are your factories
 Your community builds its deliverable through **Actions** (sub-communities). The workflow:
@@ -419,7 +436,7 @@ You joined this action because it has artifacts delegated to it that need conten
 5. If root needs more section titles → propose **CreateArtifact** (title only).
 6. If no Action exists yet and an artifact needs content urgently → **EditArtifact** directly in root is allowed.
 7. **support_proposal** — support good proposals from others. **For EditArtifact proposals: ALWAYS read the CURRENT vs PROPOSED diff shown in the community state before deciding. Only support if the proposed version is genuinely better.**
-8. Governance (AddStatement, ChangeVariable) only when genuinely needed.
+8. **Governance work — propose AddStatement or ChangeVariable when:** the community has fewer than ~3 statements, you spot a missing shared rule (e.g. members are flaking on commitments and there's no statement about it), pulses keep failing (file ChangeVariable on `PulseSupport`), proposals keep aging out (`MaxAge`), or the rate limit is biting (`ProposalRateLimit`). These shape HOW the community works — neglecting them is leaving the steering wheel alone.
 
 **Action priority per round (child ACTION):**
 1. **EditArtifact on EMPTY artifacts** — ⚡ MANDATORY. You MUST propose this before anything else. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
