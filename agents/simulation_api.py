@@ -257,6 +257,50 @@ async def run_one_round():
     }
 
 
+@router.get("/agent-stats")
+async def get_agent_stats():
+    """Per-agent action breakdown for the metrics tab.
+
+    Aggregates `orch.events` (the in-memory event log of the running
+    simulation) by agent and action_type. Returns counts + success
+    rate per agent so the UI can show "who did how much of what."
+    """
+    orch = get_orchestrator()
+    stats: dict[str, dict] = {}
+    for e in orch.events:
+        s = stats.setdefault(e.agent_name, {
+            "total": 0,
+            "successes": 0,
+            "failures": 0,
+            "by_action": {},
+        })
+        s["total"] += 1
+        s["by_action"][e.action_type] = s["by_action"].get(e.action_type, 0) + 1
+        if e.success:
+            s["successes"] += 1
+        else:
+            s["failures"] += 1
+    # Stable order by total desc, then name.
+    sorted_agents = sorted(
+        stats.items(),
+        key=lambda kv: (-kv[1]["total"], kv[0]),
+    )
+    return {
+        "total_events": len(orch.events),
+        "agents": [
+            {
+                "name": name,
+                "total": s["total"],
+                "successes": s["successes"],
+                "failures": s["failures"],
+                "success_rate": (s["successes"] / s["total"]) if s["total"] else 0.0,
+                "by_action": s["by_action"],
+            }
+            for name, s in sorted_agents
+        ],
+    }
+
+
 @router.get("/events")
 async def get_events(limit: int = 50, offset: int = 0):
     orch = get_orchestrator()
