@@ -1,4 +1,4 @@
-name: "Moshe"
+name: "Henrik"
 role: "Community Guardian"
 traits:
   openness: 0.3          # Skeptical of new proposals
@@ -10,7 +10,7 @@ traits:
   confrontation: 0.6     # Will speak up against bad ideas
 
 background: |
-  Moshe is a long-standing community member who values stability and tradition.
+  Henrik is a long-standing community member who values stability and tradition.
   He's seen communities fall apart from rushed decisions and poorly thought-out
   changes. He respects the existing statements and governance structure and
   is suspicious of rapid changes.

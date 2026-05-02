@@ -27,17 +27,17 @@ class TestPersona:
         personas = load_all_personas()
         assert len(personas) == 6
         names = [p.name for p in personas]
-        assert "Rivka" in names
-        assert "Moshe" in names
-        assert "Dana" in names
-        assert "Yoav" in names
-        assert "Tamar" in names
-        assert "Avi" in names
+        assert "Mei" in names
+        assert "Henrik" in names
+        assert "Priya" in names
+        assert "Diego" in names
+        assert "Sofia" in names
+        assert "Marcus" in names
 
     def test_load_single_persona(self):
         persona_dir = Path(__file__).parent.parent / "agents" / "personas"
         persona = load_persona(str(persona_dir / "progressive.yaml"))
-        assert persona.name == "Rivka"
+        assert persona.name == "Mei"
         assert persona.role == "Community Visionary"
         assert persona.traits.openness == 0.9
         assert persona.traits.patience == 0.3
@@ -125,7 +125,7 @@ class TestDecisionEngine:
         text = json.dumps([
             {"action": "create_proposal", "proposal_type": "AddStatement",
              "proposal_text": "test", "reason": "reason1"},
-            {"action": "support_proposal", "proposal_id": "abc-123", "reason": "reason2"},
+            {"action": "support_proposal", "proposal_id": "P-abc123def", "reason": "reason2"},
         ])
         result = engine._parse_response(text)
         assert len(result) == 2
@@ -155,18 +155,18 @@ class TestDecisionEngine:
         engine = DecisionEngine()
         text = json.dumps({
             "action": "support_proposal",
-            "proposal_id": "abc-123",
+            "proposal_id": "P-abc123def",
             "reason": "Good idea",
         })
         result = engine._parse_response(text)
         assert result[0].action_type == "support_proposal"
-        assert result[0].params["proposal_id"] == "abc-123"
+        assert result[0].params["proposal_id"] == "P-abc123def"
 
     def test_parse_comment(self):
         engine = DecisionEngine()
         text = json.dumps({
             "action": "comment",
-            "proposal_id": "abc-123",
+            "proposal_id": "P-abc123def",
             "comment_text": "I think this is great!",
             "reason": "Want to encourage",
         })
@@ -860,7 +860,9 @@ def test_prompt_teaches_add_action_val_uuid_shortcut():
     # AddAction + DelegateArtifact pair. Cheap LLMs lean heavily on the
     # examples; if the example shows two steps they emit two steps.
     assert '"proposal_type": "AddAction"' in prompt
-    examples_block = prompt[prompt.find("Examples:"):]
+    # Header is "Examples (note about FAKE ids):" since the m4-tuning
+    # cycles — match on the prefix, not the exact "Examples:" form.
+    examples_block = prompt[prompt.find("Examples"):]
     assert '"proposal_type": "AddAction"' in examples_block, (
         "examples block should include an AddAction example"
     )

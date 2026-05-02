@@ -97,8 +97,8 @@ def load_adversarial_personas() -> list[Persona]:
     """Load the opt-in adversarial persona roster.
 
     Used by the eval suite and the replay harness to stress-test
-    governance under hostile actors: Troll (Yoni), FreeRider (Shira),
-    and a sybil pair (Tal + Noa) that co-support each other silently.
+    governance under hostile actors: Troll (Boris), FreeRider (Lucas),
+    and a sybil pair (Yuki + Anya) that co-support each other silently.
     """
     directory = Path(__file__).parent / "personas" / "adversarial"
     if not directory.exists():
