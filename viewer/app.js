@@ -2628,7 +2628,81 @@ function MetricsTab({ communityId }) {
             <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                 Hover a card for its definition. Green = healthy, yellow = concerning, red = unhealthy. Live-refreshes on every pulse.
             </div>
+            <ProposalTypeBreakdown rows={data.proposal_type_breakdown || []} />
             <AgentActionStats stats={agentStats} />
+        </div>
+    );
+}
+
+// Per-proposal-type table. One row per type with total / accepted /
+// rejected / canceled / in-flight counts and the average support_count
+// across all proposals of that type. Sorted by total desc on the
+// server side (MetricsService._proposal_type_breakdown).
+function ProposalTypeBreakdown({ rows }) {
+    if (!rows || rows.length === 0) return null;
+    const cell = {
+        padding: "6px 10px",
+        borderBottom: "1px solid #2a2a2a",
+        textAlign: "right",
+        fontVariantNumeric: "tabular-nums",
+        fontSize: "0.85rem",
+    };
+    const headerCell = { ...cell, color: "var(--text-muted)", textAlign: "right", fontWeight: 600, fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em" };
+    const totals = rows.reduce((acc, r) => ({
+        total: acc.total + r.total,
+        accepted: acc.accepted + r.accepted,
+        rejected: acc.rejected + r.rejected,
+        canceled: acc.canceled + r.canceled,
+        in_flight: acc.in_flight + r.in_flight,
+    }), { total: 0, accepted: 0, rejected: 0, canceled: 0, in_flight: 0 });
+    return (
+        <div style={{ marginTop: "1.5rem" }}>
+            <div style={{ marginBottom: "0.5rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                <strong style={{ color: "var(--text)" }}>Proposals by Type</strong> &middot; {totals.total} total &middot; {totals.accepted} accepted / {totals.rejected} rejected / {totals.canceled} canceled / {totals.in_flight} in flight
+            </div>
+            <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 600 }}>
+                    <thead>
+                        <tr>
+                            <th style={{ ...headerCell, textAlign: "left" }}>Proposal Type</th>
+                            <th style={headerCell}>Total</th>
+                            <th style={headerCell}>Avg Support</th>
+                            <th style={headerCell}>Accepted</th>
+                            <th style={headerCell}>Rejected</th>
+                            <th style={headerCell}>Canceled</th>
+                            <th style={headerCell}>In Flight</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map(r => {
+                            const decided = r.accepted + r.rejected;
+                            const acceptShare = decided > 0 ? r.accepted / decided : 0;
+                            const acceptColor = decided === 0 ? "var(--text-muted)" : acceptShare >= 0.6 ? "#4ecca3" : acceptShare >= 0.3 ? "#f0c040" : "#e94560";
+                            return (
+                                <tr key={r.proposal_type}>
+                                    <td style={{ ...cell, textAlign: "left", fontWeight: 600, color: "var(--text)" }}>{r.proposal_type}</td>
+                                    <td style={cell}>{r.total}</td>
+                                    <td style={cell}>{r.avg_support.toFixed(2)}</td>
+                                    <td style={{ ...cell, color: r.accepted > 0 ? acceptColor : "var(--text-muted)", fontWeight: r.accepted > 0 ? 600 : 400 }}>{r.accepted || "—"}</td>
+                                    <td style={{ ...cell, color: r.rejected > 0 ? "#e94560" : "var(--text-muted)" }}>{r.rejected || "—"}</td>
+                                    <td style={{ ...cell, color: r.canceled > 0 ? "#888" : "var(--text-muted)" }}>{r.canceled || "—"}</td>
+                                    <td style={{ ...cell, color: r.in_flight > 0 ? "var(--text)" : "var(--text-muted)" }}>{r.in_flight || "—"}</td>
+                                </tr>
+                            );
+                        })}
+                        {/* Totals */}
+                        <tr style={{ borderTop: "2px solid #444" }}>
+                            <td style={{ ...cell, textAlign: "left", fontWeight: 700, color: "var(--text-muted)" }}>TOTAL</td>
+                            <td style={{ ...cell, fontWeight: 700 }}>{totals.total}</td>
+                            <td style={{ ...cell, color: "var(--text-muted)" }}>—</td>
+                            <td style={{ ...cell, color: "#4ecca3", fontWeight: 700 }}>{totals.accepted || "—"}</td>
+                            <td style={{ ...cell, color: totals.rejected > 0 ? "#e94560" : "var(--text-muted)", fontWeight: 700 }}>{totals.rejected || "—"}</td>
+                            <td style={{ ...cell, color: totals.canceled > 0 ? "#888" : "var(--text-muted)", fontWeight: 700 }}>{totals.canceled || "—"}</td>
+                            <td style={{ ...cell, fontWeight: 700 }}>{totals.in_flight || "—"}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
