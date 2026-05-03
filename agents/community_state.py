@@ -467,25 +467,50 @@ class CommunitySnapshot:
                     active_props = activity.get("active_proposals", 0)
                     accepted = activity.get("accepted", 0)
                     rejected = activity.get("rejected", 0)
-                    # Flag as idle if there's no current work AND either some
-                    # history exists (so it's not just freshly created) or the
-                    # action is a zombie shell (no pulses ever, no proposals,
-                    # only the founder still in it).
-                    has_history = pulses >= 1 or accepted >= 1 or rejected >= 1
-                    is_zombie = pulses == 0 and accepted == 0 and rejected == 0 and len(members) <= 1
-                    idle = active_props == 0 and (has_history or is_zombie)
-                    status_tag = (
-                        " 💤 IDLE — consider proposing EndAction to close it"
-                        if idle else ""
+                    # Two distinct states worth flagging:
+                    #
+                    # YOUNG (no history yet) — the action just got created
+                    # and hasn't had time to do anything. Tag accordingly so
+                    # bots don't read "0 pulses" as a reason to close it.
+                    #
+                    # STUCK (substantive history but currently no work) — the
+                    # action has been around for a while AND has previously
+                    # done things, but right now there are no in-flight
+                    # proposals. The right reaction is JoinAction (revive it)
+                    # NOT EndAction. The previous version of this snapshot
+                    # literally suggested "consider proposing EndAction" on
+                    # any IDLE action — bots dutifully obeyed, filing 4-5
+                    # EndActions per round against newborn or barely-active
+                    # actions. Removed that suggestion; bots get the
+                    # EndAction policy from KBZ_RULES, where it belongs.
+                    has_substantive_history = pulses >= 3 or accepted >= 1
+                    is_young = pulses <= 1 and accepted == 0 and rejected == 0
+                    is_stuck = active_props == 0 and has_substantive_history
+                    am_member = bool(my_user_id) and any(
+                        m["user_id"] == my_user_id for m in members
                     )
+                    if is_young:
+                        status_tag = " 🌱 YOUNG — give it time, do not propose EndAction"
+                    elif is_stuck:
+                        status_tag = " ⚠️ STUCK — has history but no current work"
+                    else:
+                        status_tag = ""
                     lines.append(
                         f"  - [{name}] id={tag_id('action', aid)} ({len(members)} members, "
                         f"{pulses} pulses fired, {active_props} active proposals, "
                         f"{accepted} accepted / {rejected} rejected){status_tag}"
                     )
-                    if idle:
+                    # When STUCK, suggest the productive reaction (join +
+                    # do work), NOT the destructive one (close it).
+                    if is_stuck and not am_member:
                         lines.append(
-                            f"    → To close: create EndAction proposal with val_uuid={tag_id('action', aid)}"
+                            f"    → Consider proposing JoinAction with val_uuid={tag_id('action', aid)} "
+                            f"to revive this action and move its work forward."
+                        )
+                    elif is_stuck and am_member:
+                        lines.append(
+                            f"    → You are already a member — propose EditArtifact / CreateArtifact "
+                            f"inside this action to push its work forward."
                         )
             if ended_actions:
                 lines.append(f"\n### Ended Actions ({len(ended_actions)}): (already closed, no action needed)")
