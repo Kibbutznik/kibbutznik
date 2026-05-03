@@ -241,9 +241,18 @@ def main() -> None:
     p.add_argument("--output", default=None,
                    help="Path for the summary JSON (default: replays/<cid>/summary.json)")
     args = p.parse_args()
-    # Ensure DB URL is set (mirrors alembic env.py behavior)
+    # Pre-fix this script hardcoded a fallback `KBZ_DATABASE_URL`
+    # that included the kbz role's password in plaintext. Source-
+    # tracked secrets are an obvious leak path even when the
+    # repo is private — git history surfaces them later. Require
+    # the env var to be set externally instead.
     if not os.environ.get("KBZ_DATABASE_URL"):
-        os.environ["KBZ_DATABASE_URL"] = "postgresql+asyncpg://kbz:kbzpass@localhost:5432/kbz"
+        sys.stderr.write(
+            "KBZ_DATABASE_URL is not set. Export it before running replay, "
+            "e.g. `export KBZ_DATABASE_URL=postgresql+asyncpg://kbz:<password>@localhost:5432/kbz` "
+            "(see /etc/systemd/system/kbz.service for the prod value).\n"
+        )
+        sys.exit(2)
     sys.exit(asyncio.run(_main(args)))
 
 
