@@ -690,6 +690,29 @@ class Agent:
                         return ActionLog(now, "do_nothing", decision.reason,
                             f"EndAction skipped: action {(val_uuid or '?')[:8]} "
                             f"not in active actions list", False)
+                    # Guard against the M4 over-firing pattern. Prompt
+                    # rules tell bots EndAction is for mission-complete
+                    # or wrong-scope only — not "slow" / "young" /
+                    # "no current work." Bots ignore the rule when the
+                    # snapshot offers them an IDLE action. Reject
+                    # EndAction against actions that haven't had time
+                    # to do anything yet (≤2 fired pulses AND zero
+                    # accepted-or-rejected proposals). The bot's
+                    # underlying intent — "this action isn't producing"
+                    # — is better served by JoinAction or a comment,
+                    # both of which the snapshot now suggests.
+                    activity = snapshot.action_activity.get(val_uuid, {})
+                    pulses = int(activity.get("pulses", 0))
+                    accepted = int(activity.get("accepted", 0))
+                    rejected = int(activity.get("rejected", 0))
+                    if pulses <= 2 and accepted == 0 and rejected == 0:
+                        return ActionLog(now, "do_nothing", decision.reason,
+                            f"EndAction skipped: target action is too "
+                            f"young to close ({pulses} pulses fired, 0 "
+                            f"decided proposals). EndAction is for "
+                            f"mission-complete or wrong-scope only, not "
+                            f"slow start. Try JoinAction or send_chat "
+                            f"to push the work along.", False)
 
                 # --- DelegateArtifact pre-flight validation ---
                 if ptype == "DelegateArtifact":
