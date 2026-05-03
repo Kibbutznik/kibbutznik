@@ -49,6 +49,7 @@ async def _add_proposal(
     status: ProposalStatus,
     age: int = 0,
     ptype: str = "AddStatement",
+    support_count: int = 0,
 ) -> uuid.UUID:
     pid = uuid.uuid4()
     db.add(
@@ -60,7 +61,7 @@ async def _add_proposal(
             proposal_status=status,
             proposal_text="test",
             age=age,
-            support_count=0,
+            support_count=support_count,
         )
     )
     return pid
@@ -366,3 +367,63 @@ async def test_ttq_percentiles_computed_correctly(db_engine):
         m = await MetricsService(db).compute(cid)
     assert m.ttq_p50 == 3.0
     assert m.ttq_p95 == 13.0
+
+
+@pytest.mark.asyncio
+async def test_proposal_type_breakdown(db_engine):
+    """Mixed proposal types and statuses → per-type rows with right
+    counts + avg support; sorted by total descending."""
+    sf = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as db:
+        cid = await _seed_community(db)
+        u = uuid.uuid4()
+        await _add_member(db, cid, u)
+
+        # AddStatement: 2 accepted, 1 rejected, 1 in-flight (DRAFT). support 4,6 / 2 / 0
+        await _add_proposal(db, cid, u, ProposalStatus.ACCEPTED, ptype="AddStatement", support_count=4)
+        await _add_proposal(db, cid, u, ProposalStatus.ACCEPTED, ptype="AddStatement", support_count=6)
+        await _add_proposal(db, cid, u, ProposalStatus.REJECTED, ptype="AddStatement", support_count=2)
+        await _add_proposal(db, cid, u, ProposalStatus.DRAFT, ptype="AddStatement", support_count=0)
+        # AddAction: 1 accepted, 1 canceled. support 5 / 1
+        await _add_proposal(db, cid, u, ProposalStatus.ACCEPTED, ptype="AddAction", support_count=5)
+        await _add_proposal(db, cid, u, ProposalStatus.CANCELED, ptype="AddAction", support_count=1)
+        await db.commit()
+    async with sf() as db:
+        m = await MetricsService(db).compute(cid)
+
+    by_type = {row["proposal_type"]: row for row in m.proposal_type_breakdown}
+    assert "AddStatement" in by_type
+    assert "AddAction" in by_type
+
+    s = by_type["AddStatement"]
+    assert s["total"] == 4
+    assert s["accepted"] == 2
+    assert s["rejected"] == 1
+    assert s["in_flight"] == 1
+    assert s["canceled"] == 0
+    # mean(4,6,2,0) = 3.0
+    assert s["avg_support"] == 3.0
+
+    a = by_type["AddAction"]
+    assert a["total"] == 2
+    assert a["accepted"] == 1
+    assert a["canceled"] == 1
+    assert a["rejected"] == 0
+    assert a["in_flight"] == 0
+    # mean(5,1) = 3.0
+    assert a["avg_support"] == 3.0
+
+    # Order: AddStatement (4 total) before AddAction (2 total)
+    assert m.proposal_type_breakdown[0]["proposal_type"] == "AddStatement"
+    assert m.proposal_type_breakdown[1]["proposal_type"] == "AddAction"
+
+
+@pytest.mark.asyncio
+async def test_proposal_type_breakdown_empty(db_engine):
+    """No proposals → empty list, not None."""
+    sf = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as db:
+        cid = await _seed_community(db)
+    async with sf() as db:
+        m = await MetricsService(db).compute(cid)
+    assert m.proposal_type_breakdown == []

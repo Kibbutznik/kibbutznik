@@ -94,6 +94,11 @@ class CommunityMetrics:
     ttq_p50: float | None
     ttq_p95: float | None
 
+    # Per-type breakdown — list of dicts:
+    #   {proposal_type, total, accepted, rejected, canceled, in_flight, avg_support}
+    # Sorted by total descending. Empty list if no proposals.
+    proposal_type_breakdown: list[dict]
+
     def as_dict(self) -> dict:
         return asdict(self)
 
@@ -194,6 +199,9 @@ class MetricsService:
         # --- Time-to-quorum percentiles -----------------------------------
         ttq_p50, ttq_p95 = await self._time_to_quorum(cid)
 
+        # --- Per-proposal-type breakdown ----------------------------------
+        type_breakdown = await self._proposal_type_breakdown(cid)
+
         return CommunityMetrics(
             community_id=str(cid),
             pulses_fired=pulses_fired,
@@ -213,9 +221,80 @@ class MetricsService:
             deadlock_pulses=deadlock,
             ttq_p50=round(ttq_p50, 2) if ttq_p50 is not None else None,
             ttq_p95=round(ttq_p95, 2) if ttq_p95 is not None else None,
+            proposal_type_breakdown=type_breakdown,
         )
 
     # ---- helpers -----------------------------------------------------
+
+    async def _proposal_type_breakdown(self, cid: uuid.UUID) -> list[dict]:
+        """Per-proposal-type aggregate: total, decided counts, avg support.
+
+        Group by (proposal_type, proposal_status), pivot into per-type
+        buckets so the UI gets one row per type. Avg support is the
+        mean of `proposal.support_count` across ALL proposals of that
+        type — for accepted/rejected it's frozen at decision time, for
+        canceled it's the last value before age-out, for in-flight
+        it's the live count. The combined average is "how much
+        traction this proposal type tends to attract."
+        """
+        rows = (
+            await self.db.execute(
+                select(
+                    Proposal.proposal_type,
+                    Proposal.proposal_status,
+                    func.count(Proposal.id),
+                    func.avg(Proposal.support_count),
+                )
+                .where(Proposal.community_id == cid)
+                .group_by(Proposal.proposal_type, Proposal.proposal_status)
+            )
+        ).all()
+        in_flight_statuses = {
+            ProposalStatus.DRAFT,
+            ProposalStatus.OUT_THERE,
+            ProposalStatus.ON_THE_AIR,
+        }
+        by_type: dict[str, dict] = {}
+        for ptype, status, count, avg_supp in rows:
+            key = str(ptype)
+            b = by_type.setdefault(key, {
+                "proposal_type": key,
+                "total": 0,
+                "accepted": 0,
+                "rejected": 0,
+                "canceled": 0,
+                "in_flight": 0,
+                "_support_sum": 0.0,
+                "_support_n": 0,
+            })
+            b["total"] += count
+            if status == ProposalStatus.ACCEPTED:
+                b["accepted"] += count
+            elif status == ProposalStatus.REJECTED:
+                b["rejected"] += count
+            elif status == ProposalStatus.CANCELED:
+                b["canceled"] += count
+            elif status in in_flight_statuses:
+                b["in_flight"] += count
+            if avg_supp is not None:
+                # avg_supp is the mean across `count` rows — recover
+                # the sum so we can re-average across statuses.
+                b["_support_sum"] += float(avg_supp) * count
+                b["_support_n"] += count
+        out = []
+        for b in by_type.values():
+            avg = (b["_support_sum"] / b["_support_n"]) if b["_support_n"] else 0.0
+            out.append({
+                "proposal_type": b["proposal_type"],
+                "total": b["total"],
+                "accepted": b["accepted"],
+                "rejected": b["rejected"],
+                "canceled": b["canceled"],
+                "in_flight": b["in_flight"],
+                "avg_support": round(avg, 2),
+            })
+        out.sort(key=lambda b: -b["total"])
+        return out
 
     async def _sybil_score(
         self, community_id: uuid.UUID, member_set: set
