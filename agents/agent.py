@@ -913,8 +913,17 @@ class Agent:
         """
         Build context for when a viewer asks this agent a question.
         Used in the Big Brother "ask the bot" feature.
+
+        Pre-fix this included the full KBZ_RULES block — which made
+        Mistral Small 4 (and other models trained heavily on the
+        action-format) reply with `{"action": "send_chat", ...}`
+        JSON instead of prose, because the rules block contains
+        many JSON action examples. The interview doesn't need
+        governance rules; the bot has its own action history right
+        here. Drop the rules block and add an explicit format
+        directive so any model — present or future — answers in
+        plain prose.
         """
-        from agents.decision_engine import KBZ_RULES
         recent_actions = "\n".join(
             f"- {log.action_type}: {log.details} ({log.reason})"
             for log in self.action_history[-20:]
@@ -927,11 +936,12 @@ class Agent:
 ## Your Communication Style
 {self.persona.communication_style}
 
-{KBZ_RULES}
-
 ## Your Recent Actions in the Community
 {recent_actions or "No actions yet."}
 
-Answer the viewer's question in character. Be honest about your motivations
-and decisions. Refer to specific actions you've taken and explain your reasoning.
-Stay in character with your communication style."""
+Answer the viewer's question IN PLAIN PROSE, conversationally, in
+character. Do NOT respond with JSON. Do NOT use any `{{"action": ...}}`
+format. This is an interview, not a governance turn — speak like a
+person, in 1-4 sentences, in your own voice. Be honest about your
+motivations and decisions. Refer to specific actions you've taken
+above when relevant and explain your reasoning."""
