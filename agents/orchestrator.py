@@ -882,8 +882,10 @@ class Orchestrator:
                 response = await self.engine._call_anthropic(prompt)
             elif self.engine.backend == "ollama":
                 response = await self.engine._call_ollama(prompt)
+            elif self.engine.backend == "openrouter":
+                response = await self.engine._call_openrouter(prompt)
             else:
-                response = "Interview not available."
+                response = f"Interview not available (unknown backend: {self.engine.backend!r})."
             # Store interview so it feeds back into agent's decision context
             agent.interview_history.append((question, response))
             return response
