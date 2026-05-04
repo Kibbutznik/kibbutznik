@@ -203,6 +203,12 @@ LLM_PRESETS = {
     # reuse; if you want to re-test, re-add the line — the prefix
     # system + SUPPORT QUEUE branch on `lunaris-tuning` is preserved.
     "or-gemini-flash-lite": {"backend": "openrouter", "model": "google/gemini-2.5-flash-lite-preview","think": False},
+    # MiniMax M2.5 — OpenRouter "free" tier, no credit usage (rate-limited
+    # but adequate for sustained bot simulation). Smoke-tested on the
+    # JSON-action prompt format and produces the exact shape we need.
+    # Useful as a fallback when the OpenRouter account runs out of paid
+    # credits.
+    "or-minimax-free":      {"backend": "openrouter", "model": "minimax/minimax-m2.5:free",                  "think": False},
     # OpenAI gpt-oss-20b via OpenRouter's :nitro lane — same weights
     # as the local Ollama gpt-oss:20b but routed through providers
     # tuned for low latency. Useful for 100-bot simulations where
