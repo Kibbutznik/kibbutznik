@@ -281,9 +281,33 @@ function DetailPanel({ stack, popToIndex, closeDetail, openDetail, agents, agent
 
 /** Resolve val_uuid and val_text to human-readable names (artifact title, community name, member name). */
 async function resolveProposalRefs(proposal, agentsByUserId) {
-    const result = { valUuid: "", valText: "" };
+    const result = { valUuid: "", valText: "", communityName: "", pulseLabel: "" };
     if (!proposal) return result;
     const pt = proposal.proposal_type;
+
+    // Resolve the community + pulse this proposal belongs to so the
+    // Details grid can render readable labels instead of raw UUIDs.
+    // Failures are non-fatal — the EntityLink label falls back to a
+    // shortened id form. Both calls are getCached, so re-renders of
+    // the same proposal pay zero cost.
+    if (proposal.community_id) {
+        try {
+            const c = await API.getCached(`/communities/${proposal.community_id}`);
+            result.communityName = c?.name || "";
+        } catch {}
+    }
+    if (proposal.pulse_id) {
+        try {
+            const p = await API.getCached(`/pulses/${proposal.pulse_id}`);
+            // Pulses surface a `round_num` (or similar) when they fire — use it
+            // as the human label. If absent, "Pulse <8-char>" is at least
+            // distinguishable from "Pulse <other 8-char>".
+            const round = p?.round_num ?? p?.round ?? null;
+            result.pulseLabel = round != null ? `Pulse #${round}` : `Pulse ${proposal.pulse_id.slice(0, 8)}`;
+        } catch {
+            result.pulseLabel = `Pulse ${proposal.pulse_id.slice(0, 8)}`;
+        }
+    }
 
     // Resolve val_uuid → name
     if (proposal.val_uuid) {
@@ -637,16 +661,32 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
             <div className="detail-section">
                 <div className="detail-section-title">Details</div>
                 <div className="proposal-details-grid">
-                    <span className="proposal-detail-label">ID</span>
-                    <span className="proposal-detail-value mono">{proposal.id}</span>
+                    {/* Pre-fix the grid led with `ID: <full UUID>` and used
+                        the raw community/pulse UUIDs as link labels. UUIDs
+                        are unreadable to humans (per audit) and humans on
+                        the proposal detail panel already know they're
+                        looking at this proposal; the ID row was noise.
+                        Resolved community + pulse labels come from
+                        resolveProposalRefs's cached /communities and
+                        /pulses lookups. */}
                     <span className="proposal-detail-label">Community</span>
-                    <span className="proposal-detail-value mono">
-                        <EntityLink type="community" id={proposal.community_id} label={proposal.community_id} openDetail={openDetail} />
+                    <span className="proposal-detail-value">
+                        <EntityLink
+                            type="community"
+                            id={proposal.community_id}
+                            label={resolvedNames.communityName || `Community ${proposal.community_id.slice(0, 8)}`}
+                            openDetail={openDetail}
+                        />
                     </span>
                     {proposal.pulse_id && <>
                         <span className="proposal-detail-label">Pulse</span>
-                        <span className="proposal-detail-value mono">
-                            <EntityLink type="pulse" id={proposal.pulse_id} label={proposal.pulse_id} openDetail={openDetail} />
+                        <span className="proposal-detail-value">
+                            <EntityLink
+                                type="pulse"
+                                id={proposal.pulse_id}
+                                label={resolvedNames.pulseLabel || `Pulse ${proposal.pulse_id.slice(0, 8)}`}
+                                openDetail={openDetail}
+                            />
                         </span>
                     </>}
                     <span className="proposal-detail-label">Created</span>
@@ -1151,7 +1191,11 @@ function PulseDetail({ id, openDetail, agentsByUserId, communityId }) {
                                 </span>
                                 <span className="detail-type-badge">{p.proposal_type}</span>
                                 <span className="detail-list-text">{truncate(proposalDisplayText(p), 50)}</span>
-                                {creator && <span className="detail-list-meta">by {creator.name}</span>}
+                                {creator && (
+                                    <span className="detail-list-meta">
+                                        by <EntityLink type="user" id={p.user_id} label={creator.name} openDetail={openDetail} />
+                                    </span>
+                                )}
                             </div>
                         );
                     })}
@@ -1213,7 +1257,11 @@ function StatementDetail({ id, openDetail, communityId, agentsByUserId }) {
                                         {p.proposal_status}
                                     </span>
                                     <span className="detail-type-badge">{p.proposal_type}</span>
-                                    {creator && <span className="detail-list-meta">by {creator.name}</span>}
+                                    {creator && (
+                                    <span className="detail-list-meta">
+                                        by <EntityLink type="user" id={p.user_id} label={creator.name} openDetail={openDetail} />
+                                    </span>
+                                )}
                                     <span className="detail-list-meta" style={{ marginLeft: "auto" }}>{formatDate(p.created_at)}</span>
                                 </div>
                             );
@@ -1563,7 +1611,11 @@ function VariableDetail({ id, openDetail, agentsByUserId }) {
                                     {p.proposal_status}
                                 </span>
                                 <span className="var-inline-value" style={{ margin: "0 8px" }}>→ {p.val_text || "?"}</span>
-                                {creator && <span className="detail-list-meta">by {creator.name}</span>}
+                                {creator && (
+                                    <span className="detail-list-meta">
+                                        by <EntityLink type="user" id={p.user_id} label={creator.name} openDetail={openDetail} />
+                                    </span>
+                                )}
                                 <span className="detail-list-meta" style={{ marginLeft: "auto" }}>{formatDate(p.created_at)}</span>
                             </div>
                         );
@@ -2477,7 +2529,7 @@ function WorkTab({ communityId, openDetail, bbUserId }) {
 // numbers: proposal throughput, rejection rate, sybil-suspicion, deadlock
 // counter, time-to-quorum percentiles, and closeness distribution stats.
 // Auto-refreshes on the same kbz-refresh event as WorkTab.
-function MetricsTab({ communityId }) {
+function MetricsTab({ communityId, agentsByUserId, openDetail }) {
     const [data, setData] = useState(null);
     const [agentStats, setAgentStats] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -2629,7 +2681,7 @@ function MetricsTab({ communityId }) {
                 Hover a card for its definition. Green = healthy, yellow = concerning, red = unhealthy. Live-refreshes on every pulse.
             </div>
             <ProposalTypeBreakdown rows={data.proposal_type_breakdown || []} />
-            <AgentActionStats stats={agentStats} />
+            <AgentActionStats stats={agentStats} agentsByUserId={agentsByUserId} openDetail={openDetail} />
         </div>
     );
 }
@@ -2712,7 +2764,19 @@ function ProposalTypeBreakdown({ rows }) {
 // communities, not just this one). Renders one row per agent with
 // total + success rate + count for each action_type the agent has
 // emitted. Hidden when no data has loaded yet.
-function AgentActionStats({ stats }) {
+function AgentActionStats({ stats, agentsByUserId, openDetail }) {
+    // Reverse-index agents by display name so we can resolve the agent
+    // row's `name` (which is what /simulation/agent-stats returns) to
+    // a user_id for linking. Without this, names render as plain text.
+    const agentByName = React.useMemo(() => {
+        const map = {};
+        if (agentsByUserId) {
+            for (const a of Object.values(agentsByUserId)) {
+                if (a?.name) map[a.name] = a;
+            }
+        }
+        return map;
+    }, [agentsByUserId]);
     if (!stats || !stats.agents || stats.agents.length === 0) return null;
     // Collect every action_type that appears anywhere so columns line up.
     const allActions = Array.from(
@@ -2756,7 +2820,16 @@ function AgentActionStats({ stats }) {
                             const okColor = agent.success_rate >= 0.8 ? "#4ecca3" : agent.success_rate >= 0.5 ? "#f0c040" : "#e94560";
                             return (
                                 <tr key={agent.name}>
-                                    <td style={{ ...cell, textAlign: "left", fontWeight: 600, color: "var(--text)" }}>{agent.name}</td>
+                                    <td style={{ ...cell, textAlign: "left", fontWeight: 600, color: "var(--text)" }}>
+                                        {agentByName[agent.name] && openDetail ? (
+                                            <span className="entity-link"
+                                                  onClick={() => openDetail("user", agentByName[agent.name].user_id, agent.name)}>
+                                                {agent.name}
+                                            </span>
+                                        ) : (
+                                            agent.name
+                                        )}
+                                    </td>
                                     <td style={cell}>{agent.total}</td>
                                     <td style={{ ...cell, color: "#4ecca3" }}>{agent.successes}</td>
                                     <td style={{ ...cell, color: agent.failures > 0 ? "#e94560" : "var(--text-muted)" }}>{agent.failures}</td>
@@ -2997,14 +3070,25 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
                              key={`${ev.time}-${i}`}
                              onClick={isClickable ? () => openDetail(refType, ev.ref_id, (ev.details || '').slice(0, 40)) : undefined}>
                             <span className="event-time">{formatTime(ev.time)}</span>
-                            <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
-                                  onClick={(e) => {
-                                      e.stopPropagation();
-                                      const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
-                                      if (agent) openDetail("user", agent.user_id, ev.agent);
-                                  }}>
-                                {ev.agent}
-                            </span>
+                            {(() => {
+                                // Only apply entity-link styling when the agent
+                                // is actually resolvable. Pre-fix the link
+                                // styled clickable for every event, but
+                                // SimulationEvent has no user_id so events
+                                // for thrown-out / archived users silently
+                                // no-op'd on click — a cursor lie. Now the
+                                // unresolvable case renders as plain styled
+                                // text.
+                                const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
+                                const linkable = !!(agent && openDetail);
+                                return (
+                                    <span className={`event-agent ${agentColor(ev.agent)} ${linkable ? "entity-link" : ""}`}
+                                          onClick={linkable ? (e) => { e.stopPropagation(); openDetail("user", agent.user_id, ev.agent); } : undefined}
+                                          title={linkable ? "Open agent detail" : "Agent not in current cache"}>
+                                        {ev.agent}
+                                    </span>
+                                );
+                            })()}
                             <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
                             <div className="event-details">
                                 {ev.details && <span>{ev.details}</span>}
@@ -3317,7 +3401,13 @@ function AgentCard({ agent, expanded, onToggle, openDetail }) {
         <div className={`agent-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
             <div className="agent-header">
                 <div>
-                    <div className={`agent-name ${agentColor(agent.name)}`}>{agent.name}</div>
+                    <div
+                        className={`agent-name entity-link ${agentColor(agent.name)}`}
+                        onClick={(e) => { e.stopPropagation(); openDetail("user", agent.user_id, agent.name); }}
+                        title="Open agent detail"
+                    >
+                        {agent.name}
+                    </div>
                     <div className="agent-role">{agent.role}</div>
                 </div>
                 <EagernessBar eagerness={agent.eagerness} eagerFront={agent.eager_front} />
@@ -3398,7 +3488,7 @@ function AgentsTab({ agents, openDetail, communityId, rootCommunityId }) {
 }
 
 // ── Chat Tab ────────────────────────────────────────────
-function ChatTab({ communityId, communityName, agentsByUserId, bbUserId }) {
+function ChatTab({ communityId, communityName, agentsByUserId, bbUserId, openDetail }) {
     const [messages, setMessages] = React.useState([]);
     const [draft, setDraft] = React.useState("");
     const [sending, setSending] = React.useState(false);
@@ -3494,12 +3584,27 @@ function ChatTab({ communityId, communityName, agentsByUserId, bbUserId }) {
                 {sorted.map((m) => {
                     const isBB = bbUserId && m.user_id === bbUserId;
                     const agent = agentsByUserId?.[m.user_id];
-                    const name = isBB ? "👁 Big Brother" : (agent?.name || (m.user_id || "").slice(0, 8));
-                    const colorClass = isBB ? "bb-message-author" : (agent ? agentColor(name) : "");
+                    // Pre-fix the unknown-user fallback was an 8-char UUID
+                    // prefix like "04ec6a20" — unreadable to humans. The
+                    // user explicitly called this out in the audit.
+                    const knownName = isBB ? "👁 Big Brother" : (agent?.name || null);
+                    const displayName = knownName || "(unknown user)";
+                    const colorClass = isBB ? "bb-message-author" : (agent ? agentColor(knownName || "") : "");
                     return (
                         <div key={m.id} className={`chat-message${isBB ? " bb-message" : ""}`}>
                             <div className="chat-message-header">
-                                <span className={`chat-author ${colorClass}`}>{name}</span>
+                                {/* Big Brother is the operator and has no detail
+                                    panel; render it as plain styled text. Real
+                                    users (including the unknown-fallback case)
+                                    open their detail panel on click. */}
+                                {isBB || !m.user_id ? (
+                                    <span className={`chat-author ${colorClass}`}>{displayName}</span>
+                                ) : (
+                                    <span className={`chat-author entity-link ${colorClass}`}
+                                          onClick={() => openDetail && openDetail("user", m.user_id, displayName)}>
+                                        {displayName}
+                                    </span>
+                                )}
                                 <span className="chat-time">{formatTime(m.created_at)}</span>
                             </div>
                             <div className="chat-text">{m.comment_text}</div>
@@ -3807,12 +3912,14 @@ function TimelineTab({ pulses, proposals, events, openDetail, agentsByUserId, ac
                     // agent event
                     const ev = entry.data;
                     const agent = Object.values(agentsByUserId || {}).find(a => a.name === ev.agent);
+                    const linkable = !!(agent && openDetail);
                     return (
                         <div key={`ev-${i}`} className="timeline-item timeline-event">
                             <div className="timeline-event-row">
                                 <span className="event-time">{formatTime(ev.time)}</span>
-                                <span className={`event-agent ${agentColor(ev.agent)} entity-link`}
-                                      onClick={() => agent && openDetail("user", agent.user_id, ev.agent)}>
+                                <span className={`event-agent ${agentColor(ev.agent)} ${linkable ? "entity-link" : ""}`}
+                                      onClick={linkable ? () => openDetail("user", agent.user_id, ev.agent) : undefined}
+                                      title={linkable ? "Open agent detail" : "Agent not in current cache"}>
                                     {ev.agent}
                                 </span>
                                 <span className={`event-badge badge-${ev.action}`}>{ev.action}</span>
@@ -4790,7 +4897,7 @@ function App() {
                         <WorkTab communityId={communityId} openDetail={openDetail} bbUserId={bbUserId} />
                     </div>
                     <div style={{ display: activeTab === "chat" ? undefined : "none" }}>
-                        <ChatTab communityId={communityId} communityName={activeCommunityName || status?.community?.name || null} agentsByUserId={agentsByUserId} bbUserId={bbUserId} />
+                        <ChatTab communityId={communityId} communityName={activeCommunityName || status?.community?.name || null} agentsByUserId={agentsByUserId} bbUserId={bbUserId} openDetail={openDetail} />
                     </div>
                     <div style={{ display: activeTab === "interview" ? undefined : "none" }}>
                         <InterviewTab agents={agents} />
@@ -4802,7 +4909,7 @@ function App() {
                         <RelationshipsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />
                     </div>
                     <div style={{ display: activeTab === "metrics" ? undefined : "none" }}>
-                        <MetricsTab communityId={communityId} />
+                        <MetricsTab communityId={communityId} agentsByUserId={agentsByUserId} openDetail={openDetail} />
                     </div>
                 </div>
             </div>
