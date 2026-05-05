@@ -299,11 +299,19 @@ async function resolveProposalRefs(proposal, agentsByUserId) {
     if (proposal.pulse_id) {
         try {
             const p = await API.getCached(`/pulses/${proposal.pulse_id}`);
-            // Pulses surface a `round_num` (or similar) when they fire — use it
-            // as the human label. If absent, "Pulse <8-char>" is at least
-            // distinguishable from "Pulse <other 8-char>".
+            // /pulses/{id} doesn't expose a round number — fall back to
+            // a date stamp on the pulse's created_at so the label is
+            // human-meaningful ("Pulse @ Mar 4 14:23") rather than just
+            // a UUID prefix.
             const round = p?.round_num ?? p?.round ?? null;
-            result.pulseLabel = round != null ? `Pulse #${round}` : `Pulse ${proposal.pulse_id.slice(0, 8)}`;
+            if (round != null) {
+                result.pulseLabel = `Pulse #${round}`;
+            } else if (p?.created_at) {
+                const d = new Date(p.created_at);
+                result.pulseLabel = `Pulse @ ${d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
+            } else {
+                result.pulseLabel = `Pulse ${proposal.pulse_id.slice(0, 8)}`;
+            }
         } catch {
             result.pulseLabel = `Pulse ${proposal.pulse_id.slice(0, 8)}`;
         }
