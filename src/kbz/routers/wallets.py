@@ -42,7 +42,7 @@ def _parse_positive_amount(raw: str) -> Decimal:
         raise HTTPException(status_code=400, detail="amount must be positive")
     return amount
 
-from kbz.auth_deps import get_current_user, require_user
+from kbz.auth_deps import get_current_user, is_observer, require_user
 from kbz.database import get_db
 from kbz.enums import ProposalStatus, ProposalType
 from kbz.models.action import Action
@@ -167,7 +167,7 @@ async def get_community_wallet(
             status_code=404,
             detail="This community doesn't have the Financial module enabled.",
         )
-    if session_user is not None:
+    if session_user is not None and not is_observer(session_user):
         from kbz.services.member_service import MemberService
         if not await MemberService(db).is_active_member(community_id, session_user.id):
             raise HTTPException(
@@ -202,7 +202,7 @@ async def get_action_wallet(
     # Same membership gate as /communities/{id}/wallet — must be an
     # active member of the action's parent community OR the action
     # itself.
-    if session_user is not None:
+    if session_user is not None and not is_observer(session_user):
         from kbz.services.member_service import MemberService
         ms = MemberService(db)
         ok = (
@@ -253,7 +253,7 @@ async def get_community_ledger(
     svc = WalletService(db)
     if not await svc.is_financial(community_id):
         raise HTTPException(status_code=404, detail="Not financial")
-    if session_user is not None:
+    if session_user is not None and not is_observer(session_user):
         from kbz.services.member_service import MemberService
         if not await MemberService(db).is_active_member(community_id, session_user.id):
             raise HTTPException(

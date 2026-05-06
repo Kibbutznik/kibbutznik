@@ -66,6 +66,25 @@ async def require_user(
     return user
 
 
+# The orchestrator creates a single "Big Brother" user account at sim
+# bootstrap (see agents/orchestrator.py) — it's the operator account
+# the viewer talks through. Big Brother has a session but is NOT a
+# member of any community, so endpoints that gate on "must be active
+# member" return 403 against the very viewer using them. Tag the BB
+# username here so member-only read endpoints can let it pass.
+OBSERVER_USER_NAME = "Big Brother"
+
+
+def is_observer(user: User | None) -> bool:
+    """True iff `user` is the simulation observer (Big Brother) account.
+
+    Use as an OR-clause in member-gated read endpoints so the viewer's
+    own dashboards don't 403 against the simulation it's running. Read
+    endpoints only — write endpoints should still require real
+    membership."""
+    return user is not None and user.user_name == OBSERVER_USER_NAME
+
+
 def enforce_session_matches_body(
     body_user_id,
     session_user: User | None,
