@@ -47,3 +47,21 @@ async def test_closeness_200_on_known_community(client):
     body = resp.json()
     assert body["community_id"] == community["id"]
     assert len(body["members"]) == 1
+
+
+def test_is_observer_recognizes_big_brother():
+    """Unit test on the auth helper. End-to-end auth flow in this app
+    is magic-link only, so route-level coverage of the gate is left
+    for manual smoke + the prod curl. This locks in that the helper
+    matches exactly the canonical Big Brother user_name and nothing
+    that resembles it."""
+    from types import SimpleNamespace
+    from kbz.auth_deps import is_observer, OBSERVER_USER_NAME
+
+    assert OBSERVER_USER_NAME == "Big Brother"
+    assert is_observer(None) is False
+    assert is_observer(SimpleNamespace(user_name="Big Brother")) is True
+    assert is_observer(SimpleNamespace(user_name="big brother")) is False
+    assert is_observer(SimpleNamespace(user_name="Big Brother Jr")) is False
+    assert is_observer(SimpleNamespace(user_name="")) is False
+    assert is_observer(SimpleNamespace(user_name="Marcus")) is False
