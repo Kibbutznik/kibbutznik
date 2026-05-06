@@ -2157,14 +2157,20 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
     const [data, setData] = useState({ members: [], pairs: [] });
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState(null);
     const [viewMode, setViewMode] = useState("heatmap"); // "heatmap" | "graph"
 
     const fetchCloseness = useCallback(() => {
         if (!communityId) return;
         setRefreshing(true);
+        setError(null);
+        // Pre-fix .catch silently swallowed every error and rendered
+        // "No relationships yet" — indistinguishable from a real
+        // empty graph. The user reported the tab was broken because
+        // a 403 was hiding behind that empty state.
         API.get(`/communities/${communityId}/closeness`)
             .then((d) => setData(d))
-            .catch(() => setData({ members: [], pairs: [] }))
+            .catch((e) => setError(String(e?.message || e)))
             .finally(() => { setLoading(false); setRefreshing(false); });
     }, [communityId]);
 
@@ -2175,6 +2181,16 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
     }, [communityId, fetchCloseness]);
 
     if (loading) return <div className="loading-center"><span className="spinner"></span> Loading relationships...</div>;
+    if (error) return (
+        <div className="card" style={{ color: "#f88" }}>
+            <strong>Failed to load relationships:</strong> {error}
+            <div style={{ marginTop: 8, fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                Common cause: 403 if you're logged in as a non-member non-observer. Try
+                hard-refreshing (Cmd/Ctrl+Shift+R) — the deploy may have shipped after your
+                tab loaded its cached JS.
+            </div>
+        </div>
+    );
     if (data.pairs.length === 0) return <div className="empty-state">No relationships yet — members need to support proposals first</div>;
 
     const positive = data.pairs.filter((p) => p.score > 0).length;
