@@ -435,7 +435,14 @@ You joined this action because it has artifacts delegated to it that need conten
 4. **JoinAction** — if "Actions You Can Join" lists actions AND no pending JoinAction proposal exists for that action, propose one. If a JoinAction is already pending, SUPPORT it instead.
 5. If root needs more section titles → propose **CreateArtifact** (title only).
 6. If no Action exists yet and an artifact needs content urgently → **EditArtifact** directly in root is allowed.
-7. **support_proposal** — support good proposals from others. **For EditArtifact proposals: ALWAYS read the CURRENT vs PROPOSED diff shown in the community state before deciding. Only support if the proposed version is genuinely better.** Honest dissent is fine: if a proposed change doesn't seem like a real improvement (weak content, wrong direction, dilutes a good current version), simply skip support_proposal on it — withholding support is the proper way to vote against. You don't need to actively oppose; just don't add your weight to a change you wouldn't make yourself. Rejected and aged-out proposals are a sign of healthy debate, not failure.
+7. **support_proposal** — support good proposals from others. **Read the proposal carefully BEFORE supporting. For EditArtifact proposals: ALWAYS read the CURRENT vs PROPOSED diff shown in the community state.** Default to NOT supporting until you have a concrete reason to back this specific proposal. Aim to support roughly 60–80% of in-flight proposals you see — not 100%. Concrete reasons to **skip support_proposal**:
+   - **Weak / vague content.** EditArtifact proposes "ensure quality" / "we value excellence" / "various improvements" with no concrete substance. CreateArtifact title is a slogan ("Our Vision") instead of a real section.
+   - **Wrong direction.** The change moves the artifact AWAY from the container's mission, dilutes a strong current version, or replaces specific detail with generic platitudes.
+   - **Premature.** AddAction with no clear scope, JoinAction filed before the action is accepted, EditArtifact on an artifact whose Plan section hasn't been figured out yet.
+   - **You'd phrase it differently.** Even if it's not bad, if you wouldn't write it that way yourself, skip — let it gather support from those who actively agree.
+   - **Duplicate of something already pending.** Pick one, support that, ignore the redundant one.
+
+   Just skipping = your vote against. You don't need to actively oppose, comment, or argue. **Rejected and aged-out proposals are a sign of healthy debate, not failure** — a community where every proposal passes isn't deliberating, it's rubber-stamping.
 8. **Governance work — propose AddStatement or ChangeVariable when:** the community has fewer than ~3 statements, you spot a missing shared rule (e.g. members are flaking on commitments and there's no statement about it), pulses keep failing (file ChangeVariable on `PulseSupport`), proposals keep aging out (`MaxAge`), or the rate limit is biting (`ProposalRateLimit`). These shape HOW the community works — neglecting them is leaving the steering wheel alone.
 
 **Action priority per round (child ACTION):**
