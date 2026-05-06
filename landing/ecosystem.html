@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Governance Ecosystem — Kibbutznik</title>
+<meta name="description" content="Meet the fifteen ideas that make a kibbutznik community work — from the heartbeat that decides things to the relationships that hold the group together. Click any of them to learn more.">
+<meta name="theme-color" content="#fdf8f0">
+
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="The Governance Ecosystem — Kibbutznik">
+<meta property="og:description" content="The fifteen ideas that make a kibbutznik community work, in one orbit.">
+<meta property="og:url" content="https://kibbutznik.org/ecosystem.html">
+<meta property="og:image" content="https://kibbutznik.org/og-image.png">
+
+<script async src="https://plausible.io/js/pa-YUj2NGAFEeDownEFrcPPq.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+
+<style>
+  /* ── Reset + warm palette (matches welcome.html / guide.html) ── */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg:        #fdf8f0;
+    --bg-alt:    #f4ead8;
+    --card:      #ffffff;
+    --ink:       #2a2520;
+    --ink-soft:  #5a5249;
+    --ink-muted: #8a8076;
+    --pulse:     #e94560;
+    --pulse-soft:#fdebee;
+    --sage:      #6fa885;
+    --sage-soft: #e3f0e8;
+    --gold:      #d9a441;
+    --gold-soft: #fdf3e0;
+    --line:      #e8dec9;
+  }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  a { color: var(--pulse); text-decoration: none; transition: color .15s ease; }
+  a:hover { color: var(--ink); }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  .container-narrow { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Top nav (shared shape with welcome.html / guide.html) ──── */
+  nav.topbar {
+    padding: 24px 0;
+    position: sticky; top: 0;
+    background: rgba(253, 248, 240, 0.85);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    z-index: 50;
+    border-bottom: 1px solid transparent;
+    transition: border-color .2s ease;
+  }
+  nav.topbar.scrolled { border-bottom-color: var(--line); }
+  nav.topbar .container { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 1.05rem; color: var(--ink); letter-spacing: -0.01em; }
+  .brand img { width: 32px; height: 32px; }
+  nav.topbar .links { display: flex; gap: 28px; align-items: center; }
+  nav.topbar .links a { color: var(--ink-soft); font-weight: 500; font-size: 0.95rem; }
+  nav.topbar .links a:hover { color: var(--pulse); }
+  @media (max-width: 640px) { nav.topbar .links a:not(.btn) { display: none; } }
+
+  /* ── Buttons ─────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px; border-radius: 100px;
+    font-weight: 600; font-size: 0.95rem;
+    transition: transform .12s ease, box-shadow .15s ease, background .15s;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  .btn-primary {
+    background: var(--pulse); color: white;
+    box-shadow: 0 6px 16px rgba(233, 69, 96, .18);
+  }
+  .btn-primary:hover {
+    background: #d9304a; color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(233, 69, 96, .25);
+  }
+  .btn-soft {
+    background: white; color: var(--ink); border-color: var(--line);
+  }
+  .btn-soft:hover {
+    background: var(--card); border-color: var(--ink-muted);
+    color: var(--ink); transform: translateY(-1px);
+  }
+
+  /* ── Article header ──────────────────────────────────── */
+  header.article-header {
+    padding: 64px 0 32px;
+    text-align: center;
+    position: relative;
+  }
+  header.article-header::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 25% 30%, rgba(111, 168, 133, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 75% 70%, rgba(233, 69, 96, 0.06) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .article-eyebrow {
+    display: inline-block;
+    padding: 6px 14px;
+    background: var(--sage-soft);
+    color: var(--sage);
+    border-radius: 100px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 22px;
+    letter-spacing: 0.02em;
+  }
+  h1.article-title {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    max-width: 760px;
+    margin: 0 auto 18px;
+  }
+  .article-sub {
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    max-width: 580px;
+    margin: 0 auto;
+  }
+  .hint {
+    margin-top: 18px;
+    font-size: 0.88rem;
+    color: var(--ink-muted);
+  }
+  .hint span {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 8px;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+  /* ── The orbit ─────────────────────────────────────── */
+  .orbit-wrap {
+    padding: 12px 0 80px;
+    position: relative;
+  }
+  .entity-orbit {
+    position: relative;
+    width: 100%;
+    max-width: 820px;
+    height: 540px;
+    margin: 0 auto;
+  }
+  .entity-link-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .entity-center {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center; z-index: 2; pointer-events: none;
+  }
+  .entity-center::before {
+    content: ""; position: absolute; top: 50%; left: 50%;
+    width: 130px; height: 130px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(233, 69, 96, 0.15) 0%, transparent 70%);
+    animation: corePulse 3.2s ease-in-out infinite;
+  }
+  @keyframes corePulse {
+    0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+    50%      { opacity: 1; transform: translate(-50%, -50%) scale(1.25); }
+  }
+  .entity-center-label {
+    font-size: 1.15rem;
+    color: var(--pulse);
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: all .3s;
+    position: relative;
+  }
+  .entity-center-desc {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    max-width: 220px;
+    margin: 0.4rem auto 0;
+    transition: opacity .3s;
+    position: relative;
+    line-height: 1.4;
+  }
+
+  .entity-item {
+    position: absolute;
+    width: 56px; height: 56px;
+    top: 0; left: 0;
+    cursor: pointer;
+    z-index: 3;
+    will-change: transform;
+    transition: filter .3s;
+    filter: drop-shadow(0 3px 8px rgba(111, 168, 133, 0.25));
+  }
+  .entity-item:hover {
+    filter: drop-shadow(0 6px 16px rgba(233, 69, 96, 0.35)) drop-shadow(0 0 4px rgba(111, 168, 133, 0.4));
+    z-index: 10;
+  }
+  .entity-item img { width: 100%; height: 100%; pointer-events: none; }
+  .entity-item .entity-name {
+    position: absolute;
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+    transition: opacity .3s, color .3s;
+    pointer-events: none;
+    font-weight: 500;
+  }
+  .entity-item:hover .entity-name {
+    color: var(--pulse);
+    font-weight: 600;
+  }
+
+  /* ── Tooltip / dossier (warm, social, NOT high-tech) ────── */
+  .entity-tooltip-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(42, 37, 32, 0.55);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    z-index: 999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    animation: fadeBackdrop .25s ease;
+    padding: 24px;
+  }
+  .entity-tooltip-backdrop.open { display: flex; }
+  @keyframes fadeBackdrop { from { opacity: 0; } to { opacity: 1; } }
+  .entity-tooltip {
+    position: relative;
+    max-width: 560px;
+    width: 100%;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    background: white;
+    border-radius: 22px;
+    padding: 32px 36px 28px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+    transform: scale(0.92);
+    opacity: 0;
+    animation: tooltipIn .35s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+  }
+  @keyframes tooltipIn {
+    to { transform: scale(1); opacity: 1; }
+  }
+  .entity-tooltip .tt-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: var(--bg-alt);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 100px;
+    transition: background .15s, color .15s;
+  }
+  .entity-tooltip .tt-close:hover { background: var(--pulse-soft); color: var(--pulse); }
+  .entity-tooltip .tt-head {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding-bottom: 18px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .entity-tooltip .tt-head img {
+    width: 56px; height: 56px;
+    flex-shrink: 0;
+    filter: drop-shadow(0 3px 8px rgba(111, 168, 133, 0.25));
+  }
+  .entity-tooltip .tt-head-text { flex: 1; min-width: 0; }
+  .entity-tooltip .tt-name {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--ink);
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+  }
+  .entity-tooltip .tt-tag {
+    font-size: 0.92rem;
+    color: var(--sage);
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .entity-tooltip .tt-body {
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--ink-soft);
+  }
+  .entity-tooltip .tt-body p { margin: 0; }
+  .entity-tooltip .tt-rels {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 0.85rem;
+  }
+  .entity-tooltip .tt-rels .tt-rels-label {
+    color: var(--ink-muted);
+    margin-right: 6px;
+    font-weight: 500;
+  }
+  .entity-tooltip .tt-rels span.tt-rel-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    margin: 4px 4px 0 0;
+    background: var(--sage-soft);
+    color: var(--sage);
+    border-radius: 100px;
+    font-weight: 600;
+    font-size: 0.83rem;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .entity-tooltip .tt-rels span.tt-rel-pill:hover {
+    background: var(--pulse-soft);
+    color: var(--pulse);
+  }
+
+  /* ── Section underneath the orbit ─────────────────────────── */
+  section.under-orbit {
+    padding: 60px 0 80px;
+    background: var(--bg-alt);
+  }
+  .reading-rec {
+    max-width: 640px;
+    margin: 0 auto;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 1.05rem;
+    line-height: 1.65;
+  }
+  .reading-rec .btn-row {
+    display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 28px;
+  }
+
+  /* ── Final big CTA ─────────────────────────────────────── */
+  section.end-cta-section { padding: 60px 0; }
+  .end-cta {
+    background: var(--ink);
+    color: white;
+    border-radius: 28px;
+    padding: 56px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .end-cta::before {
+    content: '';
+    position: absolute; top: -100px; right: -100px;
+    width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(111, 168, 133, 0.4) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .end-cta h2 {
+    color: white;
+    margin: 0 0 12px;
+    font-size: clamp(1.6rem, 3.5vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    position: relative;
+  }
+  .end-cta p {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 1.05rem;
+    margin: 0 0 28px;
+    position: relative;
+  }
+  .end-cta .btn-soft {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .end-cta .btn-soft:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: white;
+  }
+  .end-cta .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+  /* ── Footer ─────────────────────────────────────────── */
+  footer {
+    padding: 40px 0;
+    border-top: 1px solid var(--line);
+    color: var(--ink-muted);
+    font-size: 0.9rem;
+  }
+  footer .container {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  footer a { color: var(--ink-soft); }
+  footer .socials { display: flex; gap: 18px; flex-wrap: wrap; }
+
+  /* ── Responsive ─────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .entity-orbit { height: 420px; }
+    .entity-item { width: 48px; height: 48px; }
+    .entity-tooltip { padding: 24px 20px 20px; border-radius: 18px; }
+  }
+  @media (max-width: 480px) {
+    .entity-orbit { height: 340px; }
+    .entity-item { width: 42px; height: 42px; }
+    .entity-item .entity-name { font-size: 0.62rem; bottom: -15px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="topbar" id="topbar">
+  <div class="container">
+    <a href="/welcome.html" class="brand">
+      <img src="logo.svg" alt="">
+      Kibbutznik
+    </a>
+    <div class="links">
+      <a href="/welcome.html">Home</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">See it live</a>
+      <a href="/app/" class="btn btn-primary">Open the app</a>
+    </div>
+  </div>
+</nav>
+
+<header class="article-header">
+  <div class="container-narrow">
+    <div class="article-eyebrow">The Ecosystem</div>
+    <h1 class="article-title">Fifteen ideas, one shared heartbeat.</h1>
+    <p class="article-sub">
+      A kibbutznik community is built from a small number of moving parts that fit together neatly.
+      Hover or click any of them to see what it does and what it touches.
+    </p>
+    <div class="hint">
+      Tip: <span>click</span> a piece to read about it · <span>Esc</span> closes
+    </div>
+  </div>
+</header>
+
+<div class="orbit-wrap">
+  <div class="entity-orbit" id="entityOrbit">
+    <canvas class="entity-link-canvas" id="entityLinkCanvas"></canvas>
+    <div class="entity-center">
+      <div class="entity-center-label" id="entityLabel">KBZ</div>
+      <div class="entity-center-desc" id="entityDesc">a community in motion</div>
+    </div>
+  </div>
+</div>
+
+<section class="under-orbit">
+  <div class="container-narrow">
+    <p class="reading-rec">
+      Want the longer version? The <strong>Guide</strong> walks through the same ideas in plain language,
+      in the order you'd want to learn them. Or jump into the live simulation and watch them all
+      working at once.
+    </p>
+    <div class="btn-row" style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-top:28px;">
+      <a href="/guide.html" class="btn btn-primary">Read the friendly guide →</a>
+      <a href="/kbz/viewer/" class="btn btn-soft">Watch a live community</a>
+    </div>
+  </div>
+</section>
+
+<section class="end-cta-section">
+  <div class="container">
+    <div class="end-cta">
+      <h2>Ready to start your own?</h2>
+      <p>You can have a working kibbutz running in under a minute.</p>
+      <div class="hero-cta">
+        <a href="/app/" class="btn btn-primary">Open the app →</a>
+        <a href="/guide.html" class="btn btn-soft">Read the guide first</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tooltip / dossier (light card style) -->
+<div class="entity-tooltip-backdrop" id="entityTooltipBackdrop" onclick="closeEntityTooltip(event)">
+  <div class="entity-tooltip" id="entityTooltip" onclick="event.stopPropagation()">
+    <button class="tt-close" onclick="closeEntityTooltip()">Close · Esc</button>
+    <div class="tt-head">
+      <img id="ttIcon" src="" alt="">
+      <div class="tt-head-text">
+        <div class="tt-name" id="ttName"></div>
+        <div class="tt-tag" id="ttTag"></div>
+      </div>
+    </div>
+    <div class="tt-body" id="ttBody"></div>
+    <div class="tt-rels" id="ttRels"></div>
+  </div>
+</div>
+
+<footer>
+  <div class="container">
+    <div>© Kibbutznik · open source · made by people who believe small groups can run themselves</div>
+    <div class="socials">
+      <a href="/welcome.html">Home</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/app/">App</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
+      <a href="/">Technical landing</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* Entity ecosystem — adapted from landing/index.html for the warm-cream theme.
+   Same 15 entities, same relationships. The animation, tooltip, and click
+   interactions are preserved; only the color palette and tooltip styling
+   were swapped (sage/pulse on cream instead of green/red on black). */
+const ENTITIES = [
+  {name:'Community', file:'community.svg', tag:'The fundamental governance unit', ring:0,
+   desc:"A community is the atomic unit of Kibbutznik. It owns its own members, proposals, pulses, variables, statements, and artifact containers. Every community runs its own clock and its own rules — and every community, root or deep sub-action, is built from the exact same machinery. Nothing in the simulation exists outside of a community; even the simulation's root is one.",
+   rels:['Member','Action','Statement','Variable','Pulse']},
+  {name:'Member', file:'member.svg', tag:'A participant in governance', ring:0,
+   desc:"Members are the atoms of participation. They author proposals, give support, call pulses, delegate authority, write artifacts, and hold memory. Each member accumulates seniority with every pulse they survive, and their relationships with others are tracked as directed closeness scores. In the agent simulation, each member is driven by a unique LLM persona with goals, personality, and memory — a virtual citizen.",
+   rels:['Community','Proposal','Support','Memory','Closeness','Comment']},
+  {name:'Proposal', file:'proposal.svg', tag:'A frozen intent awaiting the pulse', ring:0,
+   desc:"A proposal captures an intended change — add a rule, spend a budget, edit an artifact, join an action — that the community must collectively approve. It moves through Draft → OutThere → OnTheAir → Accepted or Rejected, entirely driven by member support. Proposals are the only way anything ever changes in Kibbutznik: no privileged admin, no emergency powers, no backdoor.",
+   rels:['Member','Support','OutThere','OnTheAir','Pulse','Comment']},
+  {name:'Pulse', file:'pulse.svg', tag:'The heartbeat that makes time move', ring:0,
+   desc:"The pulse is the clock of Kibbutznik. Nothing advances — no proposal is executed, no seniority is counted, no age ticks — until a pulse fires. A pulse fires when a threshold fraction of members call support_pulse on it (default 50%). When it does, OnTheAir proposals are decided against their thresholds, OutThere proposals age by one, and the community lurches forward. A community that never pulses accomplishes nothing.",
+   rels:['Member','Proposal','OnTheAir','Community']},
+  {name:'Support', file:'support.svg', tag:'The currency of democracy', ring:1,
+   desc:"Support is how members cast their will. Every proposal has a support count that grows as members add themselves and shrinks as they withdraw. When a pulse fires, the count is compared against the proposal type's specific threshold to decide its fate. Support is public, revocable, and auditable — and editing a submitted proposal resets all of its support to zero, which is the single hardest rule for new members to learn.",
+   rels:['Proposal','Member','Pulse']},
+  {name:'Statement', file:'statement.svg', tag:'A binding community rule', ring:1,
+   desc:"A statement is a persistent declaration the community has ratified — a rule, a value, a policy, a norm. Unlike proposals, statements stay active until explicitly removed or replaced. Members read the statement set as the community's living constitution and often refer back to them when deciding how to vote. Communities can have hundreds of statements across dozens of topics.",
+   rels:['Community']},
+  {name:'Action', file:'action.svg', tag:'A working group with full autonomy', ring:1,
+   desc:"An action is a child community carved out of its parent to focus on specific work. It inherits members and hierarchy but runs its own proposals, pulses, and containers independently. Actions are created by AddAction proposals and retired when their work is done. Actions can nest: sub-actions inside actions inside actions, as deep as the community needs. A member thrown out of the parent is automatically removed from all descendant actions.",
+   rels:['Community','Container','Member']},
+  {name:'Container', file:'container.svg', tag:'A workspace holding artifacts', ring:1,
+   desc:"A container holds a batch of artifacts in progress for a specific action. Containers move through states — Open → PendingParent → Committed — and a successful CommitArtifact proposal ships the whole batch back to the parent community as an EditArtifact. Containers are how creative output flows upward through the governance hierarchy, always voted through, always auditable.",
+   rels:['Action','Artifact']},
+  {name:'Artifact', file:'artifact.svg', tag:'Productive output, voted into existence', ring:1,
+   desc:"An artifact is a piece of productive output — a section of a handbook, a design, a paragraph of a story, a line of a budget. Artifacts start as empty slots (just a title) and get filled via EditArtifact proposals. Edits happen in place on a single row, so an artifact's identity is permanent even as its content evolves. Every container has a built-in Plan artifact that guides the work but is never shipped.",
+   rels:['Container','Proposal']},
+  {name:'OutThere', file:'outthere.svg', tag:'A proposal gathering public support', ring:2,
+   desc:"Once a member submits a draft, the proposal becomes OutThere — the public stage. It collects support from the wider community; if it gathers enough before MaxAge rounds elapse, the next pulse promotes it to OnTheAir. If not, it is automatically canceled in the next sweep. Most proposals live and die in OutThere; only the ones that catch a spark survive to the deciding window.",
+   rels:['Proposal','Pulse','OnTheAir']},
+  {name:'OnTheAir', file:'ontheair.svg', tag:'Live voting in progress', ring:2,
+   desc:"A proposal OnTheAir is in the live deciding window. When the next pulse fires, its support count is checked against the type-specific threshold: pass and it is Accepted and executed immediately, fail and it is Rejected and archived. OnTheAir is the moment of truth — once a proposal crosses this line there is no going back, no further debate, just the community's count and the pulse's verdict.",
+   rels:['Proposal','Pulse','OutThere']},
+  {name:'Comment', file:'comment.svg', tag:'Debate attached to proposals', ring:2,
+   desc:"Comments are the conversation around everything else: proposals, statements, members, artifacts. They do not change state on their own — they are how members persuade each other, raise objections, and negotiate compromises. Good proposals are usually surrounded by thoughtful threads; bad ones get dragged. Members read comments as context when deciding how to cast support.",
+   rels:['Proposal','Member']},
+  {name:'Closeness', file:'closeness.svg', tag:'The social fabric in numbers', ring:2,
+   desc:"Closeness is a directed affinity score between two members. It grows through shared support, cooperative proposals, positive comments, and co-authorship. It fades without interaction. Members use closeness to decide who to trust, who to ally with, and who to work around. Closeness is asymmetric: A can be close to B while B barely notices A, which produces fascinating dynamics over time.",
+   rels:['Member']},
+  {name:'Variable', file:'variable.svg', tag:'Tunable governance thresholds', ring:2,
+   desc:"Variables are the tunable numbers that shape governance dynamics: support percentages required to pass different proposal types, pulse trigger fractions, MaxAge, seniority multipliers, and dozens more. They can themselves be changed via ChangeVariable proposals — so the community votes on how it votes. Changing a variable is how a community evolves its own constitution without rewriting its source code.",
+   rels:['Community']},
+  {name:'Memory', file:'memory.svg', tag:'Persistent experience per member', ring:2,
+   desc:"Memory is what makes an agent an individual over time. Each memory records an outcome, a relationship, a goal, or an episodic event, with an importance score, a category, and an optional expiration. Memories drive future decisions — a member who was burned by an ally last round remembers, and a member whose EditArtifact was accepted celebrates. Memory is the difference between a chatbot and a citizen.",
+   rels:['Member']},
+];
+
+const ENTITY_EDGES = [
+  ['Community','Member'],['Community','Action'],['Community','Statement'],
+  ['Community','Variable'],['Community','Pulse'],
+  ['Member','Proposal'],['Member','Support'],['Member','Memory'],
+  ['Member','Closeness'],['Member','Comment'],
+  ['Proposal','Support'],['Proposal','OutThere'],['Proposal','OnTheAir'],
+  ['Proposal','Comment'],['Proposal','Artifact'],
+  ['Pulse','OnTheAir'],['Pulse','Proposal'],['Pulse','OutThere'],
+  ['Action','Container'],['Container','Artifact'],
+  ['OutThere','OnTheAir'],
+];
+
+(function(){
+  const orbit = document.getElementById('entityOrbit');
+  const label = document.getElementById('entityLabel');
+  const desc  = document.getElementById('entityDesc');
+  const canvas = document.getElementById('entityLinkCanvas');
+  const ctx = canvas.getContext('2d');
+  const byName = {};
+  const items = [];
+
+  // Ring definitions — matches index.html's tested layout.
+  const RINGS = [
+    {rx:150, ry:100, w:0.00024},
+    {rx:240, ry:160, w:-0.00018},
+    {rx:320, ry:215, w:0.00013},
+  ];
+  const ringBuckets = [[],[],[]];
+  ENTITIES.forEach(e => ringBuckets[e.ring].push(e));
+
+  ringBuckets.forEach((bucket, ringIdx) => {
+    bucket.forEach((e, j) => {
+      const div = document.createElement('div');
+      div.className = 'entity-item';
+      div.innerHTML = `<img src="avatars/${e.file}" alt="${e.name}" draggable="false"><span class="entity-name">${e.name}</span>`;
+      div.addEventListener('mouseenter', () => {
+        label.textContent = e.name;
+        desc.textContent = e.tag;
+      });
+      div.addEventListener('mouseleave', () => {
+        label.textContent = 'KBZ';
+        desc.textContent = 'a community in motion';
+      });
+      div.addEventListener('click', () => openEntityTooltip(e.name));
+      orbit.appendChild(div);
+      items.push({
+        e, div,
+        ring: ringIdx,
+        phase: (2*Math.PI*j/bucket.length) + ringIdx*0.4,
+        wobblePhase: Math.random()*Math.PI*2,
+        x:0, y:0,
+      });
+      byName[e.name] = items[items.length - 1];
+    });
+  });
+
+  function resizeCanvas(){
+    const w = orbit.clientWidth;
+    const h = orbit.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  const start = performance.now();
+  function tick(now){
+    const t = now - start;
+    const w = orbit.clientWidth;
+    const h = orbit.clientHeight;
+    const cx = w/2, cy = h/2;
+    const scale = Math.min(1, w / 720);
+
+    for(const it of items){
+      const r = RINGS[it.ring];
+      const wobble = Math.sin(t*0.0009 + it.wobblePhase) * 8;
+      const ang = it.phase + r.w * t;
+      it.x = cx + (r.rx*scale + wobble) * Math.cos(ang);
+      it.y = cy + (r.ry*scale + wobble*0.6) * Math.sin(ang);
+      it.div.style.transform = `translate(${it.x - 28}px, ${it.y - 28}px)`;
+    }
+
+    // Connection canvas: sage/pulse moving gradient — adapted to the
+    // warm theme (cream bg means we keep the lines fairly opaque).
+    ctx.clearRect(0,0,w,h);
+    for(const [a,b] of ENTITY_EDGES){
+      const A = byName[a], B = byName[b];
+      if(!A || !B) continue;
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const dist = Math.hypot(dx,dy);
+      const maxD = 520;
+      const alpha = Math.max(0.10, Math.min(0.45, 1 - dist/maxD));
+      const phase = (t*0.0004 + (a.charCodeAt(0)+b.charCodeAt(0))*0.03) % 1;
+      const grad = ctx.createLinearGradient(A.x, A.y, B.x, B.y);
+      grad.addColorStop(Math.max(0, phase-0.15), `rgba(111,168,133,${alpha*0.30})`);
+      grad.addColorStop(phase,                    `rgba(233,69,96,${alpha})`);
+      grad.addColorStop(Math.min(1, phase+0.15),  `rgba(111,168,133,${alpha*0.30})`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.stroke();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+
+function openEntityTooltip(name){
+  const e = ENTITIES.find(x => x.name === name);
+  if(!e) return;
+  document.getElementById('ttIcon').src = 'avatars/' + e.file;
+  document.getElementById('ttName').textContent = e.name;
+  document.getElementById('ttTag').textContent = e.tag;
+  document.getElementById('ttBody').innerHTML = '<p>' + e.desc + '</p>';
+  const rels = document.getElementById('ttRels');
+  if(e.rels && e.rels.length){
+    rels.innerHTML = '<span class="tt-rels-label">Connects to:</span>'
+      + e.rels.map(r => `<span class="tt-rel-pill" onclick="openEntityTooltip('${r}')">${r}</span>`).join('');
+  } else {
+    rels.innerHTML = '';
+  }
+  const bd = document.getElementById('entityTooltipBackdrop');
+  bd.classList.add('open');
+  const tip = document.getElementById('entityTooltip');
+  tip.style.animation = 'none';
+  void tip.offsetWidth;
+  tip.style.animation = '';
+}
+function closeEntityTooltip(ev){
+  if(ev && ev.target && ev.target.closest && ev.target.closest('.entity-tooltip') && ev.type === 'click'
+     && !ev.target.classList.contains('tt-close')) return;
+  document.getElementById('entityTooltipBackdrop').classList.remove('open');
+}
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape') closeEntityTooltip();
+});
+
+// Sticky-nav border on scroll
+const topbar = document.getElementById('topbar');
+let lastY = 0;
+window.addEventListener('scroll', () => {
+  const y = window.scrollY;
+  if (y > 8 && lastY <= 8) topbar.classList.add('scrolled');
+  else if (y <= 8 && lastY > 8) topbar.classList.remove('scrolled');
+  lastY = y;
+}, { passive: true });
+</script>
+</body>
+</html>
