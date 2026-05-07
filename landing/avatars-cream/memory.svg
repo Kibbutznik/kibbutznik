@@ -5,30 +5,30 @@
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <circle cx="40" cy="40" r="36" fill="white" stroke="#90caf9" stroke-width="2" opacity="0.9"/>
+  <circle cx="40" cy="40" r="36" fill="white" stroke="#90caf9" stroke-width="2" opacity="1"/>
   <!-- Simplified brain outline -->
-  <g transform="translate(40,38)" fill="none" stroke="#90caf9" stroke-width="1.5" opacity="0.6">
+  <g transform="translate(40,38)" fill="none" stroke="#90caf9" stroke-width="1.5" opacity="1">
     <!-- Left hemisphere -->
     <path d="M-2,-16 Q-16,-16 -18,-4 Q-20,6 -14,12 Q-8,18 -2,14"/>
-    <path d="M-2,-8 Q-12,-6 -14,0 Q-14,6 -8,8" opacity="0.3"/>
+    <path d="M-2,-8 Q-12,-6 -14,0 Q-14,6 -8,8" opacity="0.7"/>
     <!-- Right hemisphere -->
     <path d="M2,-16 Q16,-16 18,-4 Q20,6 14,12 Q8,18 2,14"/>
-    <path d="M2,-8 Q12,-6 14,0 Q14,6 8,8" opacity="0.3"/>
+    <path d="M2,-8 Q12,-6 14,0 Q14,6 8,8" opacity="0.7"/>
     <!-- Center line -->
-    <line x1="0" y1="-16" x2="0" y2="14" stroke-width="1" opacity="0.3"/>
+    <line x1="0" y1="-16" x2="0" y2="14" stroke-width="1" opacity="0.7"/>
   </g>
   <!-- Circuit nodes (digital memory) -->
   <g filter="url(#mgl)">
-    <circle cx="30" cy="30" r="2" fill="#90caf9" opacity="0.6">
+    <circle cx="30" cy="30" r="2" fill="#90caf9" opacity="1">
       <animate attributeName="opacity" values="0.3;0.8;0.3" dur="2s" begin="0s" repeatCount="indefinite"/>
     </circle>
-    <circle cx="50" cy="32" r="2" fill="#90caf9" opacity="0.6">
+    <circle cx="50" cy="32" r="2" fill="#90caf9" opacity="1">
       <animate attributeName="opacity" values="0.3;0.8;0.3" dur="2s" begin="0.5s" repeatCount="indefinite"/>
     </circle>
-    <circle cx="35" cy="44" r="2" fill="#90caf9" opacity="0.6">
+    <circle cx="35" cy="44" r="2" fill="#90caf9" opacity="1">
       <animate attributeName="opacity" values="0.3;0.8;0.3" dur="2s" begin="1s" repeatCount="indefinite"/>
     </circle>
-    <circle cx="48" cy="46" r="2" fill="#90caf9" opacity="0.6">
+    <circle cx="48" cy="46" r="2" fill="#90caf9" opacity="1">
       <animate attributeName="opacity" values="0.3;0.8;0.3" dur="2s" begin="1.5s" repeatCount="indefinite"/>
     </circle>
   </g>

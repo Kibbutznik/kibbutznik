@@ -9,7 +9,7 @@
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <circle cx="40" cy="40" r="36" fill="white" stroke="#e94560" stroke-width="2" opacity="0.9">
+  <circle cx="40" cy="40" r="36" fill="white" stroke="#e94560" stroke-width="2" opacity="1">
     <animate attributeName="r" values="34;37;34" dur="1.5s" repeatCount="indefinite"/>
   </circle>
   <!-- Heartbeat line -->
@@ -19,7 +19,7 @@
     <animate attributeName="stroke-dasharray" values="0,200;200,0" dur="1.5s" repeatCount="indefinite"/>
   </polyline>
   <!-- Glow ring -->
-  <circle cx="40" cy="40" r="36" fill="none" stroke="#e94560" stroke-width="1" opacity="0.3">
+  <circle cx="40" cy="40" r="36" fill="none" stroke="#e94560" stroke-width="1" opacity="0.7">
     <animate attributeName="r" values="36;42;36" dur="2s" repeatCount="indefinite"/>
     <animate attributeName="opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite"/>
   </circle>

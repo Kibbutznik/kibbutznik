@@ -7,7 +7,7 @@
       <stop offset="100%" stop-color="#e94560"/>
     </linearGradient>
   </defs>
-  <circle cx="40" cy="40" r="36" fill="white" stroke="#f0c040" stroke-width="2" opacity="0.9"/>
+  <circle cx="40" cy="40" r="36" fill="white" stroke="#f0c040" stroke-width="2" opacity="1"/>
   <!-- Diamond/gem shape -->
   <g transform="translate(40,38)">
     <polygon points="0,-18 14,-4 0,18 -14,-4" fill="url(#artg)" opacity="0.25"
@@ -15,8 +15,8 @@
       <animate attributeName="opacity" values="0.2;0.35;0.2" dur="3s" repeatCount="indefinite"/>
     </polygon>
     <!-- Inner facets -->
-    <line x1="0" y1="-18" x2="0" y2="18" stroke="#f0c040" stroke-width="0.8" opacity="0.4"/>
-    <line x1="-14" y1="-4" x2="14" y2="-4" stroke="#f0c040" stroke-width="0.8" opacity="0.4"/>
+    <line x1="0" y1="-18" x2="0" y2="18" stroke="#f0c040" stroke-width="0.8" opacity="0.85"/>
+    <line x1="-14" y1="-4" x2="14" y2="-4" stroke="#f0c040" stroke-width="0.8" opacity="0.85"/>
     <!-- Sparkle at top -->
     <g opacity="0">
       <line x1="-4" y1="-22" x2="4" y2="-22" stroke="#fff" stroke-width="1"/>

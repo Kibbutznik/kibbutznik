@@ -5,13 +5,13 @@
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <circle cx="40" cy="40" r="36" fill="white" stroke="#f0c040" stroke-width="2" opacity="0.9"/>
+  <circle cx="40" cy="40" r="36" fill="white" stroke="#f0c040" stroke-width="2" opacity="1"/>
   <!-- Gear -->
   <g transform="translate(40,40)" filter="url(#agl)">
-    <circle r="12" fill="none" stroke="#f0c040" stroke-width="2" opacity="0.8"/>
-    <circle r="5" fill="#f0c040" opacity="0.4"/>
+    <circle r="12" fill="none" stroke="#f0c040" stroke-width="2" opacity="1"/>
+    <circle r="5" fill="#f0c040" opacity="0.85"/>
     <!-- Gear teeth -->
-    <g stroke="#f0c040" stroke-width="3" stroke-linecap="round" opacity="0.7">
+    <g stroke="#f0c040" stroke-width="3" stroke-linecap="round" opacity="1">
       <line x1="0" y1="-13" x2="0" y2="-20"/>
       <line x1="13" y1="0" x2="20" y2="0"/>
       <line x1="0" y1="13" x2="0" y2="20"/>
@@ -26,7 +26,7 @@
   </g>
   <!-- Small rotating indicator -->
   <circle cx="40" cy="40" r="28" fill="none" stroke="#f0c040" stroke-width="0.5"
-    stroke-dasharray="4 8" opacity="0.3">
+    stroke-dasharray="4 8" opacity="0.7">
     <animateTransform attributeName="transform" type="rotate"
       from="0 40 40" to="-360 40 40" dur="12s" repeatCount="indefinite"/>
   </circle>

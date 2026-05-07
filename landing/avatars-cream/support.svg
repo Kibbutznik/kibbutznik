@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
   <!-- SUPPORT: Two hands clasping / thumbs up - the currency of democracy -->
-  <circle cx="40" cy="40" r="36" fill="white" stroke="#4ecca3" stroke-width="2" opacity="0.9"/>
+  <circle cx="40" cy="40" r="36" fill="white" stroke="#4ecca3" stroke-width="2" opacity="1"/>
   <!-- Handshake simplified as two curved arrows meeting -->
   <g transform="translate(40,40)" opacity="0.85">
     <!-- Left hand arc -->
@@ -12,7 +12,7 @@
       <animate attributeName="d" values="M18,5 C18,-8 5,-15 0,-5;M16,3 C16,-10 5,-17 0,-7;M18,5 C18,-8 5,-15 0,-5" dur="2.5s" repeatCount="indefinite"/>
     </path>
     <!-- Central connection point -->
-    <circle r="3" fill="#fff" opacity="0.6">
+    <circle r="3" fill="#fff" opacity="1">
       <animate attributeName="r" values="2.5;4;2.5" dur="2.5s" repeatCount="indefinite"/>
       <animate attributeName="opacity" values="0.4;0.8;0.4" dur="2.5s" repeatCount="indefinite"/>
     </circle>
