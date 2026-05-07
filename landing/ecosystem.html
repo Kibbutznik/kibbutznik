@@ -215,10 +215,17 @@
     z-index: 3;
     will-change: transform;
     transition: filter .3s;
-    filter: drop-shadow(0 3px 8px rgba(111, 168, 133, 0.25));
+    /* Two stacked shadows: a near tight edge (so the white disc reads
+       as a card on cream) + a soft sage glow further out (so the
+       whole icon feels alive). */
+    filter:
+      drop-shadow(0 1px 2px rgba(42, 37, 32, 0.18))
+      drop-shadow(0 6px 14px rgba(111, 168, 133, 0.20));
   }
   .entity-item:hover {
-    filter: drop-shadow(0 6px 16px rgba(233, 69, 96, 0.35)) drop-shadow(0 0 4px rgba(111, 168, 133, 0.4));
+    filter:
+      drop-shadow(0 2px 4px rgba(42, 37, 32, 0.22))
+      drop-shadow(0 8px 22px rgba(233, 69, 96, 0.32));
     z-index: 10;
   }
   .entity-item img { width: 100%; height: 100%; pointer-events: none; }
@@ -623,7 +630,7 @@ const ENTITY_EDGES = [
     bucket.forEach((e, j) => {
       const div = document.createElement('div');
       div.className = 'entity-item';
-      div.innerHTML = `<img src="avatars/${e.file}" alt="${e.name}" draggable="false"><span class="entity-name">${e.name}</span>`;
+      div.innerHTML = `<img src="avatars-cream/${e.file}" alt="${e.name}" draggable="false"><span class="entity-name">${e.name}</span>`;
       div.addEventListener('mouseenter', () => {
         label.textContent = e.name;
         desc.textContent = e.tag;
@@ -705,7 +712,7 @@ const ENTITY_EDGES = [
 function openEntityTooltip(name){
   const e = ENTITIES.find(x => x.name === name);
   if(!e) return;
-  document.getElementById('ttIcon').src = 'avatars/' + e.file;
+  document.getElementById('ttIcon').src = 'avatars-cream/' + e.file;
   document.getElementById('ttName').textContent = e.name;
   document.getElementById('ttTag').textContent = e.tag;
   document.getElementById('ttBody').innerHTML = '<p>' + e.desc + '</p>';
