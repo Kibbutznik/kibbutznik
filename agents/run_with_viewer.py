@@ -355,6 +355,7 @@ Examples:
         closeness,
         comments,
         communities,
+        highlights,
         invites,
         me,
         members,
@@ -394,6 +395,7 @@ Examples:
     combined_app.include_router(wallets.router)
     combined_app.include_router(wallet_webhook.router)
     combined_app.include_router(ws.router, tags=["websocket"])
+    combined_app.include_router(highlights.router)
     combined_app.include_router(sim_router)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")
 
