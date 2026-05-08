@@ -282,3 +282,169 @@ async def test_highlights_link_for_artifact_proposals_points_to_share_page(clien
     edits = [h for h in r.json()["highlights"] if h["type"] == "EditArtifact"]
     assert edits, "no EditArtifact highlight returned"
     assert edits[0]["link"] == f"/artifact/{art_id}"
+
+
+# ── Highlight title resolution (no raw UUIDs) ──────────────────
+
+@pytest.mark.asyncio
+async def test_highlight_delegateartifact_resolves_uuids_to_names(client, db):
+    """DelegateArtifact's val_uuid is an artifact id, val_text is a
+    target community id. Both are UUIDs in the DB; the highlight
+    title must show the artifact title and target action name, NOT
+    the raw UUIDs (this was the user-reported bug)."""
+    from kbz.routers.highlights import _CACHE
+    _CACHE["payload"] = None
+
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "DACo")
+    cid = _uuid.UUID(community["id"])
+
+    # Container + artifact to delegate.
+    container_id = _uuid.uuid4()
+    db.add(ArtifactContainer(
+        id=container_id, community_id=cid, status=1,
+        title="Handbook", delegated_from_artifact_id=None,
+    ))
+    art_id = _uuid.uuid4()
+    db.add(Artifact(
+        id=art_id, container_id=container_id, community_id=cid,
+        title="Onboarding Procedure", content="…",
+        author_user_id=_uuid.UUID(user["id"]),
+        proposal_id=None, status=int(ArtifactStatus.ACTIVE), is_plan=False,
+    ))
+    # Target action sub-community.
+    target_id = _uuid.uuid4()
+    db.add(Community(
+        id=target_id, parent_id=cid, name="Onboarding Writers",
+        status=1, member_count=1,
+    ))
+    # The DelegateArtifact proposal: val_uuid=artifact, val_text=target community id
+    from datetime import datetime, timezone
+    db.add(Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=_uuid.UUID(user["id"]),
+        proposal_type=ProposalType.DELEGATE_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="Hand it over",
+        val_uuid=art_id,
+        val_text=str(target_id),
+        age=0, support_count=4,
+        decided_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+
+    r = await client.get("/highlights?limit=5")
+    items = r.json()["highlights"]
+    delegated = [h for h in items if h["type"] == "DelegateArtifact"]
+    assert delegated, "no DelegateArtifact highlight returned"
+    title = delegated[0]["title"]
+    # The artifact title should be in the snippet.
+    assert "Onboarding Procedure" in title
+    # The target action name should be in the snippet.
+    assert "Onboarding Writers" in title
+    # And neither UUID should leak.
+    assert str(art_id) not in title
+    assert str(target_id) not in title
+
+
+@pytest.mark.asyncio
+async def test_highlight_changevariable_shows_var_name(client, db):
+    """ChangeVariable's proposal_text is "VarName\\nreason..."; the
+    title should show the variable name and new value, not just
+    the first line of the reason."""
+    from kbz.routers.highlights import _CACHE
+    _CACHE["payload"] = None
+
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "CVCo")
+    cid = _uuid.UUID(community["id"])
+    from datetime import datetime, timezone
+    db.add(Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=_uuid.UUID(user["id"]),
+        proposal_type=ProposalType.CHANGE_VARIABLE,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="MaxAge\nGive proposals more time to gather support",
+        val_text="3",
+        age=0, support_count=5,
+        decided_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+
+    r = await client.get("/highlights?limit=5")
+    cv = [h for h in r.json()["highlights"] if h["type"] == "ChangeVariable"]
+    assert cv, "no ChangeVariable highlight returned"
+    title = cv[0]["title"]
+    assert "MaxAge" in title
+    assert "3" in title
+    assert "Give proposals" not in title  # the reason shouldn't be the title
+
+
+@pytest.mark.asyncio
+async def test_highlight_editartifact_shows_artifact_title(client, db):
+    """EditArtifact's val_uuid is the artifact id. The title should
+    quote the artifact's title, not be a raw id."""
+    from kbz.routers.highlights import _CACHE
+    _CACHE["payload"] = None
+
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "EACo")
+    cid = _uuid.UUID(community["id"])
+
+    container_id = _uuid.uuid4()
+    db.add(ArtifactContainer(
+        id=container_id, community_id=cid, status=1, title="Handbook",
+        delegated_from_artifact_id=None,
+    ))
+    art_id = _uuid.uuid4()
+    db.add(Artifact(
+        id=art_id, container_id=container_id, community_id=cid,
+        title="Conflict Resolution",
+        content="When two members disagree…",
+        author_user_id=_uuid.UUID(user["id"]),
+        proposal_id=None, status=int(ArtifactStatus.ACTIVE), is_plan=False,
+    ))
+    from datetime import datetime, timezone
+    db.add(Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=_uuid.UUID(user["id"]),
+        proposal_type=ProposalType.EDIT_ARTIFACT,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="Updated phrasing",
+        val_uuid=art_id,
+        age=0, support_count=4,
+        decided_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+
+    r = await client.get("/highlights?limit=5")
+    edits = [h for h in r.json()["highlights"] if h["type"] == "EditArtifact"]
+    assert edits
+    title = edits[0]["title"]
+    assert "Conflict Resolution" in title
+    assert str(art_id) not in title
+
+
+@pytest.mark.asyncio
+async def test_highlight_addaction_shows_action_name(client, db):
+    """AddAction's val_text is the action's chosen name; should
+    show up as the title."""
+    from kbz.routers.highlights import _CACHE
+    _CACHE["payload"] = None
+
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "AACo")
+    cid = _uuid.UUID(community["id"])
+    from datetime import datetime, timezone
+    db.add(Proposal(
+        id=_uuid.uuid4(), community_id=cid, user_id=_uuid.UUID(user["id"]),
+        proposal_type=ProposalType.ADD_ACTION,
+        proposal_status=ProposalStatus.ACCEPTED,
+        proposal_text="A focused team to write the onboarding guide",
+        val_text="Onboarding Writers",
+        age=0, support_count=5,
+        decided_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+
+    r = await client.get("/highlights?limit=5")
+    actions = [h for h in r.json()["highlights"] if h["type"] == "AddAction"]
+    assert actions
+    assert actions[0]["title"] == "Onboarding Writers"

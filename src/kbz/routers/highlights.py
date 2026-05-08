@@ -23,8 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.database import get_db
 from kbz.enums import ProposalStatus
+from kbz.models.artifact import Artifact
+from kbz.models.artifact_container import ArtifactContainer
 from kbz.models.community import Community
 from kbz.models.proposal import Proposal
+from kbz.models.statement import Statement
 from kbz.models.user import User
 from kbz.models.variable import Variable
 
@@ -141,6 +144,73 @@ async def get_highlights(
         )
     ).all()
 
+    # ── Bulk-resolve UUIDs in val_uuid / val_text into human names ──
+    # Pre-fix the highlight cards rendered raw 36-char UUIDs whenever
+    # a proposal type put an id in val_uuid or val_text (most painful:
+    # DelegateArtifact, whose val_text IS a UUID — the user reported
+    # a card titled "be866e6e-9918-49a0-..."). For each artifact /
+    # container / community / statement id referenced by any proposal
+    # in this batch, look up the readable name in one query, then
+    # build snippets from those names instead of the raw ids.
+    artifact_ids: set[uuid.UUID] = set()
+    container_ids: set[uuid.UUID] = set()
+    community_ids: set[uuid.UUID] = set()
+    statement_ids: set[uuid.UUID] = set()
+    for proposal, _, _ in rows:
+        ptype = proposal.proposal_type
+        if proposal.val_uuid:
+            if ptype in ("EditArtifact", "DelegateArtifact", "RemoveArtifact"):
+                artifact_ids.add(proposal.val_uuid)
+            elif ptype in ("CreateArtifact", "CommitArtifact"):
+                container_ids.add(proposal.val_uuid)
+            elif ptype in ("RemoveStatement", "ReplaceStatement"):
+                statement_ids.add(proposal.val_uuid)
+        if proposal.val_text and ptype == "DelegateArtifact":
+            try:
+                community_ids.add(uuid.UUID(proposal.val_text.strip()))
+            except (ValueError, AttributeError):
+                pass
+
+    artifact_titles: dict[uuid.UUID, str] = {}
+    if artifact_ids:
+        for aid, title in (
+            await db.execute(
+                select(Artifact.id, Artifact.title).where(Artifact.id.in_(artifact_ids))
+            )
+        ).all():
+            artifact_titles[aid] = (title or "").strip() or "Untitled"
+
+    container_titles: dict[uuid.UUID, str] = {}
+    if container_ids:
+        for cid_, title in (
+            await db.execute(
+                select(ArtifactContainer.id, ArtifactContainer.title).where(
+                    ArtifactContainer.id.in_(container_ids)
+                )
+            )
+        ).all():
+            container_titles[cid_] = (title or "").strip() or "Untitled container"
+
+    target_community_names: dict[uuid.UUID, str] = {}
+    if community_ids:
+        for cid_, name in (
+            await db.execute(
+                select(Community.id, Community.name).where(Community.id.in_(community_ids))
+            )
+        ).all():
+            target_community_names[cid_] = (name or "").strip() or "Unnamed action"
+
+    statement_texts: dict[uuid.UUID, str] = {}
+    if statement_ids:
+        for sid, text_ in (
+            await db.execute(
+                select(Statement.id, Statement.statement_text).where(
+                    Statement.id.in_(statement_ids)
+                )
+            )
+        ).all():
+            statement_texts[sid] = (text_ or "").strip() or "Statement"
+
     out = []
     seen_artifacts: set[uuid.UUID] = set()  # de-dupe consecutive edits to same artifact
     for proposal, comm_name, author_name in rows:
@@ -157,22 +227,65 @@ async def get_highlights(
                 continue
             seen_artifacts.add(proposal.val_uuid)
 
-        # Build the human-friendly summary.
+        # Build the human-friendly summary using the resolved names.
         ptype = proposal.proposal_type
         text = (proposal.proposal_text or "").strip()
         val_text = (proposal.val_text or "").strip()
         link_url = None
         if ptype in ("EditArtifact", "DelegateArtifact", "RemoveArtifact") and proposal.val_uuid:
             link_url = f"/artifact/{proposal.val_uuid}"
-        elif ptype == "CreateArtifact":
-            # CreateArtifact doesn't have an artifact id yet; link to
-            # the live community view.
-            link_url = "/kbz/viewer/"
         else:
             link_url = "/kbz/viewer/"
 
-        snippet = val_text or text
-        snippet = snippet.split("\n", 1)[0][:120]
+        # Per-type rendering.
+        if ptype == "DelegateArtifact" and proposal.val_uuid:
+            art = artifact_titles.get(proposal.val_uuid, "an artifact")
+            try:
+                target_id = uuid.UUID(val_text) if val_text else None
+            except ValueError:
+                target_id = None
+            target = target_community_names.get(target_id, "a working group") if target_id else "a working group"
+            snippet = f'"{art}" → {target}'
+        elif ptype == "EditArtifact" and proposal.val_uuid:
+            art = artifact_titles.get(proposal.val_uuid, "an artifact")
+            snippet = f'"{art}"'
+        elif ptype == "RemoveArtifact" and proposal.val_uuid:
+            art = artifact_titles.get(proposal.val_uuid, "an artifact")
+            snippet = f'Retired: "{art}"'
+        elif ptype == "CreateArtifact":
+            # val_text holds the new artifact's title (the slot name)
+            snippet = val_text or "(new artifact)"
+        elif ptype == "CommitArtifact" and proposal.val_uuid:
+            cont = container_titles.get(proposal.val_uuid, "a container")
+            snippet = f'Shipped: "{cont}"'
+        elif ptype == "ChangeVariable":
+            # proposal_text starts with "VarName\nreason..."; val_text is new value
+            var_name = text.split("\n", 1)[0].strip() if text else "(variable)"
+            new_val = val_text if val_text else "(value)"
+            snippet = f'{var_name} → {new_val}'
+        elif ptype == "RemoveStatement" and proposal.val_uuid:
+            stmt = statement_texts.get(proposal.val_uuid, "a rule")[:80]
+            snippet = f'Retired: "{stmt}"'
+        elif ptype == "ReplaceStatement":
+            new_stmt = (val_text or "")[:80]
+            old_stmt = statement_texts.get(proposal.val_uuid or uuid.uuid4(), "")[:60]
+            if new_stmt and old_stmt:
+                snippet = f'"{old_stmt}…" → "{new_stmt}…"'
+            elif new_stmt:
+                snippet = f'New wording: "{new_stmt}"'
+            else:
+                snippet = "Rule rewritten"
+        elif ptype == "AddStatement":
+            snippet = text or "(new rule)"
+        elif ptype == "AddAction":
+            snippet = val_text or text or "(new working group)"
+        elif ptype in ("Funding", "Payment", "Dividend"):
+            snippet = f"{ptype}: {val_text}" if val_text else ptype
+        else:
+            snippet = val_text or text or f"({ptype})"
+
+        # Trim — keep it tight. First line only, max 120 chars.
+        snippet = snippet.split("\n", 1)[0][:120].strip()
 
         out.append({
             "id": str(proposal.id),
