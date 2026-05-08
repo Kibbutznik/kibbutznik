@@ -625,9 +625,42 @@ body {
 
 .agent-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 8px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+/* Initial-monogram avatar — colored disc with the agent's first
+   letter. Color is driven by the agent-color-N class added to the
+   div itself; both background and letter color are baked into the
+   class so contrast is always strong (light bg → dark letter, dark
+   bg → light letter). Drops to 36px on phones. */
+.agent-avatar {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.2rem;
+    line-height: 1;
+    color: #fff;
+    background: var(--bg-card);
+    box-shadow: 0 0 0 2px var(--bg-secondary), 0 2px 6px rgba(0,0,0,0.18);
+    /* When a color class is also on the avatar div, override both. */
+}
+.agent-avatar.agent-color-0 { background: #e94560; color: #fff; }
+.agent-avatar.agent-color-1 { background: #4ecca3; color: #0a3a2a; }
+.agent-avatar.agent-color-2 { background: #f0c040; color: #3a2a08; }
+.agent-avatar.agent-color-3 { background: #90caf9; color: #0a2840; }
+.agent-avatar.agent-color-4 { background: #ce93d8; color: #2a0a40; }
+.agent-avatar.agent-color-5 { background: #ffab91; color: #401408; }
+
+.agent-identity {
+    flex: 1;
+    min-width: 0;
 }
 
 .agent-name {
@@ -636,8 +669,16 @@ body {
 }
 
 .agent-role {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--accent);
+    margin-top: 1px;
+}
+
+.agent-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .agent-actions-count {
@@ -646,6 +687,7 @@ body {
     background: var(--bg-card);
     padding: 2px 8px;
     border-radius: 10px;
+    white-space: nowrap;
 }
 
 .agent-background {
@@ -2409,6 +2451,10 @@ body {
     .tab-btn .tab-label { font-size: 0.78rem; }
     .tab-btn .tab-icon { font-size: 0.95rem; }
     .tab-group-sep { margin: 0 4px; }
+
+    /* Agent avatar shrinks slightly to keep the card header tidy */
+    .agent-avatar { width: 36px; height: 36px; font-size: 1rem; }
+    .agent-header { gap: 9px; }
 
     /* News ticker — keep compact */
     .news-ticker { font-size: 0.66rem; height: 26px; }

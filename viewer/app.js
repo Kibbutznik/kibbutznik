@@ -3476,12 +3476,23 @@ function TraitsRadarChart({ traits, agentName }) {
 
 // ── Agent Card ──────────────────────────────────────────
 function AgentCard({ agent, expanded, onToggle, openDetail }) {
+    // Initial-monogram avatar — first letter of the name in a colored
+    // circle. The color comes from the same agentColor() the name
+    // text uses, so the avatar and name read as a matched pair.
+    // We CAN'T put real photos here because agents are LLM personas,
+    // not humans — but a confident colored monogram is friendlier
+    // than a square name plate and maps to "this is a person."
+    const initial = (agent.name || "?")[0].toUpperCase();
+    const colorClass = agentColor(agent.name);
     return (
         <div className={`agent-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
             <div className="agent-header">
-                <div>
+                <div className={`agent-avatar ${colorClass}`} aria-hidden="true">
+                    {initial}
+                </div>
+                <div className="agent-identity">
                     <div
-                        className={`agent-name entity-link ${agentColor(agent.name)}`}
+                        className={`agent-name entity-link ${colorClass}`}
                         onClick={(e) => { e.stopPropagation(); openDetail("user", agent.user_id, agent.name); }}
                         title="Open agent detail"
                     >
@@ -3490,7 +3501,7 @@ function AgentCard({ agent, expanded, onToggle, openDetail }) {
                     <div className="agent-role">{agent.role}</div>
                 </div>
                 <EagernessBar eagerness={agent.eagerness} eagerFront={agent.eager_front} />
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="agent-header-actions">
                     <div className="agent-actions-count">{agent.actions_taken} actions</div>
                     <button className="mini-view-btn" onClick={(e) => { e.stopPropagation(); openDetail("user", agent.user_id, agent.name); }}>
                         View
