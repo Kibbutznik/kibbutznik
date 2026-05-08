@@ -114,29 +114,61 @@ body {
 /* Tab Navigation */
 .tab-nav {
     display: flex;
+    align-items: stretch;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
-    padding: 0 24px;
+    padding: 0 16px;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    scroll-snap-type: x proximity;
 }
+.tab-nav::-webkit-scrollbar { display: none; }
 
 .tab-btn {
-    padding: 10px 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 14px;
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.88rem;
+    font-weight: 500;
     cursor: pointer;
     border-bottom: 2px solid transparent;
-    transition: all 0.2s;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+    scroll-snap-align: center;
+    line-height: 1;
+}
+
+.tab-btn .tab-icon {
+    font-size: 1rem;
+    line-height: 1;
 }
 
 .tab-btn:hover {
     color: var(--text-primary);
+    background: rgba(255,255,255,0.03);
 }
 
 .tab-btn.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
+}
+
+/* Visual separator between tab groups. Subtle vertical divider that
+   doesn't compete with the active-tab underline; provides at-a-glance
+   structure without adding labeled section headings. */
+.tab-group-sep {
+    width: 1px;
+    align-self: center;
+    height: 18px;
+    background: var(--border);
+    margin: 0 6px;
+    opacity: 0.7;
+    flex-shrink: 0;
 }
 
 .refresh-btn {
@@ -411,6 +443,39 @@ body {
 .badge-vote_comment { background: #006064; color: #80deea; }
 .badge-do_nothing { background: #37474f; color: #90a4ae; }
 .badge-error { background: #b71c1c; color: #ef9a9a; }
+.badge-send_chat { background: #1565c0; color: #bbdefb; }
+.badge-unknown { background: #4e342e; color: #ffccbc; }
+.badge-edit_artifact { background: #6a1b9a; color: #e1bee7; }
+.badge-create_artifact { background: #283593; color: #c5cae9; }
+
+/* Time-gap separator between bursts of activity. Sits as a centered
+   chip across the feed width; visually clusters events that happened
+   within the same ~30s window so the eye sees "rounds" naturally. */
+.event-time-gap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 0;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.event-time-gap::before,
+.event-time-gap::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+    opacity: 0.5;
+}
+.event-time-gap span {
+    background: var(--bg-card);
+    padding: 2px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+}
 
 .event-details {
     color: var(--text-secondary);
@@ -593,9 +658,42 @@ body {
 
 .agent-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 8px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+/* Initial-monogram avatar — colored disc with the agent's first
+   letter. Color is driven by the agent-color-N class added to the
+   div itself; both background and letter color are baked into the
+   class so contrast is always strong (light bg → dark letter, dark
+   bg → light letter). Drops to 36px on phones. */
+.agent-avatar {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.2rem;
+    line-height: 1;
+    color: #fff;
+    background: var(--bg-card);
+    box-shadow: 0 0 0 2px var(--bg-secondary), 0 2px 6px rgba(0,0,0,0.18);
+    /* When a color class is also on the avatar div, override both. */
+}
+.agent-avatar.agent-color-0 { background: #e94560; color: #fff; }
+.agent-avatar.agent-color-1 { background: #4ecca3; color: #0a3a2a; }
+.agent-avatar.agent-color-2 { background: #f0c040; color: #3a2a08; }
+.agent-avatar.agent-color-3 { background: #90caf9; color: #0a2840; }
+.agent-avatar.agent-color-4 { background: #ce93d8; color: #2a0a40; }
+.agent-avatar.agent-color-5 { background: #ffab91; color: #401408; }
+
+.agent-identity {
+    flex: 1;
+    min-width: 0;
 }
 
 .agent-name {
@@ -604,8 +702,16 @@ body {
 }
 
 .agent-role {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--accent);
+    margin-top: 1px;
+}
+
+.agent-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .agent-actions-count {
@@ -614,6 +720,7 @@ body {
     background: var(--bg-card);
     padding: 2px 8px;
     border-radius: 10px;
+    white-space: nowrap;
 }
 
 .agent-background {
@@ -2373,7 +2480,14 @@ body {
     .detail-back-btn, .detail-close-btn { padding: 8px 12px; font-size: 0.95rem; }
 
     /* Tabs slightly tighter */
-    .tab-btn { padding: 7px 11px; font-size: 0.75rem; }
+    .tab-btn { padding: 8px 10px; font-size: 0.78rem; gap: 5px; }
+    .tab-btn .tab-label { font-size: 0.78rem; }
+    .tab-btn .tab-icon { font-size: 0.95rem; }
+    .tab-group-sep { margin: 0 4px; }
+
+    /* Agent avatar shrinks slightly to keep the card header tidy */
+    .agent-avatar { width: 36px; height: 36px; font-size: 1rem; }
+    .agent-header { gap: 9px; }
 
     /* News ticker — keep compact */
     .news-ticker { font-size: 0.66rem; height: 26px; }
@@ -2392,6 +2506,38 @@ body {
     /* HN comment indent: cap depth padding so deep threads don't push off-screen */
     .hn-comment-indent { padding-left: 0 !important; }
     .hn-comment-nested .hn-comment-indent { padding-left: 12px !important; }
+
+    /* iOS / notched-Android safe-area padding so the bottom of the
+       app (last activity event, last proposal card) doesn't sit
+       behind the home indicator or browser chrome. */
+    .main-content { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+
+    /* Larger tap targets — anything clickable should hit the 40px+
+       baseline so a thumb can land it. The mini-view button on
+       agent cards used to be tiny; bump it. */
+    .mini-view-btn,
+    .header-ctrl-btn { min-height: 36px; }
+
+    /* Agent card on phone: header-actions wrap to a second row when
+       the card is narrow so the avatar + identity + eagerness + count +
+       button don't squeeze each other. The wrap is achieved by
+       allowing the header to flex-wrap; identity stays on row 1
+       (it has flex:1) and the action chip + button push to row 2. */
+    .agent-header { flex-wrap: wrap; }
+    .agent-header-actions { margin-left: auto; }
+    .agent-avatar { box-shadow: 0 0 0 1px var(--bg-secondary), 0 1px 3px rgba(0,0,0,0.18); }
+
+    /* Detail-panel close-button: bigger tap area; sit clear of any
+       browser chrome by leaving room at the top. */
+    .detail-back-btn, .detail-close-btn {
+        min-height: 40px;
+        min-width: 40px;
+    }
+
+    /* Tables (per-agent stats, proposals-by-type) — already wrapped
+       in overflowX:auto, but make sure the scroll signal is visible
+       to users via a subtle gradient mask hint. */
+    table { font-size: 0.82rem; }
 
     /* EditArtifact diff: smaller font + scroll naturally */
     .edit-diff-pre { font-size: 0.72rem; max-height: 320px; }
