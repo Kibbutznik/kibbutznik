@@ -84,14 +84,20 @@
   }
   .brand { font-size: 1.18rem; }
   .brand img { width: 44px; height: 44px; }
-  nav.topbar .links { display: flex; gap: 28px; align-items: center; }
+  nav.topbar .links { display: flex; gap: 22px; align-items: center; }
   nav.topbar .links a {
     color: var(--ink-soft);
     font-weight: 500;
     font-size: 0.95rem;
+    white-space: nowrap;
   }
+  nav.topbar .links a.btn { white-space: nowrap; }
   nav.topbar .links a:hover { color: var(--pulse); text-decoration: none; }
-  @media (max-width: 640px) {
+  @media (max-width: 760px) {
+    nav.topbar .links { gap: 14px; }
+    nav.topbar .links a:not(.btn) { font-size: 0.9rem; }
+  }
+  @media (max-width: 540px) {
     nav.topbar .links a:not(.btn) { display: none; }
   }
 
