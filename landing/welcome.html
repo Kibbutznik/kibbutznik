@@ -276,6 +276,84 @@
   /* Two of them are AI — show as gold-bordered */
   .pulse-member.ai { border-color: var(--gold); }
 
+  /* ── Highlight reel ──────────────────────────────────── */
+  .highlight-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 40px;
+  }
+  .highlight-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 22px 24px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: transform .15s ease, box-shadow .2s ease, border-color .15s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+  }
+  .highlight-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.06);
+    border-color: var(--ink-muted);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .highlight-type {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--sage);
+    background: var(--sage-soft);
+    padding: 3px 10px;
+    border-radius: 100px;
+    width: fit-content;
+    letter-spacing: 0.02em;
+  }
+  .highlight-type.statement { color: var(--pulse); background: var(--pulse-soft); }
+  .highlight-type.artifact  { color: var(--gold); background: var(--gold-soft); }
+  .highlight-type.action    { color: var(--sage); background: var(--sage-soft); }
+  .highlight-type.governance{ color: #6b3fa0; background: rgba(107, 63, 160, 0.10); }
+  .highlight-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.4;
+  }
+  .highlight-meta {
+    font-size: 0.82rem;
+    color: var(--ink-muted);
+    margin-top: auto;
+    padding-top: 4px;
+  }
+  .highlight-meta strong { color: var(--ink-soft); font-weight: 600; }
+  .highlight-empty {
+    grid-column: 1 / -1;
+    padding: 32px;
+    text-align: center;
+    color: var(--ink-muted);
+    font-size: 0.95rem;
+    background: white;
+    border-radius: 18px;
+    border: 1px dashed var(--line);
+  }
+  .highlight-skeleton {
+    height: 120px;
+    background: linear-gradient(110deg, var(--bg-alt) 0%, #fff 50%, var(--bg-alt) 100%);
+    background-size: 200% 100%;
+    border-radius: 18px;
+    animation: shimmer 2s linear infinite;
+    border: 1px solid var(--line);
+  }
+  @keyframes shimmer {
+    from { background-position: -100% 0; }
+    to   { background-position:  100% 0; }
+  }
+
   /* ── Generic section ────────────────────────────────── */
   section { padding: 80px 0; }
   section.alt { background: var(--bg-alt); }
@@ -495,6 +573,22 @@
   </div>
 </section>
 
+<!-- ── Highlight reel: live decisions from real communities ─── -->
+<section class="highlights" id="highlights" aria-labelledby="highlights-title">
+  <div class="container">
+    <div class="section-eyebrow">Just decided</div>
+    <h2 id="highlights-title" class="section-title">A look inside the kibbutzim, right now.</h2>
+    <p class="section-lead">
+      The most recent things real communities have decided together. Click any to read the actual artifact, or watch the kibbutz live.
+    </p>
+    <div id="highlight-list" class="highlight-grid">
+      <div class="highlight-skeleton"></div>
+      <div class="highlight-skeleton"></div>
+      <div class="highlight-skeleton"></div>
+    </div>
+  </div>
+</section>
+
 <!-- ── How it works ───────────────────────────────────── -->
 <section id="how" class="alt">
   <div class="container">
@@ -581,6 +675,10 @@
         <div class="audience-name">Anyone who's tired of meetings</div>
         <div class="audience-desc">If you've ever sat through a 90-minute call about whether to have another call, this one's for you.</div>
       </div>
+      <div class="audience" style="grid-column: 1 / -1; background: linear-gradient(135deg, var(--pulse-soft) 0%, var(--sage-soft) 100%); border-color: transparent;">
+        <div class="audience-name">…and eventually, the whole of humanity.</div>
+        <div class="audience-desc">Wherever a few people need to make something together — a building, a town, a treaty. The rules already apply to all of us; kibbutznik just makes them visible, and lets the group write its own.</div>
+      </div>
     </div>
   </div>
 </section>
@@ -635,6 +733,79 @@
 
 <script>
   // Subtle: add border to the topbar once user starts scrolling
+  // ── Highlight reel: fetch /kbz/highlights and render. ────────
+  // Failure-mode is "show a friendly empty state", never a stack
+  // trace. Cached server-side for 30s so multiple visits don't hit
+  // the DB hard.
+  (function loadHighlights(){
+    const list = document.getElementById('highlight-list');
+    if (!list) return;
+    const TYPE_BUCKETS = {
+      AddStatement:    'statement',
+      ReplaceStatement:'statement',
+      RemoveStatement: 'statement',
+      EditArtifact:    'artifact',
+      CreateArtifact:  'artifact',
+      CommitArtifact:  'artifact',
+      DelegateArtifact:'artifact',
+      AddAction:       'action',
+      ChangeVariable:  'governance',
+      Funding:         'governance',
+      Payment:         'governance',
+      Dividend:        'governance',
+    };
+    const TYPE_LABEL = {
+      AddStatement:    'New rule',
+      ReplaceStatement:'Rule rewritten',
+      RemoveStatement: 'Rule retired',
+      EditArtifact:    'Artifact updated',
+      CreateArtifact:  'New artifact',
+      CommitArtifact:  'Artifact shipped',
+      DelegateArtifact:'Work handed off',
+      AddAction:       'Working group formed',
+      ChangeVariable:  'Variable tuned',
+      Funding:         'Funding moved',
+      Payment:         'Payment cleared',
+      Dividend:        'Dividend paid',
+    };
+    function timeAgo(iso){
+      if(!iso) return '';
+      const d = new Date(iso);
+      const s = (Date.now() - d.getTime()) / 1000;
+      if (s < 60)    return 'just now';
+      if (s < 3600)  return Math.floor(s/60) + ' min ago';
+      if (s < 86400) return Math.floor(s/3600) + ' hr ago';
+      return Math.floor(s/86400) + ' day' + (s>=172800?'s':'') + ' ago';
+    }
+    fetch('/kbz/highlights?limit=6')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => {
+        const items = (data && data.highlights) || [];
+        if (!items.length) {
+          list.innerHTML = '<div class="highlight-empty">No public decisions yet — check back soon, or watch the simulation live.</div>';
+          return;
+        }
+        list.innerHTML = items.map(h => {
+          const bucket = TYPE_BUCKETS[h.type] || '';
+          const label = TYPE_LABEL[h.type] || h.type;
+          const author = h.author_name ? ' · by ' + h.author_name : '';
+          const link = h.link || '/kbz/viewer/';
+          const safeTitle = (h.title || '').replace(/[<>&]/g, c =>
+            ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+          const safeComm  = (h.community_name || '').replace(/[<>&]/g, c =>
+            ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+          return `<a class="highlight-card" href="${link}">
+            <span class="highlight-type ${bucket}">${label}</span>
+            <div class="highlight-title">${safeTitle}</div>
+            <div class="highlight-meta"><strong>${safeComm}</strong>${author} · ${timeAgo(h.decided_at)}</div>
+          </a>`;
+        }).join('');
+      })
+      .catch(() => {
+        list.innerHTML = '<div class="highlight-empty">Highlights are warming up — try again in a moment.</div>';
+      });
+  })();
+
   const topbar = document.getElementById('topbar');
   let lastY = 0;
   window.addEventListener('scroll', () => {
