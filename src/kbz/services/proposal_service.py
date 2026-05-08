@@ -283,6 +283,21 @@ def _validate_proposal_content(
                         f"non-negative value; got {val_text!r}"
                     ),
                 )
+        # Visibility (root-only) — value must be one of the three
+        # allowed strings. The "is this community root?" check is
+        # not done here (this function is pure / community-id-free);
+        # ProposalService.create enforces the root constraint.
+        if var_name == "Visibility":
+            allowed = {"public", "unlisted", "private"}
+            raw = (val_text or "").strip().lower()
+            if raw not in allowed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"ChangeVariable on 'Visibility' requires val_text "
+                        f"to be one of {sorted(allowed)}; got {val_text!r}"
+                    ),
+                )
 
 
 class ProposalService:
@@ -349,6 +364,34 @@ class ProposalService:
                         f"known user"
                     ),
                 )
+
+        # ChangeVariable on Visibility — root-only enforcement. The
+        # pure-content helper at the top of this file already
+        # validated the value (public / unlisted / private); here
+        # we additionally require the target community to be a root
+        # community (parent_id == ZERO_UUID). Action sub-communities
+        # inherit the root's visibility at read time, so setting
+        # Visibility on an action would be a silent no-op that
+        # confuses users. Fail loudly at create time.
+        if data.proposal_type == ProposalType.CHANGE_VARIABLE:
+            var_name = (data.proposal_text or "").split("\n", 1)[0].strip()
+            if var_name == "Visibility":
+                ZERO_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+                parent_id = (
+                    await self.db.execute(
+                        select(Community.parent_id).where(Community.id == community_id)
+                    )
+                ).scalar_one_or_none()
+                if parent_id != ZERO_UUID:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            "ChangeVariable on 'Visibility' is only allowed "
+                            "on root communities. Action sub-communities "
+                            "inherit the root community's visibility — "
+                            "change it on the root instead."
+                        ),
+                    )
 
         # ThrowOut: val_uuid must point at an active member of THIS
         # community. The pure content helper can't do this — it
