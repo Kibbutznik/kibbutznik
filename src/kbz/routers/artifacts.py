@@ -77,6 +77,258 @@ async def get_artifact(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db
     }
 
 
+@router.get("/{artifact_id}/share")
+async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Public, shareable artifact page — server-rendered HTML so
+    OG/Twitter crawlers see the title and excerpt without running JS.
+
+    Visibility-gated: if the artifact's community resolves (via
+    parent-chain walk) to a `private` root community, this returns
+    404 — the page never reveals private content. `unlisted` and
+    `public` both render normally; `unlisted` is "secret URL" sharing.
+    """
+    from html import escape as _esc
+    from fastapi.responses import HTMLResponse, Response
+
+    svc = ArtifactService(db)
+    artifact = await svc.get_artifact(artifact_id)
+    if not artifact or int(artifact.status) != int(ArtifactStatus.ACTIVE):
+        return Response(status_code=404, content="Artifact not found")
+
+    # Visibility gate. Walk to root, check Visibility variable.
+    from kbz.services.community_service import CommunityService
+    csvc = CommunityService(db)
+    visibility = await csvc.get_effective_visibility(artifact.community_id)
+    if visibility == "private":
+        return Response(status_code=404, content="Artifact not found")
+
+    # Resolve community + author display + history for the page.
+    from kbz.models.community import Community
+    from kbz.models.user import User
+    community = (
+        await db.execute(select(Community).where(Community.id == artifact.community_id))
+    ).scalar_one_or_none()
+    community_name = community.name if community else "Unknown community"
+
+    author_name = None
+    if artifact.author_user_id:
+        u = (
+            await db.execute(select(User.user_name).where(User.id == artifact.author_user_id))
+        ).scalar_one_or_none()
+        author_name = u
+
+    history = await svc.get_history(artifact_id)
+    edit_count = len(history) if history else 0
+
+    title = (artifact.title or "").strip() or "Untitled"
+    content = artifact.content or ""
+    # Excerpt for OG description: strip markdown markers, truncate.
+    import re as _re
+    excerpt = _re.sub(r"[#*_`>\[\]]", "", content).strip()
+    excerpt = _re.sub(r"\s+", " ", excerpt)[:200]
+
+    # Build the body sections. Content is treated as Markdown-lite:
+    # paragraphs split on blank lines, headings detected. Keep the
+    # rendering simple — no full markdown engine, just enough to
+    # display readably.
+    paragraphs_html = []
+    for block in content.split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        if block.startswith("### "):
+            paragraphs_html.append(f"<h3>{_esc(block[4:])}</h3>")
+        elif block.startswith("## "):
+            paragraphs_html.append(f"<h2>{_esc(block[3:])}</h2>")
+        elif block.startswith("# "):
+            paragraphs_html.append(f"<h2>{_esc(block[2:])}</h2>")
+        elif block.startswith("- ") or block.startswith("* "):
+            items = [
+                f"<li>{_esc(line[2:].strip())}</li>"
+                for line in block.split("\n")
+                if line.strip().startswith(("- ", "* "))
+            ]
+            paragraphs_html.append("<ul>" + "".join(items) + "</ul>")
+        else:
+            # paragraph — preserve in-line line breaks as <br>
+            paragraphs_html.append(
+                "<p>" + _esc(block).replace("\n", "<br>") + "</p>"
+            )
+    body_html = "\n".join(paragraphs_html) or '<p style="color:var(--ink-muted)">(empty)</p>'
+
+    plan_badge = (
+        '<span class="badge badge-plan">📋 Plan artifact</span>'
+        if getattr(artifact, "is_plan", False) else ""
+    )
+    unlisted_note = (
+        '<div class="unlisted-note">🔗 This is an <strong>unlisted</strong> artifact — '
+        'visible to anyone with this exact URL, not in any browse listing.</div>'
+        if visibility == "unlisted" else ""
+    )
+
+    history_summary = ""
+    if edit_count > 0:
+        history_summary = (
+            f'<div class="history-meta">'
+            f'<strong>{edit_count}</strong> '
+            f'community decision{"s" if edit_count != 1 else ""} shaped this artifact.'
+            f'</div>'
+        )
+
+    by_line = (
+        f' &middot; first written by {_esc(author_name)}' if author_name else ""
+    )
+
+    html_doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{_esc(title)} — {_esc(community_name)} on Kibbutznik</title>
+<meta name="description" content="{_esc(excerpt)}">
+<meta name="theme-color" content="#fdf8f0">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{_esc(title)}">
+<meta property="og:description" content="{_esc(excerpt)}">
+<meta property="og:site_name" content="Kibbutznik">
+<meta property="og:url" content="https://kibbutznik.org/artifact/{artifact_id}">
+<meta property="og:image" content="https://kibbutznik.org/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{_esc(title)}">
+<meta name="twitter:description" content="{_esc(excerpt)}">
+<meta name="twitter:image" content="https://kibbutznik.org/og-image.png">
+<script async src="https://plausible.io/js/pa-YUj2NGAFEeDownEFrcPPq.js"></script>
+<script>window.plausible=window.plausible||function(){{(plausible.q=plausible.q||[]).push(arguments)}};plausible.init=plausible.init||function(){{}};plausible.init();</script>
+<style>
+  *,*::before,*::after{{margin:0;padding:0;box-sizing:border-box}}
+  :root{{
+    --bg:#fdf8f0;--bg-alt:#f4ead8;--card:#fff;
+    --ink:#2a2520;--ink-soft:#5a5249;--ink-muted:#8a8076;
+    --pulse:#e94560;--pulse-soft:#fdebee;
+    --sage:#6fa885;--sage-soft:#e3f0e8;
+    --gold:#d9a441;--gold-soft:#fdf3e0;
+    --line:#e8dec9;
+  }}
+  html{{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}}
+  body{{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;line-height:1.7}}
+  a{{color:var(--pulse);text-decoration:none}}
+  a:hover{{color:var(--ink);text-decoration:underline;text-underline-offset:3px}}
+  .container{{max-width:760px;margin:0 auto;padding:0 24px}}
+  .container-wide{{max-width:1100px;margin:0 auto;padding:0 24px}}
+
+  nav.topbar{{padding:24px 0;background:rgba(253,248,240,.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);position:sticky;top:0;z-index:50}}
+  nav.topbar .container-wide{{display:flex;align-items:center;justify-content:space-between;gap:16px}}
+  .brand{{display:flex;align-items:center;gap:12px;font-weight:700;font-size:1.18rem;color:var(--ink)}}
+  .brand img{{width:44px;height:44px}}
+  nav.topbar .links{{display:flex;gap:28px;align-items:center}}
+  nav.topbar .links a{{color:var(--ink-soft);font-weight:500;font-size:.95rem}}
+  nav.topbar .links a:hover{{color:var(--pulse);text-decoration:none}}
+  @media(max-width:640px){{nav.topbar .links a:not(.btn){{display:none}}}}
+
+  .btn{{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:100px;font-weight:600;font-size:.95rem;border:1px solid transparent;cursor:pointer;transition:transform .12s,box-shadow .15s,background .15s}}
+  .btn-primary{{background:var(--pulse);color:#fff;box-shadow:0 6px 16px rgba(233,69,96,.18)}}
+  .btn-primary:hover{{background:#d9304a;color:#fff;transform:translateY(-1px);text-decoration:none;box-shadow:0 10px 22px rgba(233,69,96,.25)}}
+  .btn-soft{{background:#fff;color:var(--ink);border-color:var(--line)}}
+  .btn-soft:hover{{background:var(--card);border-color:var(--ink-muted);color:var(--ink);text-decoration:none;transform:translateY(-1px)}}
+
+  .article-eyebrow{{display:inline-block;padding:6px 14px;background:var(--sage-soft);color:var(--sage);border-radius:100px;font-size:.82rem;font-weight:600;margin-bottom:18px;letter-spacing:.02em}}
+  .badge{{display:inline-block;padding:3px 10px;border-radius:100px;font-size:.78rem;font-weight:600;margin-left:8px;vertical-align:middle}}
+  .badge-plan{{background:var(--gold-soft);color:var(--gold)}}
+
+  header.article-header{{padding:60px 0 32px;text-align:center;position:relative}}
+  header.article-header::before{{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 30%,rgba(111,168,133,.08) 0%,transparent 50%),radial-gradient(circle at 70% 70%,rgba(233,69,96,.06) 0%,transparent 50%);pointer-events:none}}
+  h1.title{{font-size:clamp(2rem,5vw,2.8rem);font-weight:800;line-height:1.15;letter-spacing:-.025em;color:var(--ink);max-width:680px;margin:0 auto 14px}}
+  .meta{{font-size:.95rem;color:var(--ink-soft)}}
+  .meta a{{color:var(--ink);font-weight:600}}
+
+  .unlisted-note{{max-width:680px;margin:24px auto 0;padding:14px 18px;background:var(--gold-soft);color:var(--ink-soft);border-radius:14px;font-size:.92rem;text-align:center}}
+
+  article.body{{padding:48px 0;font-size:1.08rem;color:var(--ink)}}
+  article.body p{{margin:18px 0;color:var(--ink-soft)}}
+  article.body h2{{font-size:1.6rem;font-weight:700;margin:36px 0 12px;letter-spacing:-.02em;color:var(--ink)}}
+  article.body h3{{font-size:1.25rem;font-weight:700;margin:28px 0 8px;color:var(--ink)}}
+  article.body ul{{margin:14px 0 14px 28px;color:var(--ink-soft)}}
+  article.body li{{margin:6px 0}}
+
+  .history-meta{{margin:48px auto;padding:24px;background:var(--bg-alt);border-radius:16px;text-align:center;font-size:1rem;color:var(--ink-soft)}}
+  .history-meta strong{{color:var(--pulse);font-size:1.25rem}}
+
+  .end-cta{{background:var(--ink);color:#fff;border-radius:28px;padding:48px 32px;text-align:center;margin:48px 0}}
+  .end-cta h2{{color:#fff;margin:0 0 12px;font-size:1.6rem;font-weight:700}}
+  .end-cta p{{color:rgba(255,255,255,.78);font-size:1rem;margin:0 0 24px}}
+  .end-cta .btn-soft{{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)}}
+  .end-cta .btn-soft:hover{{background:rgba(255,255,255,.18);color:#fff}}
+  .cta-row{{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}}
+
+  footer{{padding:40px 0;border-top:1px solid var(--line);color:var(--ink-muted);font-size:.9rem}}
+  footer .container-wide{{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px}}
+  footer a{{color:var(--ink-soft)}}
+  footer .socials{{display:flex;gap:18px;flex-wrap:wrap}}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="container-wide">
+    <a href="/welcome.html" class="brand"><img src="/logo.svg" alt="">Kibbutznik</a>
+    <div class="links">
+      <a href="/welcome.html">Home</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">See it live</a>
+      <a href="/app/" class="btn btn-primary">Open the app</a>
+    </div>
+  </div>
+</nav>
+
+<header class="article-header">
+  <div class="container">
+    <div class="article-eyebrow">An artifact from {_esc(community_name)}</div>
+    <h1 class="title">{_esc(title)}{plan_badge}</h1>
+    <div class="meta">From the kibbutz <strong>{_esc(community_name)}</strong>{by_line}</div>
+    {unlisted_note}
+  </div>
+</header>
+
+<article class="body">
+  <div class="container">
+    {body_html}
+    {history_summary}
+  </div>
+</article>
+
+<div class="container">
+  <div class="end-cta">
+    <h2>This was decided together.</h2>
+    <p>Every paragraph above was proposed, supported, and accepted by the community that wrote it. See the kibbutz that made it — or start one of your own.</p>
+    <div class="cta-row">
+      <a href="/kbz/viewer/" class="btn btn-primary">See this kibbutz live →</a>
+      <a href="/app/" class="btn btn-soft">Start your own</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="container-wide">
+    <div>© Kibbutznik · open source · made by people who believe small groups can run themselves</div>
+    <div class="socials">
+      <a href="/welcome.html">Home</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/app/">App</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>"""
+    return HTMLResponse(content=html_doc, headers={"Cache-Control": "public, max-age=300"})
+
+
 @router.get("/{artifact_id}/history")
 async def get_artifact_history(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Edit history reconstructed from accepted EditArtifact proposals.
