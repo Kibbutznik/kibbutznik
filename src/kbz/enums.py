@@ -122,6 +122,24 @@ DEFAULT_VARIABLES: dict[str, str] = {
     # one proposal that lets the community raise it.
     "ProposalRateLimit": "5",
     "Name": "No Name",
+    # --- Visibility (ROOT communities only) -------------------------
+    # Controls who can READ a community and its children. Set on the
+    # root; child actions inherit. Values:
+    #   "public"   — anyone with the URL can read; appears in browse
+    #                listings; artifacts get shareable public URLs.
+    #   "unlisted" — anyone with the URL can read; NOT in browse
+    #                listings. Default for "small group, share the
+    #                link with friends" use cases.
+    #   "private"  — only members + the BB observer can read.
+    # NOTE: Visibility is meaningful ONLY on root communities (where
+    # parent_id == ZERO_UUID). Action sub-communities inherit their
+    # parent's effective visibility — setting Visibility on an action
+    # has no effect, and ChangeVariable proposals that target it
+    # against a non-root community are rejected at create time.
+    # Default "public" preserves the current sim behavior; new human-
+    # facing kibbutzim can vote to "unlisted" or "private" once we
+    # ship the gating in the read endpoints.
+    "Visibility": "public",
     "seniorityWeight": "1",
     "membershipFee": "0",
     "dividendBySeniority": "0",

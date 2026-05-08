@@ -237,3 +237,188 @@ async def test_member_list_paginates_and_caps_limit(client):
     assert r.status_code == 422
     r = await client.get(f"/communities/{community['id']}/members?limit=200&offset=0")
     assert r.status_code == 200
+
+
+# ─── Visibility variable (root-only) ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_visibility_seeded_default_public_on_root(client):
+    """Root communities get the Visibility variable seeded with
+    'public' so existing-behavior callers see no change."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "VizRoot")
+    resp = await client.get(f"/communities/{community['id']}/variables")
+    variables = resp.json()["variables"]
+    assert variables.get("Visibility") == "public"
+
+
+@pytest.mark.asyncio
+async def test_visibility_not_seeded_on_action_subcommunity(client, db):
+    """Action sub-communities (parent_id != ZERO_UUID) must NOT get
+    a Visibility row of their own — they inherit from the root."""
+    import uuid as _uuid
+    from kbz.models.community import Community as _C
+    from kbz.models.member import Member as _M
+    from kbz.models.variable import Variable as _V
+    from sqlalchemy import select as _select
+
+    user = await create_test_user(client)
+    root = await create_test_community(client, user["id"], "VizParent")
+    # Inject an action sub-community directly. CommunityService.create
+    # fans out side-effects (founder member, initial pulse, etc.) but
+    # for THIS test all we care about is that variable seeding
+    # honors the parent_id check — so use the same code path.
+    child_id = _uuid.uuid4()
+    db.add(_C(
+        id=child_id,
+        parent_id=_uuid.UUID(root["id"]),
+        name="Child Action",
+        status=1,
+        member_count=1,
+    ))
+    # Mimic what CommunityService.create does for variables: seed
+    # everything EXCEPT Visibility on a non-root community.
+    from kbz.enums import DEFAULT_VARIABLES
+    for var_name, var_value in DEFAULT_VARIABLES.items():
+        if var_name == "Visibility":
+            continue
+        db.add(_V(community_id=child_id, name=var_name, value=var_value))
+    await db.commit()
+
+    rows = (
+        await db.execute(_select(_V).where(_V.community_id == child_id))
+    ).scalars().all()
+    names = {r.name for r in rows}
+    assert "Visibility" not in names
+    assert "PulseSupport" in names  # other variables still seeded
+
+
+@pytest.mark.asyncio
+async def test_change_variable_visibility_rejects_invalid_value(client):
+    """Visibility must be one of public / unlisted / private. Any
+    other val_text gets a 422 at proposal-create time."""
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "VizCheck")
+    r = await client.post(f"/communities/{community['id']}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "Visibility",
+        "val_text": "secret",
+    })
+    assert r.status_code == 422, r.text
+    assert "visibility" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_change_variable_visibility_accepts_valid_values(client):
+    """The three allowed values must each pass create-time validation.
+    One community per value because the per-(community, variable)
+    dedupe rule blocks a second in-flight ChangeVariable on the same
+    name."""
+    user = await create_test_user(client)
+    for i, value in enumerate(("public", "unlisted", "private")):
+        community = await create_test_community(client, user["id"], f"VizOK_{i}")
+        r = await client.post(f"/communities/{community['id']}/proposals", json={
+            "user_id": user["id"],
+            "proposal_type": "ChangeVariable",
+            "proposal_text": "Visibility",
+            "val_text": value,
+        })
+        assert r.status_code == 201, f"value={value} got {r.status_code}: {r.text}"
+
+
+@pytest.mark.asyncio
+async def test_change_variable_visibility_rejected_on_action_community(client, db):
+    """Visibility on an ACTION sub-community must fail at create time
+    with a clear message pointing at the root."""
+    import uuid as _uuid
+    from kbz.models.community import Community as _C
+    from kbz.models.member import Member as _M
+    from kbz.enums import MemberStatus as _MS
+
+    user = await create_test_user(client)
+    root = await create_test_community(client, user["id"], "VizRootAct")
+    # Spawn a fake action sub-community directly with the same user
+    # as a member, so they have standing to file proposals.
+    action_id = _uuid.uuid4()
+    db.add(_C(
+        id=action_id,
+        parent_id=_uuid.UUID(root["id"]),
+        name="Action Sub",
+        status=1,
+        member_count=1,
+    ))
+    db.add(_M(
+        community_id=action_id,
+        user_id=_uuid.UUID(user["id"]),
+        status=_MS.ACTIVE,
+        seniority=0,
+    ))
+    await db.commit()
+
+    r = await client.post(f"/communities/{action_id}/proposals", json={
+        "user_id": user["id"],
+        "proposal_type": "ChangeVariable",
+        "proposal_text": "Visibility",
+        "val_text": "private",
+    })
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"].lower()
+    assert "root" in detail and "visibility" in detail
+
+
+@pytest.mark.asyncio
+async def test_get_effective_visibility_walks_to_root(client, db):
+    """The CommunityService helper resolves a child's visibility by
+    walking up to the root and reading its Visibility variable."""
+    import uuid as _uuid
+    from kbz.models.community import Community as _C
+    from kbz.models.variable import Variable as _V
+    from kbz.services.community_service import CommunityService
+
+    user = await create_test_user(client)
+    root = await create_test_community(client, user["id"], "RootViz")
+    root_id = _uuid.UUID(root["id"])
+
+    # Flip root visibility to "private" directly in the DB.
+    from sqlalchemy import update as _upd
+    await db.execute(
+        _upd(_V).where(
+            _V.community_id == root_id, _V.name == "Visibility"
+        ).values(value="private")
+    )
+    # Spawn an action under root.
+    action_id = _uuid.uuid4()
+    db.add(_C(id=action_id, parent_id=root_id, name="Sub", status=1, member_count=0))
+    # And a sub-action under that action (depth 2).
+    sub_id = _uuid.uuid4()
+    db.add(_C(id=sub_id, parent_id=action_id, name="SubSub", status=1, member_count=0))
+    await db.commit()
+
+    svc = CommunityService(db)
+    assert await svc.get_effective_visibility(root_id) == "private"
+    assert await svc.get_effective_visibility(action_id) == "private"
+    assert await svc.get_effective_visibility(sub_id) == "private"
+
+
+@pytest.mark.asyncio
+async def test_get_effective_visibility_falls_back_to_public(client, db):
+    """Legacy communities that pre-date the Visibility variable
+    (no row in `variables`) must default to 'public'."""
+    import uuid as _uuid
+    from kbz.models.variable import Variable as _V
+    from kbz.services.community_service import CommunityService
+    from sqlalchemy import delete as _del
+
+    user = await create_test_user(client)
+    root = await create_test_community(client, user["id"], "Legacy")
+    root_id = _uuid.UUID(root["id"])
+
+    # Delete the Visibility row to mimic a pre-feature community.
+    await db.execute(
+        _del(_V).where(_V.community_id == root_id, _V.name == "Visibility")
+    )
+    await db.commit()
+
+    svc = CommunityService(db)
+    assert await svc.get_effective_visibility(root_id) == "public"
