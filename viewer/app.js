@@ -78,6 +78,47 @@ function formatDate(iso) {
     return new Date(iso).toLocaleString();
 }
 
+// Human-friendly relative timestamp ("just now", "3m ago", "2h ago").
+// Used in the activity feed so event ages are readable at a glance —
+// nobody scanning a feed wants to compute "13:24:55 vs current time".
+// The original absolute timestamp is preserved on hover via the
+// caller's `title` attribute.
+function relativeTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const s = (Date.now() - d.getTime()) / 1000;
+    if (s < 0)        return "now";
+    if (s < 10)       return "just now";
+    if (s < 60)       return Math.floor(s) + "s ago";
+    if (s < 3600)     return Math.floor(s / 60) + "m ago";
+    if (s < 86400)    return Math.floor(s / 3600) + "h ago";
+    return Math.floor(s / 86400) + "d ago";
+}
+
+// Bucket label for activity-feed time-gap separators ("a moment
+// ago", "5 minutes ago", "1 hour ago"). Coarser than relativeTime
+// because separators only appear when there's a gap > 30s.
+function bucketLabel(iso) {
+    if (!iso) return "";
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60)       return "moments ago";
+    if (s < 600)      return Math.floor(s / 60) + " min ago";
+    if (s < 3600)     return Math.floor(s / 60) + " min ago";
+    if (s < 86400)    return Math.floor(s / 3600) + " hr ago";
+    return Math.floor(s / 86400) + " days ago";
+}
+
+// Hook: re-renders the calling component once a minute so relative
+// timestamps stay fresh without a per-event interval (which would
+// scale badly with 100+ events on screen).
+function useNow(refreshMs = 60000) {
+    const [, setTick] = React.useState(0);
+    React.useEffect(() => {
+        const id = setInterval(() => setTick(t => t + 1), refreshMs);
+        return () => clearInterval(id);
+    }, [refreshMs]);
+}
+
 function truncate(s, n = 80) {
     if (!s) return "";
     return s.length > n ? s.slice(0, n) + "..." : s;
@@ -3122,6 +3163,10 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
         }
     }
 
+    // Re-render once a minute so relative timestamps don't go stale
+    // ("3m ago" should become "4m ago" without manual refresh).
+    useNow(60000);
+
     const byCommunity = activeCommunityId
         ? (events || []).filter(ev => ev.community_id === activeCommunityId)
         : (events || []).filter(ev => !ev.community_id || ev.community_id === rootCommunityId);
@@ -3139,16 +3184,31 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
                     <div className="empty-state">Waiting for simulation to start...</div>
                 )}
                 {newest.map((ev, i) => {
+                    // Insert a time-gap separator when the previous event
+                    // (newer; events are NEWEST-FIRST) is >30s apart from
+                    // this one. Visual cluster of "this round of activity"
+                    // without needing a per-event round_num field. The
+                    // label uses bucketLabel so each separator reads as
+                    // "5 min ago" etc.
+                    const prev = i > 0 ? newest[i - 1] : null;
+                    const showSep = prev && (
+                        new Date(prev.time).getTime() - new Date(ev.time).getTime()
+                    ) > 30000;
                     // Determine clickable entity type from action
                     const refType = ev.action === 'send_chat' ? null
                         : ev.action === 'edit_artifact' ? 'artifact'
                         : 'proposal';
                     const isClickable = !!(ev.ref_id && openDetail);
                     return (
+                        <React.Fragment key={`${ev.time}-${i}`}>
+                            {showSep && (
+                                <div className="event-time-gap" aria-hidden="true">
+                                    <span>{bucketLabel(ev.time)}</span>
+                                </div>
+                            )}
                         <div className={`event-item ${isClickable ? 'clickable' : ''}`}
-                             key={`${ev.time}-${i}`}
                              onClick={isClickable ? () => openDetail(refType, ev.ref_id, (ev.details || '').slice(0, 40)) : undefined}>
-                            <span className="event-time">{formatTime(ev.time)}</span>
+                            <span className="event-time" title={formatTime(ev.time)}>{relativeTime(ev.time)}</span>
                             {(() => {
                                 // Only apply entity-link styling when the agent
                                 // is actually resolvable. Pre-fix the link
@@ -3174,6 +3234,7 @@ function ActivityFeed({ events, openDetail, agentsByUserId, activeCommunityId, r
                                 {ev.reason && <div className="event-reason">{ev.reason}</div>}
                             </div>
                         </div>
+                        </React.Fragment>
                     );
                 })}
             </div>

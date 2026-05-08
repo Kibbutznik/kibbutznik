@@ -443,6 +443,39 @@ body {
 .badge-vote_comment { background: #006064; color: #80deea; }
 .badge-do_nothing { background: #37474f; color: #90a4ae; }
 .badge-error { background: #b71c1c; color: #ef9a9a; }
+.badge-send_chat { background: #1565c0; color: #bbdefb; }
+.badge-unknown { background: #4e342e; color: #ffccbc; }
+.badge-edit_artifact { background: #6a1b9a; color: #e1bee7; }
+.badge-create_artifact { background: #283593; color: #c5cae9; }
+
+/* Time-gap separator between bursts of activity. Sits as a centered
+   chip across the feed width; visually clusters events that happened
+   within the same ~30s window so the eye sees "rounds" naturally. */
+.event-time-gap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 0;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.event-time-gap::before,
+.event-time-gap::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+    opacity: 0.5;
+}
+.event-time-gap span {
+    background: var(--bg-card);
+    padding: 2px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+}
 
 .event-details {
     color: var(--text-secondary);
