@@ -2507,6 +2507,38 @@ body {
     .hn-comment-indent { padding-left: 0 !important; }
     .hn-comment-nested .hn-comment-indent { padding-left: 12px !important; }
 
+    /* iOS / notched-Android safe-area padding so the bottom of the
+       app (last activity event, last proposal card) doesn't sit
+       behind the home indicator or browser chrome. */
+    .main-content { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+
+    /* Larger tap targets — anything clickable should hit the 40px+
+       baseline so a thumb can land it. The mini-view button on
+       agent cards used to be tiny; bump it. */
+    .mini-view-btn,
+    .header-ctrl-btn { min-height: 36px; }
+
+    /* Agent card on phone: header-actions wrap to a second row when
+       the card is narrow so the avatar + identity + eagerness + count +
+       button don't squeeze each other. The wrap is achieved by
+       allowing the header to flex-wrap; identity stays on row 1
+       (it has flex:1) and the action chip + button push to row 2. */
+    .agent-header { flex-wrap: wrap; }
+    .agent-header-actions { margin-left: auto; }
+    .agent-avatar { box-shadow: 0 0 0 1px var(--bg-secondary), 0 1px 3px rgba(0,0,0,0.18); }
+
+    /* Detail-panel close-button: bigger tap area; sit clear of any
+       browser chrome by leaving room at the top. */
+    .detail-back-btn, .detail-close-btn {
+        min-height: 40px;
+        min-width: 40px;
+    }
+
+    /* Tables (per-agent stats, proposals-by-type) — already wrapped
+       in overflowX:auto, but make sure the scroll signal is visible
+       to users via a subtle gradient mask hint. */
+    table { font-size: 0.82rem; }
+
     /* EditArtifact diff: smaller font + scroll naturally */
     .edit-diff-pre { font-size: 0.72rem; max-height: 320px; }
 }
