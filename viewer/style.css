@@ -114,29 +114,61 @@ body {
 /* Tab Navigation */
 .tab-nav {
     display: flex;
+    align-items: stretch;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
-    padding: 0 24px;
+    padding: 0 16px;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    scroll-snap-type: x proximity;
 }
+.tab-nav::-webkit-scrollbar { display: none; }
 
 .tab-btn {
-    padding: 10px 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 14px;
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.88rem;
+    font-weight: 500;
     cursor: pointer;
     border-bottom: 2px solid transparent;
-    transition: all 0.2s;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+    scroll-snap-align: center;
+    line-height: 1;
+}
+
+.tab-btn .tab-icon {
+    font-size: 1rem;
+    line-height: 1;
 }
 
 .tab-btn:hover {
     color: var(--text-primary);
+    background: rgba(255,255,255,0.03);
 }
 
 .tab-btn.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
+}
+
+/* Visual separator between tab groups. Subtle vertical divider that
+   doesn't compete with the active-tab underline; provides at-a-glance
+   structure without adding labeled section headings. */
+.tab-group-sep {
+    width: 1px;
+    align-self: center;
+    height: 18px;
+    background: var(--border);
+    margin: 0 6px;
+    opacity: 0.7;
+    flex-shrink: 0;
 }
 
 .refresh-btn {
@@ -2373,7 +2405,10 @@ body {
     .detail-back-btn, .detail-close-btn { padding: 8px 12px; font-size: 0.95rem; }
 
     /* Tabs slightly tighter */
-    .tab-btn { padding: 7px 11px; font-size: 0.75rem; }
+    .tab-btn { padding: 8px 10px; font-size: 0.78rem; gap: 5px; }
+    .tab-btn .tab-label { font-size: 0.78rem; }
+    .tab-btn .tab-icon { font-size: 0.95rem; }
+    .tab-group-sep { margin: 0 4px; }
 
     /* News ticker — keep compact */
     .news-ticker { font-size: 0.66rem; height: 26px; }

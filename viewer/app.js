@@ -2901,31 +2901,86 @@ function AgentActionStats({ stats, agentsByUserId, openDetail }) {
 
 
 // ── Tab Navigation ──────────────────────────────────────
+// Tab navigation. Pre-fix this was a flat 12-item bar — visually
+// noisy on desktop, scrolled awkwardly on phones. Now grouped into
+// four conceptual buckets with subtle separators between them, an
+// emoji icon per tab for at-a-glance scanning, and keyboard
+// navigation (left/right arrows). Mobile gets horizontal scrolling
+// with snap behavior so the active tab stays visible.
+//
+// The buckets follow the user's mental model:
+//   Live      — what's happening right now (dashboard + activity)
+//   People    — community members + their relationships
+//   Work      — what's being built (action tree + artifacts)
+//   Governance— rules, knobs, and the pulse rhythm
+//   Numbers   — aggregate metrics (separated; analytical)
+const TAB_GROUPS = [
+    { name: "Live", tabs: [
+        { id: "dashboard",    label: "Dashboard",   icon: "🏠" },
+        { id: "chat",         label: "Chat",        icon: "💬" },
+        { id: "timeline",     label: "Timeline",    icon: "⏱" },
+    ]},
+    { name: "People", tabs: [
+        { id: "agents",        label: "Agents",      icon: "👥" },
+        { id: "relationships", label: "Relationships", icon: "🔗" },
+        { id: "interview",     label: "Interview",   icon: "🎙" },
+    ]},
+    { name: "Work", tabs: [
+        { id: "actions", label: "Action Tree", icon: "🌳" },
+        { id: "work",    label: "Artifacts",   icon: "📜" },
+    ]},
+    { name: "Governance", tabs: [
+        { id: "statements", label: "Statements", icon: "📋" },
+        { id: "variables",  label: "Variables",  icon: "⚙" },
+        { id: "pulses",     label: "Pulses",     icon: "💓" },
+    ]},
+    { name: "Numbers", tabs: [
+        { id: "metrics", label: "Metrics", icon: "📊" },
+    ]},
+];
+
+// Flat list for keyboard navigation + lookup.
+const ALL_TABS = TAB_GROUPS.flatMap(g => g.tabs);
+
 function TabNav({ activeTab, setActiveTab }) {
-    const tabs = [
-        { id: "dashboard", label: "Dashboard" },
-        { id: "agents", label: "Agents" },
-        { id: "variables", label: "Variables" },
-        { id: "statements", label: "Statements" },
-        { id: "pulses", label: "Pulses" },
-        { id: "actions", label: "Action Tree" },
-        { id: "work", label: "Work" },
-        { id: "chat", label: "Chat" },
-        { id: "interview", label: "Interview" },
-        { id: "timeline", label: "Timeline" },
-        { id: "relationships", label: "Relationships" },
-        { id: "metrics", label: "Metrics" },
-    ];
+    // Keyboard: left/right arrows cycle through ALL_TABS in order.
+    // Skip when focus is in a text input (don't fight the user).
+    React.useEffect(() => {
+        const handler = (e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            const tag = (e.target?.tagName || "").toLowerCase();
+            if (["input", "textarea", "select"].includes(tag)) return;
+            if (e.target?.isContentEditable) return;
+            const idx = ALL_TABS.findIndex(t => t.id === activeTab);
+            if (idx < 0) return;
+            const next = e.key === "ArrowRight"
+                ? ALL_TABS[(idx + 1) % ALL_TABS.length]
+                : ALL_TABS[(idx - 1 + ALL_TABS.length) % ALL_TABS.length];
+            setActiveTab(next.id);
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [activeTab, setActiveTab]);
+
     return (
-        <div className="tab-nav">
-            {tabs.map((t) => (
-                <button
-                    key={t.id}
-                    className={`tab-btn ${activeTab === t.id ? "active" : ""}`}
-                    onClick={() => setActiveTab(t.id)}
-                >
-                    {t.label}
-                </button>
+        <div className="tab-nav" role="tablist">
+            {TAB_GROUPS.map((group, gi) => (
+                <React.Fragment key={group.name}>
+                    {gi > 0 && <span className="tab-group-sep" aria-hidden="true"></span>}
+                    {group.tabs.map((t) => (
+                        <button
+                            key={t.id}
+                            role="tab"
+                            aria-selected={activeTab === t.id}
+                            className={`tab-btn ${activeTab === t.id ? "active" : ""}`}
+                            onClick={() => setActiveTab(t.id)}
+                            title={`${group.name} → ${t.label}`}
+                        >
+                            <span className="tab-icon" aria-hidden="true">{t.icon}</span>
+                            <span className="tab-label">{t.label}</span>
+                        </button>
+                    ))}
+                </React.Fragment>
             ))}
         </div>
     );
