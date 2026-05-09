@@ -336,4 +336,50 @@ footer.app-footer {
     font-size: 0.94rem;
     line-height: 1.5;
     white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
+
+/* ── Mobile (<= 640px) ─────────────────────────────────────────
+   The proposal-detail modal (and other large card content) was
+   pushing past the screen edge on phones — padding stacked from
+   overlay + card was eating ~80px on each side, and long unbroken
+   strings (UUIDs in val_text, raw JSON for CommitArtifact, URLs
+   in pitches) broke layout because nothing had overflow-wrap. */
+@media (max-width: 640px) {
+    .card {
+        padding: 1rem 0.9rem;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    /* Modal overlay was padding:1rem in inline style. Honor that
+       still, but make the .card child willing to take FULL width
+       inside it. The maxWidth:640 inline style stays a safe cap. */
+    .row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        min-width: 0;       /* let flex children shrink below content */
+    }
+    .pill {
+        max-width: 100%;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    .pitch-block {
+        padding: 0.6rem 0.7rem;
+    }
+    /* Headings inside cards should hyphenate / wrap rather than
+       cause horizontal scroll. */
+    .card h1, .card h2, .card h3 {
+        overflow-wrap: break-word;
+        word-break: break-word;
+        hyphens: auto;
+    }
+}
+
+/* The same break-word treatment is useful at all sizes for code-
+   shaped content that bots / agents emit — UUIDs, JSON arrays,
+   long compound titles. Costs nothing on desktop (only kicks in
+   when a string would actually overflow). */
+.card { overflow-wrap: break-word; }
+.card h1, .card h2, .card h3, .card p { overflow-wrap: break-word; }
