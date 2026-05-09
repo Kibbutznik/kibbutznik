@@ -224,8 +224,20 @@ async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Dep
   .brand img{{width:44px;height:44px}}
   nav.topbar .links{{display:flex;gap:28px;align-items:center}}
   nav.topbar .links a{{color:var(--ink-soft);font-weight:500;font-size:.95rem}}
+  nav.topbar .links a{{white-space:nowrap}}
   nav.topbar .links a:hover{{color:var(--pulse);text-decoration:none}}
-  @media(max-width:640px){{nav.topbar .links a:not(.btn){{display:none}}}}
+  /* Tiered mobile chrome — same shape as welcome.html / guide.html
+     so the brand stays consistent. */
+  @media(max-width:760px){{
+    nav.topbar{{padding:16px 0}}
+    nav.topbar .links{{gap:14px}}
+    nav.topbar .links a:not(.btn){{font-size:.88rem}}
+  }}
+  @media(max-width:540px){{
+    nav.topbar .links a:not(.btn){{display:none}}
+    .brand{{font-size:1.05rem;gap:8px}}
+    .brand img{{width:36px;height:36px}}
+  }}
 
   .btn{{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:100px;font-weight:600;font-size:.95rem;border:1px solid transparent;cursor:pointer;transition:transform .12s,box-shadow .15s,background .15s}}
   .btn-primary{{background:var(--pulse);color:#fff;box-shadow:0 6px 16px rgba(233,69,96,.18)}}
@@ -263,6 +275,33 @@ async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Dep
   .cta-row{{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}}
 
   footer{{padding:40px 0;border-top:1px solid var(--line);color:var(--ink-muted);font-size:.9rem}}
+
+  /* Body content & long-string protection. The artifact content is
+     user/bot-authored markdown — could include UUIDs, JSON, URLs.
+     Without break-word, those crash the layout horizontally. */
+  article.body p, article.body li, article.body h2, article.body h3,
+  h1.title, .meta, .end-cta, .end-cta p, .history-meta {{
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }}
+  h1.title {{ hyphens: auto; }}
+
+  @media(max-width:640px){{
+    .container {{ padding: 0 16px; }}
+    .container-wide {{ padding: 0 16px; }}
+    header.article-header {{ padding: 40px 0 24px; }}
+    article.body {{ padding: 32px 0; font-size: 1rem; }}
+    article.body h2 {{ font-size: 1.35rem; margin: 28px 0 10px; }}
+    article.body h3 {{ font-size: 1.1rem; margin: 22px 0 6px; }}
+    .end-cta {{ padding: 36px 20px; border-radius: 22px; margin: 32px 0; }}
+    .end-cta h2 {{ font-size: 1.4rem; }}
+    .history-meta {{ padding: 18px; margin: 36px auto; font-size: .95rem; }}
+    .unlisted-note {{ margin: 20px 0 0; padding: 12px 14px; font-size: .88rem; }}
+    .btn {{ padding: 10px 18px; font-size: .9rem; }}
+    footer {{ padding: 28px 0; font-size: .82rem; }}
+    footer .container-wide {{ flex-direction: column; align-items: flex-start; gap: 12px; }}
+    footer .socials {{ gap: 14px; }}
+  }}
   footer .container-wide{{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px}}
   footer a{{color:var(--ink-soft)}}
   footer .socials{{display:flex;gap:18px;flex-wrap:wrap}}

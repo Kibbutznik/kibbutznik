@@ -82,6 +82,26 @@
     nav.topbar .links a:not(.btn) { display: none; }
   }
 
+  /* ── Mobile content tuning (in addition to existing orbit
+        breakpoints further down). The orbit itself already shrinks
+        at 768/480; this block handles the rest of the page chrome. */
+  @media (max-width: 640px) {
+    .container { padding: 0 16px; }
+    .container-narrow { padding: 0 16px; }
+    header.article-header { padding: 48px 0 24px; }
+    section.under-orbit { padding: 40px 0 60px; }
+    .end-cta { padding: 40px 24px; border-radius: 22px; }
+    .reading-rec { font-size: 1rem; }
+    footer { padding: 28px 0; font-size: 0.84rem; }
+    footer .container { flex-direction: column; align-items: flex-start; gap: 12px; }
+    footer .socials { flex-wrap: wrap; gap: 14px; }
+    h1.article-title { overflow-wrap: break-word; hyphens: auto; }
+    /* Tooltip dossier on phones: less padding, no horizontal escape. */
+    .entity-tooltip { padding: 22px 20px 18px; border-radius: 18px; }
+    .entity-tooltip .tt-name { font-size: 1.25rem; overflow-wrap: break-word; }
+    .entity-tooltip .tt-body { font-size: 0.95rem; }
+  }
+
   /* ── Buttons ─────────────────────────────────────────── */
   .btn {
     display: inline-flex; align-items: center; gap: 8px;

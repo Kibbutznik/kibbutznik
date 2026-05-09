@@ -1435,8 +1435,8 @@ function ApplyModal({ community, user, pitch, setPitch, isFinancial, membershipF
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: "1rem",
         }} onClick={onClose}>
-            <div className="card" onClick={(e) => e.stopPropagation()}
-                 style={{ maxWidth: 520, width: "100%", maxHeight: "92vh", overflow: "auto", padding: "1.4rem" }}>
+            <div className="card modal-card" onClick={(e) => e.stopPropagation()}
+                 style={{ maxWidth: 520 }}>
                 <h3 style={{ marginTop: 0 }}>Apply to join <span style={{ color: "var(--accent)" }}>{community.name}</span></h3>
                 <div className="muted" style={{ marginBottom: "0.8rem", fontSize: "0.88rem" }}>
                     Filing as <strong style={{ color: "var(--text)" }}>{user.user_name}</strong>
@@ -1843,10 +1843,8 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: "1rem",
         }} onClick={onClose}>
-            <div className="card" style={{
-                maxWidth: 640, width: "100%", maxHeight: "92vh",
-                overflow: "auto", padding: "1.4rem",
-            }} onClick={(e) => e.stopPropagation()}>
+            <div className="card modal-card" style={{ maxWidth: 640 }}
+                 onClick={(e) => e.stopPropagation()}>
                 <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.6rem" }}>
                     <div className="row">
                         <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
@@ -2221,10 +2219,8 @@ function MemberDetailModal({ userId, seed, communityId, members, onClose }) {
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: "1rem",
         }} onClick={onClose}>
-            <div className="card" style={{
-                maxWidth: 560, width: "100%", maxHeight: "92vh",
-                overflow: "auto", padding: "1.4rem",
-            }} onClick={(e) => e.stopPropagation()}>
+            <div className="card modal-card" style={{ maxWidth: 560 }}
+                 onClick={(e) => e.stopPropagation()}>
                 <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.8rem" }}>
                     <div className="row" style={{ gap: "0.7rem" }}>
                         <span className="pc-avatar" style={{ width: 44, height: 44, fontSize: "1.2rem" }}>

@@ -383,3 +383,26 @@ footer.app-footer {
    when a string would actually overflow). */
 .card { overflow-wrap: break-word; }
 .card h1, .card h2, .card h3, .card p { overflow-wrap: break-word; }
+
+/* ── Modal helpers ─────────────────────────────────────────────
+   Three places in app.js render a click-to-dismiss overlay with a
+   .card child as the dialog. They were using inline padding:1.4rem
+   which beat the .card mobile rule (CSS specificity: inline wins),
+   so on phones they overflowed. Move padding into a class so the
+   mobile @media block can adjust it. */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.modal-card {
+    width: 100%;
+    max-height: 92vh;
+    overflow: auto;
+    padding: 1.4rem;
+}
+@media (max-width: 640px) {
+    .modal-overlay { padding: 0.5rem; }
+    .modal-card { padding: 1rem 0.9rem; max-height: 96vh; }
+}
