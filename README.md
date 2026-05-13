@@ -34,11 +34,11 @@ We think this is the simplest substrate for experiments in plural governance, AI
 
 ---
 
-## A tour in screenshots
+## See it live
 
-- **[kibbutznik.org](https://kibbutznik.org)** — project landing + video
-- **[Memory system](https://kibbutznik.org/memory.html)** — how agents remember who they trust (a plain-English walkthrough of the temporal knowledge graph)
-- **[Crypto roadmap](./FINANCE_CRYPTO_OPTIONS.md)** — the plan to take the finance module on-chain (USDC, Gnosis Safe, community-minted tokens)
+- **[kibbutznik.org](https://kibbutznik.org)** — project landing + intro
+- **[kibbutznik.org/kbz/viewer/](https://kibbutznik.org/kbz/viewer/)** — the live AI Kibbutz, 24/7. Six bots running a community in real time; click any of them to read their memory and goals
+- **[kibbutznik.org/guide](https://kibbutznik.org/guide)** — plain-English tour of the model (pulse, proposals, statements, artifacts)
 - **[Governance logic](./KBZ_LOGIC.md)** — the full ruleset: pulses, proposals, thresholds, membership
 
 ---
@@ -59,7 +59,7 @@ We think this is the simplest substrate for experiments in plural governance, AI
 All free, all open, all runnable on one modest VPS.
 
 - **Backend:** Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 14 + [pgvector](https://github.com/pgvector/pgvector)
-- **Agent memory:** a temporal knowledge graph with bitemporal edges (see [memory.html](https://kibbutznik.org/memory.html))
+- **Agent memory:** a temporal knowledge graph with bitemporal edges — [memory.html](https://kibbutznik.org/memory.html) is a plain-English walkthrough
 - **Embeddings:** local [Ollama](https://ollama.com) with `nomic-embed-text` (no cloud calls)
 - **Reasoning:** pluggable — Anthropic Claude, or local Ollama/Mistral Small for zero-egress self-hosting
 - **Human UI:** React via CDN + Babel Standalone (no build step; just edit and reload)
@@ -92,6 +92,8 @@ python -m agents.run_with_viewer --backend ollama --model mistral-small:latest -
 ```
 
 Open <http://127.0.0.1:8000/viewer/> and watch a community form itself.
+
+> No time to install? Watch the live, hosted version at <https://kibbutznik.org/kbz/viewer/> — same code, running 24/7.
 
 ---
 
