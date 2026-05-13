@@ -1,13 +1,10 @@
 import asyncio
-import collections
 import logging
-import time
-import traceback
-import uuid as _uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
+from kbz.error_handler import install as install_error_handler
 
 from kbz.database import async_session
 from kbz.routers import (
@@ -102,74 +99,10 @@ async def health():
     return {"status": "ok"}
 
 
-# ─── Global error handling (HN launch hardening) ──────────────────
-#
-# FastAPI's default behavior for an uncaught exception is to return
-# the full Python traceback to the caller. On a single 4GB box with
-# Plausible analytics watching and an HN crowd inspecting our every
-# response, that means a single Postgres hiccup leaks file paths,
-# SQLAlchemy connection strings, and stack frames to anonymous
-# strangers.
-#
-# Below: replace that with a clean JSON 500 + a small in-memory
-# ring buffer of the last 100 5xx events, queryable from
-# /admin/errors (admin-gated). Full traceback still goes to
-# journalctl via logger.exception.
-
-_ERROR_RING: collections.deque = collections.deque(maxlen=100)
-
-
-@app.exception_handler(Exception)
-async def _global_exception_handler(request: Request, exc: Exception):
-    """Catch anything not already wrapped as HTTPException. Returns
-    a clean JSON 500 to the client; full traceback logged + stashed
-    in the ring buffer for /admin/errors inspection."""
-    err_id = _uuid.uuid4().hex[:12]
-    tb = traceback.format_exc()
-    logger.exception(
-        "unhandled exception id=%s path=%s method=%s",
-        err_id, request.url.path, request.method,
-    )
-    _ERROR_RING.append({
-        "id": err_id,
-        "ts": time.time(),
-        "path": request.url.path,
-        "method": request.method,
-        "exc_type": type(exc).__name__,
-        "exc_msg": str(exc)[:400],
-        "traceback": tb[-2000:],  # last 2KB — usually contains the actual cause
-    })
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Internal server error",
-            "error_id": err_id,
-        },
-    )
-
-
-from fastapi import Depends as _Depends
-from kbz.auth_deps import get_current_user as _get_current_user
-from kbz.models.user import User as _User
-
-
-@app.get("/admin/errors")
-async def list_recent_errors(user: _User | None = _Depends(_get_current_user)):
-    """Returns the last 100 unhandled-exception events. Admin-gated
-    via the existing admin_user_ids list in settings — if the list
-    is empty, the endpoint is locked off entirely. Each event
-    includes path, exc_type, message, and the last 2KB of traceback
-    (enough to identify the cause without dumping the entire frame
-    stack)."""
-    from kbz.config import settings as _s
-    admin_ids = {x.strip() for x in (_s.admin_user_ids or "").split(",") if x.strip()}
-    if not admin_ids:
-        # Hard 403 when no admins are configured — don't expose
-        # tracebacks just because someone forgot to set the env var.
-        return JSONResponse(status_code=403, content={"detail": "admin not configured"})
-    if user is None or str(user.id) not in admin_ids:
-        return JSONResponse(status_code=403, content={"detail": "forbidden"})
-    return {"errors": list(_ERROR_RING)}
+# HN-launch hardening: clean JSON 500 + admin-gated error ring buffer.
+# Lives in kbz.error_handler so it can be re-applied to the combined
+# app built in agents/run_with_viewer.py (separate FastAPI instance).
+install_error_handler(app)
 
 
 # ---- Artifact cascade subscriber ----

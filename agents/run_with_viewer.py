@@ -397,6 +397,13 @@ Examples:
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(highlights.router)
     combined_app.include_router(sim_router)
+
+    # HN-launch hardening: same global exception handler + /admin/errors
+    # ring buffer as kbz.main:app. Without this, an uncaught exception
+    # in the combined-app process leaks the full traceback to anonymous
+    # callers. Re-applied here because this is a separate FastAPI app.
+    from kbz.error_handler import install as install_error_handler
+    install_error_handler(combined_app)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")
 
     @combined_app.get("/health")
