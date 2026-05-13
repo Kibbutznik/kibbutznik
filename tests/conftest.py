@@ -57,7 +57,11 @@ async def client(db_engine):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    transport = ASGITransport(app=app)
+    # raise_app_exceptions=False makes the transport actually return
+    # 500 responses through the global exception handler instead of
+    # letting the exception bubble up and explode the test. This is
+    # needed to test the global exception handler (test_global_error_handler.py).
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()

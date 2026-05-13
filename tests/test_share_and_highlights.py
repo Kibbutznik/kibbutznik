@@ -448,3 +448,63 @@ async def test_highlight_addaction_shows_action_name(client, db):
     actions = [h for h in r.json()["highlights"] if h["type"] == "AddAction"]
     assert actions
     assert actions[0]["title"] == "Onboarding Writers"
+
+
+# ── Share-page cache (HN-launch hardening) ─────────────────────
+
+@pytest.mark.asyncio
+async def test_share_page_caches_repeat_requests(client, db):
+    """Second hit on the same artifact share URL should be served
+    from the in-process cache without re-running the DB queries.
+    Verified by deleting the artifact between calls and asserting
+    the second call still returns the cached body."""
+    from kbz.routers.artifacts import _SHARE_CACHE
+    from sqlalchemy import delete as _del
+    _SHARE_CACHE.clear()
+
+    user = await create_test_user(client)
+    community = await create_test_community(client, user["id"], "CacheCo")
+    cid = _uuid.UUID(community["id"])
+
+    container_id = _uuid.uuid4()
+    db.add(ArtifactContainer(
+        id=container_id, community_id=cid, status=1,
+        title="Holder", delegated_from_artifact_id=None,
+    ))
+    art_id = _uuid.uuid4()
+    db.add(Artifact(
+        id=art_id, container_id=container_id, community_id=cid,
+        title="Cached Title", content="Original body",
+        author_user_id=_uuid.UUID(user["id"]),
+        proposal_id=None,
+        status=int(ArtifactStatus.ACTIVE),
+        is_plan=False,
+    ))
+    await db.commit()
+
+    r1 = await client.get(f"/artifacts/{art_id}/share")
+    assert r1.status_code == 200
+    assert "Cached Title" in r1.text
+    assert str(art_id) in _SHARE_CACHE, "cache should hold the entry"
+
+    # Wipe the artifact rows from the DB; if the response weren't
+    # cached, the second call would 404. With caching, the previous
+    # body should still come back.
+    await db.execute(_del(Artifact).where(Artifact.id == art_id))
+    await db.commit()
+    r2 = await client.get(f"/artifacts/{art_id}/share")
+    assert r2.status_code == 200
+    assert "Cached Title" in r2.text
+
+
+@pytest.mark.asyncio
+async def test_share_page_404_is_also_cached(client):
+    """A 404 result is cacheable too — otherwise an attacker
+    repeating bogus UUIDs would hit the DB every time."""
+    from kbz.routers.artifacts import _SHARE_CACHE
+    _SHARE_CACHE.clear()
+    bogus = _uuid.uuid4()
+    r1 = await client.get(f"/artifacts/{bogus}/share")
+    assert r1.status_code == 404
+    # The 404 should be in cache.
+    assert str(bogus) in _SHARE_CACHE
