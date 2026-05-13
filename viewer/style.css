@@ -2573,3 +2573,24 @@ body {
     60%  { background: rgba(233,69,96,0.15); box-shadow: 0 0 0 2px rgba(233,69,96,0.25); }
     100% { background: transparent;          box-shadow: 0 0 0 2px transparent; }
 }
+
+/* ── Respect prefers-reduced-motion ──
+ * Visitors with vestibular concerns (or who've turned it on via OS settings)
+ * should not see livePulse / pulse-glow / shimmer infinite loops. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ── New-event flash on activity feed rows ──
+ * Audit P0: live events arrive with no signal. Apply this class for ~1.6s
+ * to newly-streamed rows for a subtle accent wash. */
+@keyframes feedRowFlash {
+    0%   { background: rgba(233, 69, 96, 0.15); }
+    100% { background: transparent; }
+}
+.feed-row-new { animation: feedRowFlash 1.6s ease-out forwards; }

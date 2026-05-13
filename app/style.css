@@ -1,23 +1,34 @@
 /* Kibbutznik — product theme.
  *
- * Different from the simulation viewer's palette: warmer, more "tool"
- * than "spectator dashboard". Ships no-build via <link> tag.
+ * Aligned with the marketing brand palette (warm cream + pulse red).
+ * Was previously a green/cream variant; the green is preserved as
+ * --sage for "deliberation / agreement" states only. Ships no-build
+ * via <link> tag.
  */
 
 :root {
-  --bg: #f6f3ec;
+  /* Brand tokens — match landing/welcome.html exactly. */
+  --bg: #fdf8f0;            /* warm cream */
+  --bg-alt: #f4ead8;        /* slightly darker cream for alt sections */
   --bg-card: #fffdf9;
-  --text: #1f2230;
-  --text-dim: #6a6f82;
-  --border: #d9d4c7;
-  --accent: #3b8070;     /* kibbutz green */
-  --accent-soft: #e5f1ed;
+  --text: #2a2520;          /* near-black, slightly warm (welcome --ink) */
+  --text-dim: #5a5249;      /* welcome --ink-soft */
+  --text-muted: #8a8076;    /* welcome --ink-muted */
+  --border: #e8dec9;        /* welcome --line */
+
+  --accent: #e94560;        /* pulse red — same across all surfaces */
+  --accent-hover: #d9304a;
+  --accent-soft: #fdebee;
+  --sage: #6fa885;          /* deliberation / agreement (was the old --accent) */
+  --sage-soft: #e5f1ed;
+  --gold: #d9a441;          /* AI presence */
+
   --warn: #d97746;
   --danger: #c14b57;
   --radius: 10px;
   --shadow: 0 2px 12px rgba(20, 24, 38, 0.08);
   --shadow-hover: 0 4px 20px rgba(20, 24, 38, 0.12);
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -31,8 +42,12 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent); }
+/* Default <a> in body copy is the brand accent without an underline at rest;
+ * underline only on hover for affordance. Chrome elements (.btn, .brand, etc.)
+ * suppress the underline entirely — see .btn rules below. */
+a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
 .container {
   max-width: 960px;
@@ -55,9 +70,19 @@ header.app-header {
 .brand {
   font-weight: 700;
   font-size: 1.1rem;
-  color: var(--accent);
+  color: var(--text);
   letter-spacing: 0.02em;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.brand:hover { text-decoration: none; color: var(--text); }
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .btn {
@@ -68,18 +93,31 @@ header.app-header {
   background: var(--bg-card);
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  text-decoration: none; /* anchors styled as buttons must NOT inherit the global underline */
+  display: inline-block;
+  text-align: center;
+  transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.btn:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.btn:hover, a.btn:hover { border-color: var(--accent); box-shadow: var(--shadow); text-decoration: none; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
 }
-.btn.primary:hover { background: #2f6c5e; box-shadow: var(--shadow-hover); }
+.btn.primary:hover, a.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: white; box-shadow: var(--shadow-hover); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
-.btn.ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
-.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+.btn.ghost:hover, a.btn.ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
+/* Disabled styling is distinct enough that users don't mistake the "type your
+ * email to enable" state for a hard-disabled control. */
+.btn[disabled], .btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.btn.primary[disabled] { background: #f0d9dd; color: #9a8487; border-color: #f0d9dd; }
 
 .input {
   font: inherit;
@@ -129,8 +167,9 @@ header.app-header {
 .feature-title {
   font-weight: 600;
   margin-bottom: 0.3rem;
-  color: var(--accent);
+  color: var(--text);
 }
+.feature { border-left: 3px solid var(--accent-soft); }
 
 .muted { color: var(--text-dim); font-size: 0.9rem; }
 .bold { font-weight: 600; }
@@ -161,12 +200,12 @@ footer.app-footer {
 @keyframes proposal-new-kf {
     0% {
         background: var(--accent-soft);
-        box-shadow: 0 0 0 0 rgba(59, 128, 112, 0.45);
+        box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.45);
         transform: translateY(-4px);
     }
     40% {
         background: var(--accent-soft);
-        box-shadow: 0 0 0 12px rgba(59, 128, 112, 0);
+        box-shadow: 0 0 0 12px rgba(233, 69, 96, 0);
         transform: translateY(0);
     }
     100% {
@@ -406,3 +445,42 @@ footer.app-footer {
     .modal-overlay { padding: 0.5rem; }
     .modal-card { padding: 1rem 0.9rem; max-height: 96vh; }
 }
+
+/* ── Mobile header collapse ──
+ * The desktop header packs "← Home / Kibbutznik / Skills / Sign in" into a
+ * justify-between flex row. On a 375px screen the four items wrap to two
+ * rows with one orphan label floating. Mobile rules: tighter padding, hide
+ * the "← Home" text (keep arrow as icon), and drop the "Skills" link for
+ * logged-out visitors (it lives in the menu / Browse for signed-in ones). */
+@media (max-width: 640px) {
+    header.app-header { padding: 0.55rem 0.85rem; }
+    header.app-header .brand { font-size: 1.05rem; }
+    header.app-header .home-link-label { display: none; }
+    header.app-header .row { gap: 0.5rem; }
+}
+
+/* ── Tab strip overflow on community detail ──
+ * 7-8 tabs in a single row overflow silently below ~700px. Let them scroll
+ * horizontally with no scrollbar chrome; right-edge fade hints there's more. */
+.tab-strip {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    position: relative;
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+.tab-strip::-webkit-scrollbar { display: none; }
+.tab-strip > * { flex-shrink: 0; }
+
+/* ── Activity-feed flash on new event arrival ──
+ * Mirror the viewer's "new event" treatment so freshly-streamed proposals
+ * pop briefly. Re-uses the same accent-soft tone for cross-surface unity. */
+@keyframes new-row-flash {
+    0%   { background: var(--accent-soft); }
+    100% { background: transparent; }
+}
+.new-row-flash { animation: new-row-flash 1.6s ease-out forwards; }
