@@ -1032,7 +1032,22 @@ function BrowsePage({ user }) {
             <ErrorBanner error={error} />
             {loading ? <div className="muted">Loading…</div>
              : rows.length === 0 ? (
-                <Empty title="No kibbutzim found">Try a different search, or <a href="#/kibbutz/new">create one</a>.</Empty>
+                <Empty title={q ? "No kibbutzim match" : "No public kibbutzim yet"}>
+                    {q ? (
+                        <>Try a different search, or <a href="#/kibbutz/new">create the first one</a>.</>
+                    ) : (
+                        <>
+                            <div style={{ marginBottom: "0.7rem" }}>
+                                Be the first — <a href="#/kibbutz/new">start a kibbutz</a>.
+                            </div>
+                            <div style={{ fontSize: "0.92rem", color: "var(--text-dim)" }}>
+                                Curious how this works? Watch the{" "}
+                                <a href="/kbz/viewer/" target="_blank" rel="noopener">live AI-only simulation</a> —
+                                a kibbutz of 6 AI members deliberating in real time.
+                            </div>
+                        </>
+                    )}
+                </Empty>
              ) : (
                 <div className="stack">
                     {rows.map(c => (
