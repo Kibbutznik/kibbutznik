@@ -739,7 +739,7 @@ function MembershipNode({ membership: m, depth, byParent, stats }) {
                         {nextPulse && (
                             <div style={{ marginTop: 8 }}>
                                 <div className="muted" style={{ fontSize: "0.75rem", marginBottom: 2 }}>
-                                    Next pulse: {nextPulse.support_count}/{nextPulse.threshold}
+                                    Next <Term name="Pulse">pulse</Term>: {nextPulse.support_count}/{nextPulse.threshold}
                                 </div>
                                 <div style={{
                                     height: 4, background: "rgba(0,0,0,0.08)",
@@ -2023,6 +2023,104 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
     );
 }
 
+// ── Inline glossary tooltips ────────────────────────────
+// Plain-language definitions for the half-dozen domain words a new
+// user trips over in the proposal form / dashboard / variables tab.
+// Render via `<Term name="Pulse">the pulse</Term>` — the wrapped
+// text gets a subtle dotted underline; click/hover opens a small
+// popover with the definition and a "read the full guide →" link.
+//
+// Definitions intentionally short — the full guide.html has the
+// elaborations. These are the "I forgot, what's a Pulse again?"
+// reminders that prevent the user from leaving the page.
+const GLOSSARY = {
+    Statement: {
+        title: "Statement",
+        body: "A binding rule the community has accepted. Statements together form your kibbutz's constitution — and they have teeth: a member can be thrown out for violating one.",
+    },
+    Pulse: {
+        title: "Pulse",
+        body: "The moment your kibbutz decides. Nothing moves between rounds — proposals just gather support. When enough members call \"support_pulse\", the pulse fires and ALL pending decisions resolve at once.",
+    },
+    Threshold: {
+        title: "Threshold",
+        body: "The minimum support a proposal type needs to pass at pulse time. Each type has its own threshold variable — e.g. ThrowOut needs 60% (heavy decision), most others 50%. You can vote to change any threshold via a ChangeVariable proposal.",
+    },
+    OutThere: {
+        title: "Out There",
+        body: "A proposal's middle life: visible to the whole community, gathering support. If it picks up enough before MaxAge pulses elapse, it moves to On The Air. Otherwise it's quietly retired.",
+    },
+    OnTheAir: {
+        title: "On The Air",
+        body: "A proposal that's about to be decided on the next pulse. Last chance to support or withdraw — at the next pulse this proposal will either be accepted (and executed) or rejected.",
+    },
+    Artifact: {
+        title: "Artifact",
+        body: "A piece of what the kibbutz is producing — a section of a handbook, a budget line, a paragraph of a manifesto. Starts as an empty title slot; gets filled via EditArtifact proposals.",
+    },
+    Container: {
+        title: "Container",
+        body: "A workspace that holds related artifacts together. The kibbutz fills its container with artifacts, then commits the whole thing as a final deliverable.",
+    },
+};
+
+function Term({ name, children }) {
+    // Inline word-or-phrase with a subtle dotted underline. Click opens
+    // a small popover with the term's definition + "Read the guide →"
+    // link. Hover on desktop, click on mobile.
+    const [open, setOpen] = React.useState(false);
+    const entry = GLOSSARY[name];
+    if (!entry) return <>{children}</>;
+    return (
+        <span style={{ position: "relative", display: "inline-block" }}>
+            <span
+                onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+                onMouseEnter={() => setOpen(true)}
+                onMouseLeave={() => setOpen(false)}
+                style={{
+                    borderBottom: "1px dotted var(--accent)",
+                    cursor: "help",
+                    color: "inherit",
+                }}
+            >{children}</span>
+            {open && (
+                <span
+                    onMouseEnter={() => setOpen(true)}
+                    onMouseLeave={() => setOpen(false)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                        position: "absolute",
+                        top: "calc(100% + 4px)",
+                        left: 0,
+                        zIndex: 200,
+                        minWidth: 280,
+                        maxWidth: 340,
+                        background: "white",
+                        color: "var(--text)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        padding: "12px 14px",
+                        fontSize: "0.86rem",
+                        fontWeight: 400,
+                        textAlign: "left",
+                        lineHeight: 1.5,
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                        whiteSpace: "normal",
+                    }}
+                >
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>{entry.title}</div>
+                    <div style={{ color: "var(--text-dim)" }}>{entry.body}</div>
+                    <a href="/guide.html"
+                       target="_blank" rel="noopener"
+                       style={{ display: "inline-block", marginTop: 8, fontSize: "0.78rem", color: "var(--accent)" }}>
+                        Read the full guide →
+                    </a>
+                </span>
+            )}
+        </span>
+    );
+}
+
 // ── Propose form ────────────────────────────────────────
 // Full proposal-type catalog with per-type field specs.
 // `needs` declares which of {text, val_text, val_uuid} are required;
@@ -3170,7 +3268,11 @@ function ProposePage({ communityId, user }) {
     return (
         <div className="container" style={{ maxWidth: 640 }}>
             <h2>New proposal</h2>
-            <p className="muted">Your proposal goes out to the community for support. It advances on the next pulse.</p>
+            <p className="muted">
+                Your proposal goes <Term name="OutThere">out to the community</Term> for support.
+                It advances on the next <Term name="Pulse">pulse</Term>.
+                Hover any underlined term for a quick definition.
+            </p>
             <form className="stack card" onSubmit={submit}>
                 <label>
                     <div className="row" style={{ justifyContent: "space-between", marginBottom: 4 }}>
