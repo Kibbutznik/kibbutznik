@@ -1,8 +1,35 @@
-# HN_POST.md — the Show HN draft + prepared FAQ
+# HN_todo.md — launch checklist + Show HN draft + prepared FAQ
 
-Status: **draft**. Read the launch playbook (Section E of the launch-prep
-plan) before posting. The post text is intentionally short — HN rewards
-short.
+Everything that needs to happen before posting Kibbutznik on Hacker News.
+Top section is **user actions** (things only Uri can do). Sections below
+are the post draft + FAQ.
+
+---
+
+## User action items — not code, can't be automated
+
+- [ ] **A0 — Hetzner upgrade**: rescale VPS CX22 (4GB/2vCPU) → **CCX13 (8GB/4vCPU dedicated, ~€16/mo)** at least 48h before posting. Procedure in `OPS.md`. ~5 min downtime.
+- [ ] **A5 — Verify prod env**: confirm `KBZ_AUTH_DEV_EXPOSE_MAGIC_LINK` is NOT set on prod. Check with `ssh root@157.180.29.140 'cat /etc/kbz/env | grep -i expose'`.
+- [ ] **A6 — OpenRouter spend cap**: set a **$100 monthly cap** in https://openrouter.ai/credits (≈ 3× projected steady-state). Stops a runaway sim loop from racking up charges.
+- [ ] **C5 — Social asset upload**: upload `branding/avatars/`, `branding/banners/`, `branding/github/social-preview-1280x640.png` to Twitter/Bluesky/GitHub social-preview. Per `branding/README.md`.
+- [ ] **C6 — (optional) NotebookLM explainer video**: feed it `landing/guide.html` + `README.md` + 3-4 screenshots, generate ~6min narrated overview, upload to YouTube unlisted, embed on welcome.html between hero and highlight strip.
+
+## Pre-launch (T-48h to T+0)
+
+- [ ] **T-48h**: run `bash scripts/loadtest.sh` from a non-prod box. Target: p99 ≤500ms at 200 RPS sustained for 60s on every public endpoint, zero 5xx.
+- [ ] **T-48h**: 24h burn-in after Hetzner upgrade — `journalctl -u kbz --since "24h ago" | grep -i error | wc -l` should be ≤5.
+- [ ] **T-24h**: friend reads `HN_todo.md` (this file) cold and reacts honestly. They should be able to summarize the project after reading the post draft.
+- [ ] **T-24h**: pre-wire Plausible event filters for launch-day metrics.
+- [ ] **T-2h**: open `OPS.md`, OpenRouter dashboard, prod `journalctl -f`, and `tail -F /var/log/nginx/access.log` in side-by-side terminals.
+- [ ] **T-2h**: rollback procedure tested on a no-op commit (`git push server main~1:main --force-with-lease`).
+- [ ] **T+0 to T+4h**: block 4 hours on calendar for active comment engagement. Reply to every top-level comment within 30 min. **No social media announcements (Twitter/Bluesky/Mastodon) until ≥6h after the HN post.**
+- [ ] **T+24h**: post a short retrospective comment (or your own blog) — HN values openness.
+
+## When all of the above is done
+
+Title: `Show HN: Kibbutznik – communities that decide for themselves`
+Link: `https://kibbutznik.org/`
+Body: see "Body — 300 words" below.
 
 ---
 
