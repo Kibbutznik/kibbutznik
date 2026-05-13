@@ -1973,12 +1973,16 @@ body {
         z-index: 149;
     }
 
-    /* Tabs — horizontal scroll */
+    /* Tabs — horizontal scroll. Right-edge fade-mask hints there's more
+     * (audit P1: without it, mobile visitors miss Pulses / Metrics / Relations
+     * entirely because the strip cuts off silently). */
     .tab-nav {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
         padding: 0 8px;
         scrollbar-width: none;
+        mask-image: linear-gradient(to right, black 0, black calc(100% - 28px), transparent 100%);
+        -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 28px), transparent 100%);
     }
     .tab-nav::-webkit-scrollbar { display: none; }
     .tab-btn {
