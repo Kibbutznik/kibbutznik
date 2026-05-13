@@ -422,3 +422,86 @@ async def test_get_effective_visibility_falls_back_to_public(client, db):
 
     svc = CommunityService(db)
     assert await svc.get_effective_visibility(root_id) == "public"
+
+
+# ─── Visibility filter on the Browse list ──────────────────────
+
+@pytest.mark.asyncio
+async def test_browse_list_hides_private_communities(client, db):
+    """Communities whose Visibility variable is 'private' must NOT
+    appear in the public /communities listing — they'd be exposing
+    metadata (name, member count, creation date) to anyone visiting
+    Browse, even though their content is gated."""
+    from sqlalchemy import update as _upd
+    from kbz.models.variable import Variable as _Var
+    import uuid as _uuid
+
+    user = await create_test_user(client)
+    pub = await create_test_community(client, user["id"], "BrowsePublic")
+    priv = await create_test_community(client, user["id"], "BrowsePrivate")
+    await db.execute(
+        _upd(_Var).where(
+            _Var.community_id == _uuid.UUID(priv["id"]),
+            _Var.name == "Visibility",
+        ).values(value="private")
+    )
+    await db.commit()
+
+    # Hit the Browse listing. Recent_created exemption keeps both
+    # communities alive (just created). Visibility filter must
+    # specifically exclude the private one.
+    r = await client.get("/communities")
+    assert r.status_code == 200
+    names = [c["name"] for c in r.json()]
+    assert "BrowsePublic" in names
+    assert "BrowsePrivate" not in names
+
+
+@pytest.mark.asyncio
+async def test_browse_list_hides_unlisted_communities(client, db):
+    """Unlisted root communities also stay off the public Browse —
+    the URL is shareable but the community isn't in any directory."""
+    from sqlalchemy import update as _upd
+    from kbz.models.variable import Variable as _Var
+    import uuid as _uuid
+
+    user = await create_test_user(client)
+    pub = await create_test_community(client, user["id"], "BrowseListed")
+    ul = await create_test_community(client, user["id"], "BrowseUnlisted")
+    await db.execute(
+        _upd(_Var).where(
+            _Var.community_id == _uuid.UUID(ul["id"]),
+            _Var.name == "Visibility",
+        ).values(value="unlisted")
+    )
+    await db.commit()
+
+    r = await client.get("/communities")
+    names = [c["name"] for c in r.json()]
+    assert "BrowseListed" in names
+    assert "BrowseUnlisted" not in names
+
+
+@pytest.mark.asyncio
+async def test_browse_list_includes_legacy_no_visibility(client, db):
+    """Communities created BEFORE Visibility existed have no Variable
+    row at all. They must default to visible/public on the Browse
+    list — otherwise the AI Kibbutz (which predates this feature)
+    silently disappears from Browse."""
+    from sqlalchemy import delete as _del
+    from kbz.models.variable import Variable as _Var
+    import uuid as _uuid
+
+    user = await create_test_user(client)
+    legacy = await create_test_community(client, user["id"], "LegacyKibbutz")
+    await db.execute(
+        _del(_Var).where(
+            _Var.community_id == _uuid.UUID(legacy["id"]),
+            _Var.name == "Visibility",
+        )
+    )
+    await db.commit()
+
+    r = await client.get("/communities")
+    names = [c["name"] for c in r.json()]
+    assert "LegacyKibbutz" in names

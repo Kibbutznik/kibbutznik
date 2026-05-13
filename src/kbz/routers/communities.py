@@ -72,6 +72,21 @@ async def list_communities(
     where = []
     if not include_actions:
         where.append(Community.parent_id == _ZERO_UUID)
+        # Visibility filter for the public Browse page — only root
+        # communities whose Visibility variable is "public" (or the
+        # row is missing, which means legacy-default-public per
+        # CommunityService.get_effective_visibility). "unlisted" and
+        # "private" never appear on the Browse list. This matches the
+        # plan's launch direction ("show the live AI Kibbutz on
+        # Browse") while keeping new human kibbutzim that have opted
+        # to private out of the public listing.
+        from kbz.models.variable import Variable as _Var
+        not_public = exists().where(
+            _Var.community_id == Community.id,
+            _Var.name == "Visibility",
+            _Var.value != "public",
+        )
+        where.append(~not_public)
     if q:
         where.append(func.lower(Community.name).like(f"%{q.lower()}%"))
 
