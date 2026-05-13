@@ -1096,19 +1096,12 @@ function CreateKibbutzPage({ user }) {
                               placeholder="What will this kibbutz work on together? (This becomes the briefing for any artifact work.)"
                               value={mission} onChange={(e) => setMission(e.target.value)} />
                 </label>
-                <label className="row" style={{ alignItems: "flex-start", gap: "0.5rem", padding: "0.5rem", background: "rgba(78,204,163,0.08)", borderRadius: 6 }}>
-                    <input type="checkbox" checked={enableFinancial}
-                           onChange={(e) => setEnableFinancial(e.target.checked)}
-                           style={{ marginTop: 2 }} />
-                    <div>
-                        <div className="bold">💰 Enable finance module</div>
-                        <div className="muted" style={{ fontSize: "0.82rem" }}>
-                            Adds a community wallet, funding requests from child actions,
-                            payment proposals, dividends, and escrow-based membership fees.
-                            You can enable this later via a ChangeVariable proposal too.
-                        </div>
-                    </div>
-                </label>
+                {/* "Enable finance module" checkbox HIDDEN during the
+                    HN-launch window per the plan's scope cut. The server-
+                    side wallet/escrow code stays intact; we just don't
+                    surface the option in the create form. Reveal again
+                    by uncommenting + flipping the matching catalog
+                    `tier: "hidden"` entries to "advanced". */}
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                     <a href="#/dashboard" className="btn ghost">Cancel</a>
                     <button className="btn primary" disabled={submitting || !name.trim()}>
@@ -1394,7 +1387,12 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                         "proposals", "chat", "members",
                         "statements", "variables", "actions", "artifacts",
                     ];
-                    if (isFinancial) base.push("treasury");
+                    // Treasury tab HIDDEN during the HN-launch window per
+                    // the plan's finance scope cut. Pre-existing financial
+                    // communities still HAVE the wallet on the server; the
+                    // tab just isn't exposed in the public UI. Restore by
+                    // re-adding the `if (isFinancial) base.push("treasury");`
+                    // line when finance is launch-ready.
                     if (imMember) base.push("bot");
                     return base;
                 })().map(t => (
@@ -2029,101 +2027,139 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
 // Full proposal-type catalog with per-type field specs.
 // `needs` declares which of {text, val_text, val_uuid} are required;
 // `pickFrom` says which existing-entity list the val_uuid dropdown
-// should be populated from (statements | members | actions | artifacts
-// | containers). `financialOnly` hides the type unless the community
-// has the Financial module on.
+// should be populated from.
+//
+// `tier`:
+//   "starter" — shown by default; the 5-6 types a new user actually
+//               needs to do anything useful
+//   "advanced" — collapsed behind "Show advanced types ▾" so the
+//                first impression isn't an intimidating 17-row menu
+//   "hidden"  — not in the picker at all (the four finance types
+//               during the HN-launch window, per the plan's
+//               scope cut; flip back to advanced/starter when
+//               finance is ready for public)
 const PROPOSAL_CATALOG = [
-    // ── Governance
-    { value: "AddStatement",    group: "Governance",  label: "Add a statement (rule)",
+    // ── Starter governance (the rule-shape every kibbutz uses)
+    { value: "AddStatement",    group: "Governance",  tier: "starter",
+      label: "Add a statement (rule)",
       help: "Describe the rule. If accepted, it becomes a community statement.",
       needs: { text: true } },
-    { value: "RemoveStatement", group: "Governance",  label: "Remove a statement",
-      help: "Pick which existing statement to retire, and say why.",
-      needs: { text: true, val_uuid: true },
-      pickFrom: "statements", val_uuid_label: "Statement to remove" },
-    { value: "ReplaceStatement", group: "Governance", label: "Replace an existing statement",
-      help: "Pick the statement to replace. Your description is the new text.",
-      needs: { text: true, val_uuid: true },
-      pickFrom: "statements", val_uuid_label: "Statement to replace" },
-    { value: "ChangeVariable",  group: "Governance",  label: "Change a governance variable",
+    { value: "ChangeVariable",  group: "Governance",  tier: "starter",
+      label: "Change a governance variable",
       help: "Variable name in Description, new value below. See the ⚙️ Variables tab for names.",
       needs: { text: true, val_text: true },
       text_placeholder: "e.g. PulseSupport", val_text_label: "New value", val_text_placeholder: "e.g. 60" },
-    { value: "ThrowOut",        group: "Governance",  label: "Throw out a member",
-      help: "Pick who and say why. Needs community support to pass.",
-      needs: { text: true, val_uuid: true },
-      pickFrom: "members", val_uuid_label: "Member to remove" },
 
-    // ── Actions (working groups)
-    { value: "AddAction",       group: "Actions",     label: "Start a new action (working group)",
+    // ── Starter actions
+    { value: "AddAction",       group: "Actions",     tier: "starter",
+      label: "Start a new action (working group)",
       help: "Describe the work. Short name becomes the group's label. Optionally pick a parent artifact so the new action is born with that artifact delegated to it (one accepted proposal instead of two).",
       needs: { text: true, val_text: true },
       val_text_label: "Short name", val_text_placeholder: "e.g. Onboarding Writers",
       pickFrom: "artifacts", val_uuid_label: "Parent artifact to delegate (optional)", val_uuid_optional: true,
       val_uuid_none_label: "— none (create bare action) —",
       val_uuid_empty_message: "No artifacts in this community to delegate — will create a bare action." },
-    { value: "EndAction",       group: "Actions",     label: "Close an action",
-      help: "Pick a sub-action to close. Its wallet (if any) sweeps back to parent.",
-      needs: { text: true, val_uuid: true },
-      pickFrom: "actions", val_uuid_label: "Action to close" },
-    { value: "JoinAction",      group: "Actions",     label: "Join an action",
+    { value: "JoinAction",      group: "Actions",     tier: "starter",
+      label: "Join an action",
       help: "Pick an action to join. You become a member of its sub-community.",
       needs: { text: true, val_uuid: true },
       pickFrom: "actions", val_uuid_label: "Action to join" },
 
-    // ── Artifacts (collaborative documents)
-    { value: "CreateArtifact",  group: "Artifacts",   label: "Add a section (empty slot)",
-      help: "Creates an EMPTY artifact with a title in the chosen container. Filling comes via EditArtifact.",
-      needs: { val_text: true, val_uuid: true },
-      pickFrom: "containers", val_uuid_label: "Container",
-      val_text_label: "Section title", val_text_placeholder: "e.g. Conflict Resolution Steps" },
-    { value: "EditArtifact",    group: "Artifacts",   label: "Edit an artifact",
+    // ── Starter artifacts
+    { value: "EditArtifact",    group: "Artifacts",   tier: "starter",
+      label: "Edit an artifact",
       help: "Description is the NEW body. Current content is replaced verbatim on accept.",
       needs: { text: true, val_uuid: true },
       pickFrom: "artifacts", val_uuid_label: "Artifact to edit",
       text_placeholder: "Full new content…", text_rows: 8 },
-    { value: "DelegateArtifact", group: "Artifacts",  label: "Delegate an artifact to an action",
+    { value: "CreateArtifact",  group: "Artifacts",   tier: "starter",
+      label: "Add a section (empty slot)",
+      help: "Creates an EMPTY artifact with a title in the chosen container. Filling comes via EditArtifact.",
+      needs: { val_text: true, val_uuid: true },
+      pickFrom: "containers", val_uuid_label: "Container",
+      val_text_label: "Section title", val_text_placeholder: "e.g. Conflict Resolution Steps" },
+
+    // ── Advanced governance
+    { value: "RemoveStatement", group: "Governance",  tier: "advanced",
+      label: "Remove a statement",
+      help: "Pick which existing statement to retire, and say why.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "statements", val_uuid_label: "Statement to remove" },
+    { value: "ReplaceStatement", group: "Governance", tier: "advanced",
+      label: "Replace an existing statement",
+      help: "Pick the statement to replace. Your description is the new text.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "statements", val_uuid_label: "Statement to replace" },
+    { value: "ThrowOut",        group: "Governance",  tier: "advanced",
+      label: "Throw out a member",
+      help: "Pick who and say why. Needs community support to pass.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "members", val_uuid_label: "Member to remove" },
+
+    // ── Advanced actions
+    { value: "EndAction",       group: "Actions",     tier: "advanced",
+      label: "Close an action",
+      help: "Pick a sub-action to close. Its wallet (if any) sweeps back to parent.",
+      needs: { text: true, val_uuid: true },
+      pickFrom: "actions", val_uuid_label: "Action to close" },
+
+    // ── Advanced artifacts
+    { value: "DelegateArtifact", group: "Artifacts",  tier: "advanced",
+      label: "Delegate an artifact to an action",
       help: "Hand an artifact to a sub-action to fill in. val_text = target action community id.",
       needs: { text: true, val_uuid: true, val_text: true },
       pickFrom: "artifacts", val_uuid_label: "Artifact",
       val_text_label: "Target action community id" },
-    { value: "RemoveArtifact",  group: "Artifacts",   label: "Remove an artifact",
+    { value: "RemoveArtifact",  group: "Artifacts",   tier: "advanced",
+      label: "Remove an artifact",
       help: "Retire an artifact. Usually for placeholders or duplicates.",
       needs: { text: true, val_uuid: true },
       pickFrom: "artifacts", val_uuid_label: "Artifact to remove" },
-    { value: "CommitArtifact",  group: "Artifacts",   label: "Commit a container",
+    { value: "CommitArtifact",  group: "Artifacts",   tier: "advanced",
+      label: "Commit a container",
       help: "Lock in all ACTIVE artifacts in the container as its final output.",
       needs: { text: true, val_uuid: true },
       pickFrom: "containers", val_uuid_label: "Container to commit" },
 
-    // ── Finance (only visible on financial kibbutzim)
-    { value: "Funding",         group: "Finance",     label: "Funding (parent → child action)",
-      help: "Transfer credits from this community to a child action.",
-      needs: { text: true, val_uuid: true, val_text: true },
-      financialOnly: true, pickFrom: "actions", val_uuid_label: "Target action",
-      val_text_label: "Amount (credits)", val_text_placeholder: "e.g. 50" },
-    { value: "Payment",         group: "Finance",     label: "Payment (out of community)",
-      help: "Burn credits from this community (leaf only — no active sub-actions). Phase 1 is log-only.",
-      needs: { text: true, val_text: true },
-      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 20",
-      text_placeholder: "Who's being paid and why?" },
-    { value: "payBack",         group: "Finance",     label: "PayBack (external inbound refund)",
-      help: "Mint credits back into the community wallet (e.g., a refund or return).",
-      needs: { text: true, val_text: true },
-      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 15" },
-    { value: "Dividend",        group: "Finance",     label: "Dividend (split to members)",
-      help: "Split an amount equally across active members' user wallets.",
-      needs: { text: true, val_text: true },
-      financialOnly: true, val_text_label: "Amount", val_text_placeholder: "e.g. 100" },
-
     // ── Advanced / rare
-    { value: "SetMembershipHandler", group: "Advanced", label: "Set membership-handler action",
+    { value: "SetMembershipHandler", group: "Advanced", tier: "advanced",
+      label: "Set membership-handler action",
       help: "Delegate admission decisions to a specific action. Usually not needed.",
       needs: { text: true, val_uuid: true },
       pickFrom: "actions", val_uuid_label: "Handler action" },
+
+    // ── Finance — HIDDEN for launch (HN-launch plan scope cut).
+    //    The wallet endpoints stay live on the server; this just
+    //    keeps the UI presenting a coherent 14-proposal-type product
+    //    instead of dangling "Payment" / "Dividend" buttons against
+    //    an unreleased financial module. Flip these to "advanced"
+    //    (or "starter" for Funding) when finance is launch-ready.
+    { value: "Funding",         group: "Finance",     tier: "hidden",
+      label: "Funding (parent → child action)",
+      help: "Transfer credits from this community to a child action.",
+      needs: { text: true, val_uuid: true, val_text: true },
+      pickFrom: "actions", val_uuid_label: "Target action",
+      val_text_label: "Amount (credits)", val_text_placeholder: "e.g. 50" },
+    { value: "Payment",         group: "Finance",     tier: "hidden",
+      label: "Payment (out of community)",
+      help: "Burn credits from this community.",
+      needs: { text: true, val_text: true },
+      val_text_label: "Amount", val_text_placeholder: "e.g. 20" },
+    { value: "payBack",         group: "Finance",     tier: "hidden",
+      label: "PayBack (external inbound refund)",
+      help: "Mint credits back into the community wallet (e.g., a refund or return).",
+      needs: { text: true, val_text: true },
+      val_text_label: "Amount", val_text_placeholder: "e.g. 15" },
+    { value: "Dividend",        group: "Finance",     tier: "hidden",
+      label: "Dividend (split to members)",
+      help: "Split an amount equally across active members' user wallets.",
+      needs: { text: true, val_text: true },
+      val_text_label: "Amount", val_text_placeholder: "e.g. 100" },
 ];
 
-// Groups in display order
+// Groups in display order. Finance is HIDDEN until the scope cut
+// lifts; leaving the constant intact so a single tier flip in
+// PROPOSAL_CATALOG above brings it back.
 const PROPOSAL_GROUPS = ["Governance", "Actions", "Artifacts", "Finance", "Advanced"];
 
 // ── Bot delegation (per-kibbutz) ────────────────────────
@@ -3020,10 +3056,28 @@ function ProposePage({ communityId, user }) {
         })();
     }, [communityId]);
 
-    // Only show types allowed for this community
+    // Show advanced types (Throw out, Replace statement, Delegate, etc.)?
+    // Default OFF — a new user sees 6 starter types instead of 14, which
+    // is dramatically less intimidating. Toggle remembered per-session
+    // so power users don't have to flip it back each time.
+    const [showAdvanced, setShowAdvanced] = useState(() => {
+        try { return sessionStorage.getItem("kbz-show-advanced-types") === "1"; }
+        catch { return false; }
+    });
+    useEffect(() => {
+        try { sessionStorage.setItem("kbz-show-advanced-types", showAdvanced ? "1" : "0"); }
+        catch {}
+    }, [showAdvanced]);
+
+    // Tier filter: hide "hidden" tier always (finance during launch
+    // scope cut). Advanced shown only when toggle is on.
     const availableTypes = useMemo(
-        () => PROPOSAL_CATALOG.filter(t => !t.financialOnly || isFinancial),
-        [isFinancial],
+        () => PROPOSAL_CATALOG.filter(t => {
+            if (t.tier === "hidden") return false;
+            if (t.tier === "advanced" && !showAdvanced) return false;
+            return true;
+        }),
+        [showAdvanced],
     );
 
     // Group by category for the dropdown
@@ -3119,7 +3173,15 @@ function ProposePage({ communityId, user }) {
             <p className="muted">Your proposal goes out to the community for support. It advances on the next pulse.</p>
             <form className="stack card" onSubmit={submit}>
                 <label>
-                    <div className="bold" style={{ marginBottom: 4 }}>Type</div>
+                    <div className="row" style={{ justifyContent: "space-between", marginBottom: 4 }}>
+                        <span className="bold">Type</span>
+                        <label className="muted" style={{ fontSize: "0.78rem", cursor: "pointer" }}>
+                            <input type="checkbox" checked={showAdvanced}
+                                   onChange={(e) => setShowAdvanced(e.target.checked)}
+                                   style={{ marginRight: 4 }} />
+                            Show advanced types
+                        </label>
+                    </div>
                     <select className="input" value={ptype}
                             onChange={(e) => setPtype(e.target.value)}>
                         {PROPOSAL_GROUPS.map(g => (
