@@ -407,7 +407,14 @@ function useAuth() {
 function Header({ user, onLogout }) {
     return (
         <header className="app-header">
-            <a href="#/" className="brand">Kibbutznik</a>
+            <div className="row" style={{ gap: "0.5rem" }}>
+                {/* Back-to-home link to the marketing site. Without this,
+                    a visitor who lands here directly has no way back to
+                    the landing other than browser-back or URL editing. */}
+                <a href="/welcome.html" className="btn ghost" title="Back to the Kibbutznik home page"
+                   style={{ padding: "0.4rem 0.7rem" }}>← Home</a>
+                <a href="#/" className="brand">Kibbutznik</a>
+            </div>
             <div className="row">
                 {user ? (
                     <>
@@ -499,19 +506,45 @@ function LoginPage({ onLoggedIn }) {
     });
     const [sending, setSending] = useState(false);
     const [devLink, setDevLink] = useState(null);
-    const [sent, setSent] = useState(false);
+    // sentTo: the address the email was successfully sent to. null = no email
+    // attempt yet; falsy = pre-submit. Used to render the "sent to X" state.
+    const [sentTo, setSentTo] = useState(null);
+    // emailDelivered: false when the server accepted the request but the
+    // email provider (Resend) failed — show a "service unavailable" message
+    // instead of "check your inbox" (which would send the user looking for
+    // nothing). Default true so happy paths render the normal success copy.
+    const [emailDelivered, setEmailDelivered] = useState(true);
+    const [expiresMinutes, setExpiresMinutes] = useState(15);
+    // rateLimited: parsed from a 429 response so we can show wait time
+    // explicitly instead of a generic "Try again later".
+    const [rateLimitedSec, setRateLimitedSec] = useState(null);
     const [error, setError] = useState(null);
 
     const submit = async (e) => {
         e.preventDefault();
-        setSending(true); setError(null); setDevLink(null); setSent(false);
+        setSending(true); setError(null); setDevLink(null);
+        setSentTo(null); setEmailDelivered(true); setRateLimitedSec(null);
         try { localStorage.setItem("kbz-remember", remember ? "true" : "false"); }
         catch {}
         try {
             const r = await api.post("/auth/request-magic-link", { email, remember });
-            if (r.link) setDevLink(r.link);
-            else setSent(true);
-        } catch (err) { setError(err.message); }
+            if (r.link) {
+                setDevLink(r.link);
+            } else {
+                setSentTo(email);
+                setEmailDelivered(r.email_delivered !== false);
+                if (r.expires_minutes) setExpiresMinutes(r.expires_minutes);
+            }
+        } catch (err) {
+            // Parse a 429 into a friendlier message. err.message often
+            // contains "429" verbatim from the API helper.
+            const msg = err.message || "";
+            if (msg.includes("429") || msg.toLowerCase().includes("too many")) {
+                setRateLimitedSec(60);  // we don't read Retry-After; show "a minute"
+            } else {
+                setError(msg);
+            }
+        }
         finally { setSending(false); }
     };
 
@@ -523,6 +556,10 @@ function LoginPage({ onLoggedIn }) {
         } catch (err) { setError(err.message); }
     };
 
+    const resend = () => {
+        setSentTo(null); setEmailDelivered(true); setRateLimitedSec(null);
+    };
+
     return (
         <div className="container" style={{ maxWidth: 480 }}>
             <div className="card">
@@ -530,9 +567,9 @@ function LoginPage({ onLoggedIn }) {
                 <p className="muted">
                     Enter your email. If you're new, we'll create your Kibbutznik account
                     automatically — no passwords, no forms. Same email tomorrow =
-                    same account. One-time sign-in link, valid 15 minutes.
+                    same account.
                 </p>
-                {!devLink && !sent && (
+                {!devLink && !sentTo && !rateLimitedSec && (
                     <form className="stack" onSubmit={submit}>
                         <input className="input" type="email" required
                             placeholder="you@example.com"
@@ -545,6 +582,9 @@ function LoginPage({ onLoggedIn }) {
                         <button className="btn primary" disabled={sending || !email}>
                             {sending ? "Sending…" : "Send magic link"}
                         </button>
+                        <p className="muted" style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>
+                            We'll email you a one-time link. It expires in {expiresMinutes} minutes.
+                        </p>
                     </form>
                 )}
                 {devLink && (
@@ -553,11 +593,49 @@ function LoginPage({ onLoggedIn }) {
                         <button className="btn primary" onClick={verify}>🔑 Use magic link</button>
                     </div>
                 )}
-                {sent && (
-                    <p className="muted">
-                        Check your inbox — the link signs you in
-                        for {remember ? "30 days" : "1 day"}.
-                    </p>
+                {sentTo && emailDelivered && (
+                    <div className="stack">
+                        <p style={{ marginTop: 0 }}>
+                            ✓ Email sent to <strong>{sentTo}</strong>.
+                        </p>
+                        <p className="muted" style={{ fontSize: "0.9rem" }}>
+                            Click the link in the email to sign in. It expires in {expiresMinutes} minutes.
+                            If you don't see it within a minute, check your spam folder.
+                            <br /><br />
+                            You'll stay signed in for {remember ? "30 days" : "1 day"} on this device.
+                        </p>
+                        <button className="btn ghost" onClick={resend} style={{ alignSelf: "flex-start" }}>
+                            Different email? Try again
+                        </button>
+                    </div>
+                )}
+                {sentTo && !emailDelivered && (
+                    <div className="stack">
+                        <p style={{ marginTop: 0, color: "var(--accent)" }}>
+                            ⚠ Our email service couldn't reach <strong>{sentTo}</strong>.
+                        </p>
+                        <p className="muted" style={{ fontSize: "0.9rem" }}>
+                            This is usually a transient issue. Please try again in a minute,
+                            or use a different email address.
+                        </p>
+                        <button className="btn primary" onClick={resend}>
+                            Try again
+                        </button>
+                    </div>
+                )}
+                {rateLimitedSec && (
+                    <div className="stack">
+                        <p style={{ marginTop: 0, color: "var(--accent)" }}>
+                            ⏱ Too many sign-in requests from this address or device.
+                        </p>
+                        <p className="muted" style={{ fontSize: "0.9rem" }}>
+                            For security we limit how often a single email or device can
+                            request magic links. Wait about a minute, then try again.
+                        </p>
+                        <button className="btn ghost" onClick={resend} style={{ alignSelf: "flex-start" }}>
+                            Try a different email
+                        </button>
+                    </div>
                 )}
                 <ErrorBanner error={error} />
             </div>
