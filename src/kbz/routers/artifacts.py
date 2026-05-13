@@ -125,29 +125,53 @@ async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Dep
     (otherwise each render is ~5 DB queries).
     """
     from html import escape as _esc
-    from fastapi.responses import HTMLResponse, Response
+    from fastapi.responses import HTMLResponse
+
+    # Branded 404 body — small inline HTML mirroring the look of
+    # landing/404.html so a stale share URL doesn't dump bare text
+    # at the visitor. Cached alongside the success path so 404s
+    # don't hammer the DB either.
+    _NOT_FOUND_HTML = (
+        "<!DOCTYPE html><html lang=\"en\"><head>"
+        "<meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        "<title>Not found — Kibbutznik</title>"
+        "<style>body{margin:0;background:#fdf8f0;color:#2a2520;font-family:'Inter',system-ui,sans-serif;"
+        "min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}"
+        ".c{background:#fff;border:1px solid #e8dec9;border-radius:24px;padding:48px 36px;max-width:520px;text-align:center;"
+        "box-shadow:0 12px 32px rgba(0,0,0,.04)}"
+        ".g{font-size:4rem;margin-bottom:16px}h1{font-weight:800;letter-spacing:-.02em;font-size:1.8rem;margin-bottom:12px}"
+        "h1 em{color:#e94560;font-style:normal}p{color:#5a5249;margin-bottom:20px}"
+        "a{display:inline-block;background:#e94560;color:#fff;padding:11px 22px;border-radius:100px;"
+        "text-decoration:none;font-weight:600;box-shadow:0 6px 16px rgba(233,69,96,.18)}"
+        "a:hover{background:#d9304a}</style></head><body>"
+        "<div class=\"c\"><div class=\"g\">🌾</div>"
+        "<h1>That artifact is <em>somewhere else</em>.</h1>"
+        "<p>The kibbutz might be private, or the link might be stale.</p>"
+        "<a href=\"/welcome.html\">Back to Kibbutznik →</a>"
+        "</div></body></html>"
+    )
 
     cache_key = str(artifact_id)
     cached = _share_cache_get(cache_key)
     if cached is not None:
         status, body = cached
         if status == 404:
-            return Response(status_code=404, content=body)
+            return HTMLResponse(content=body, status_code=404)
         return HTMLResponse(content=body, headers={"Cache-Control": "public, max-age=300"})
 
     svc = ArtifactService(db)
     artifact = await svc.get_artifact(artifact_id)
     if not artifact or int(artifact.status) != int(ArtifactStatus.ACTIVE):
-        _share_cache_set(cache_key, 404, "Artifact not found")
-        return Response(status_code=404, content="Artifact not found")
+        _share_cache_set(cache_key, 404, _NOT_FOUND_HTML)
+        return HTMLResponse(content=_NOT_FOUND_HTML, status_code=404)
 
     # Visibility gate. Walk to root, check Visibility variable.
     from kbz.services.community_service import CommunityService
     csvc = CommunityService(db)
     visibility = await csvc.get_effective_visibility(artifact.community_id)
     if visibility == "private":
-        _share_cache_set(cache_key, 404, "Artifact not found")
-        return Response(status_code=404, content="Artifact not found")
+        _share_cache_set(cache_key, 404, _NOT_FOUND_HTML)
+        return HTMLResponse(content=_NOT_FOUND_HTML, status_code=404)
 
     # Resolve community + author display + history for the page.
     from kbz.models.community import Community
