@@ -77,6 +77,40 @@ async def get_artifact(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db
     }
 
 
+# ─── Share-page in-process cache ──────────────────────────────────
+# The /artifacts/{id}/share endpoint performs ~5 DB queries (artifact,
+# visibility-walk, community, author, history) and renders ~10KB of
+# HTML per call. Uncached, an HN traffic spike on a popular share URL
+# would hammer Postgres. Cache the rendered HTML (or the 404) per
+# artifact_id with a short TTL — the artifact's content can change
+# from EditArtifact proposals, so stale ≤60s is the right cost/risk.
+# Matches the pattern in routers/highlights.py:_CACHE.
+import time as _time
+_SHARE_CACHE: dict[str, tuple[float, int, str]] = {}  # id → (expires_at, status, html)
+_SHARE_CACHE_TTL_S = 60.0
+_SHARE_CACHE_MAX = 256  # cap memory; LRU-ish via timestamp eviction
+
+
+def _share_cache_get(key: str):
+    entry = _SHARE_CACHE.get(key)
+    if entry is None:
+        return None
+    expires_at, status, body = entry
+    if _time.time() > expires_at:
+        _SHARE_CACHE.pop(key, None)
+        return None
+    return status, body
+
+
+def _share_cache_set(key: str, status: int, body: str):
+    # Cheap eviction: when oversized, drop the oldest-expired half.
+    if len(_SHARE_CACHE) >= _SHARE_CACHE_MAX:
+        to_drop = sorted(_SHARE_CACHE.items(), key=lambda kv: kv[1][0])[: _SHARE_CACHE_MAX // 2]
+        for k, _ in to_drop:
+            _SHARE_CACHE.pop(k, None)
+    _SHARE_CACHE[key] = (_time.time() + _SHARE_CACHE_TTL_S, status, body)
+
+
 @router.get("/{artifact_id}/share")
 async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Public, shareable artifact page — server-rendered HTML so
@@ -86,13 +120,25 @@ async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Dep
     parent-chain walk) to a `private` root community, this returns
     404 — the page never reveals private content. `unlisted` and
     `public` both render normally; `unlisted` is "secret URL" sharing.
+
+    Cached per-artifact_id for 60s to survive HN-launch spikes
+    (otherwise each render is ~5 DB queries).
     """
     from html import escape as _esc
     from fastapi.responses import HTMLResponse, Response
 
+    cache_key = str(artifact_id)
+    cached = _share_cache_get(cache_key)
+    if cached is not None:
+        status, body = cached
+        if status == 404:
+            return Response(status_code=404, content=body)
+        return HTMLResponse(content=body, headers={"Cache-Control": "public, max-age=300"})
+
     svc = ArtifactService(db)
     artifact = await svc.get_artifact(artifact_id)
     if not artifact or int(artifact.status) != int(ArtifactStatus.ACTIVE):
+        _share_cache_set(cache_key, 404, "Artifact not found")
         return Response(status_code=404, content="Artifact not found")
 
     # Visibility gate. Walk to root, check Visibility variable.
@@ -100,6 +146,7 @@ async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Dep
     csvc = CommunityService(db)
     visibility = await csvc.get_effective_visibility(artifact.community_id)
     if visibility == "private":
+        _share_cache_set(cache_key, 404, "Artifact not found")
         return Response(status_code=404, content="Artifact not found")
 
     # Resolve community + author display + history for the page.
@@ -365,6 +412,7 @@ async def get_artifact_share_page(artifact_id: uuid.UUID, db: AsyncSession = Dep
 
 </body>
 </html>"""
+    _share_cache_set(cache_key, 200, html_doc)
     return HTMLResponse(content=html_doc, headers={"Cache-Control": "public, max-age=300"})
 
 

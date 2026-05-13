@@ -403,6 +403,17 @@ Examples:
     async def health():
         return {"status": "ok"}
 
+    # Single uvicorn worker on purpose — the Orchestrator at the top
+    # of this module is a singleton (one running simulation, one bot
+    # roster, one event log). Bumping workers=N would spawn N
+    # competing orchestrators racing each other against the same
+    # Postgres rows. If we ever need to horizontally scale request
+    # handling, the right move is to split this process: a sim-only
+    # process serving /viewer/ + /simulation/*, and a separate
+    # API-only process with multiple workers for everything else.
+    # That's a Tuesday-after-launch problem; for HN day, A1's
+    # connection-pool tuning + the global async event loop carry
+    # the throughput we need (~200 RPS sustained for the first 4h).
     uvicorn.run(combined_app, host=args.host, port=args.port)
 
 
