@@ -1830,9 +1830,13 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                         <line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/>
                     </svg>
                 </button>
-                <img src="logo.svg" alt="KBZ" className="header-logo" />
+                {/* Back-to-home link to the marketing site. The viewer
+                    is often shared directly; a visitor needs an obvious
+                    way back to the project home. */}
+                <a href="/welcome.html" className="header-home-link" title="Back to the Kibbutznik home page">←</a>
+                <img src="logo.svg" alt="Kibbutznik" className="header-logo" />
                 <div className="header-title">
-                    KBZ BIG BROTHER
+                    Kibbutznik · live simulation
                     <span
                         className="entity-link header-community-name"
                         onClick={() => community && openDetail("community", community.id, community.name)}

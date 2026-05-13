@@ -14,6 +14,8 @@ GET  /auth/me                   — returns the currently-logged-in user or null
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
@@ -39,6 +41,7 @@ _EMAIL_WINDOW_S = 3600
 _IP_LIMIT = 30
 _IP_WINDOW_S = 3600
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -96,8 +99,18 @@ class MagicLinkRequest(BaseModel):
 
 class MagicLinkResponse(BaseModel):
     sent: bool
+    # email_delivered=False signals "we accepted the request but the
+    # email provider failed". The UI uses this to show a "service
+    # unavailable" message instead of "check your inbox" (which would
+    # send the user looking for a non-existent email). Always True in
+    # dev (we don't actually send mail there).
+    email_delivered: bool = True
     # Dev-mode convenience: the full verify URL. Hidden in prod.
     link: str | None = None
+    # The minutes-of-validity of the issued token — UI surfaces this
+    # so users know not to come back the next day expecting the link
+    # to still work.
+    expires_minutes: int = 15
 
 
 class MeResponse(BaseModel):
@@ -227,16 +240,30 @@ async def request_magic_link(
     email_url = f"{base}{email_verify_path}" if base else email_verify_path
     msg = render_magic_link_email(verify_url=email_url)
     msg.to = user.email or body.email
+    email_delivered = True
     try:
         await EmailService().send(msg)
     except Exception:
-        # Never fail this endpoint just because email couldn't go out.
-        pass
+        # Don't 500 the request just because email couldn't go out —
+        # but DO tell the UI so it can render "Service unavailable,
+        # please try again in a few minutes" instead of "Check your
+        # inbox" (which would send the user looking for nothing).
+        logger.warning("magic-link email failed to send for %s", body.email)
+        email_delivered = False
 
     link: str | None = None
     if settings.auth_dev_expose_magic_link:
         link = verify_path
-    return MagicLinkResponse(sent=True, link=link)
+        # Local/dev runs use the in-memory log backend which never
+        # actually delivers; signal success so the UI flow stays
+        # consistent (dev shows the inline link instead).
+        email_delivered = True
+    return MagicLinkResponse(
+        sent=True,
+        email_delivered=email_delivered,
+        link=link,
+        expires_minutes=15,  # matches the token TTL in AuthService.issue_magic_link
+    )
 
 
 @router.get("/verify")

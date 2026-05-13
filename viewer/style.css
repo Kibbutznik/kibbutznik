@@ -54,6 +54,26 @@ body {
 }
 .hamburger-btn:hover { color: var(--text-primary); background: var(--bg-card); }
 
+/* Back-to-home link inside the viewer chrome. Compact arrow that
+   doesn't compete with the brand mark; opens the marketing landing. */
+.header-home-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 1.1rem;
+    font-weight: 500;
+    flex-shrink: 0;
+    transition: background .15s, color .15s;
+}
+.header-home-link:hover {
+    background: var(--bg-card);
+    color: var(--accent);
+}
+
 .header-title {
     font-size: 1.4rem;
     font-weight: 700;
