@@ -35,7 +35,22 @@ const api = {
         if (resp.status === 204) return null;
         const body = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-            const msg = body.detail || body.error || `HTTP ${resp.status}`;
+            // Humanize raw status codes — they leak through ErrorBanner into
+            // the empty state on /browse and the entire page on /kibbutz/:id.
+            // Backend-supplied `detail` always wins; the fallbacks below only
+            // fire when the server returns no body (cold 404, dead service).
+            const FALLBACK = {
+                400: "That request looked off — try again.",
+                401: "Sign in to see this.",
+                403: "You don't have permission to see this.",
+                404: "Not found.",
+                429: "You're going too fast — give it a moment.",
+                500: "Something broke on our end — try again.",
+                502: "The server is restarting — try again in a few seconds.",
+                503: "The server is temporarily unavailable.",
+                504: "The server took too long to respond.",
+            };
+            const msg = body.detail || body.error || FALLBACK[resp.status] || "Something went wrong.";
             const e = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
             e.status = resp.status;
             throw e;
@@ -410,10 +425,17 @@ function Header({ user, onLogout }) {
             <div className="row" style={{ gap: "0.5rem" }}>
                 {/* Back-to-home link to the marketing site. Without this,
                     a visitor who lands here directly has no way back to
-                    the landing other than browser-back or URL editing. */}
+                    the landing other than browser-back or URL editing.
+                    On narrow viewports the label is hidden by CSS and only
+                    the arrow remains, to keep the header from wrapping. */}
                 <a href="/welcome.html" className="btn ghost" title="Back to the Kibbutznik home page"
-                   style={{ padding: "0.4rem 0.7rem" }}>← Home</a>
-                <a href="#/" className="brand">Kibbutznik</a>
+                   style={{ padding: "0.4rem 0.65rem" }}>
+                    ← <span className="home-link-label">Home</span>
+                </a>
+                <a href="#/" className="brand" aria-label="Kibbutznik home">
+                    <img src="/favicon.svg" className="brand-mark" alt="" />
+                    <span>Kibbutznik</span>
+                </a>
             </div>
             <div className="row">
                 {user ? (
@@ -425,10 +447,11 @@ function Header({ user, onLogout }) {
                         <button className="btn ghost" onClick={onLogout}>Log out</button>
                     </>
                 ) : (
-                    <>
-                        <a href="#/skills" className="btn ghost">Skills</a>
-                        <a href="#/login" className="btn primary">Sign in</a>
-                    </>
+                    /* Logged-out: drop the Skills link from the visible header.
+                     * It's a developer affordance, not a first-impression one;
+                     * a cold HN visitor has no context for what "Skills" means.
+                     * Lives at #/skills for anyone who follows a direct link. */
+                    <a href="#/login" className="btn primary">Sign in</a>
                 )}
             </div>
         </header>
@@ -437,7 +460,26 @@ function Header({ user, onLogout }) {
 
 function ErrorBanner({ error }) {
     if (!error) return null;
-    return <p style={{ color: "var(--danger)", marginTop: "0.8rem" }}>{error}</p>;
+    // Re-route raw error text into a more humane banner — pale-red card
+    // instead of red prose floating in whitespace. Used by /browse and
+    // /kibbutz/:id.
+    const text = typeof error === "string" ? error : (error && error.message) || "Something went wrong.";
+    return (
+        <div
+            role="alert"
+            style={{
+                background: "var(--accent-soft)",
+                border: "1px solid #f0c6cd",
+                color: "var(--text)",
+                padding: "0.7rem 0.95rem",
+                borderRadius: "var(--radius)",
+                marginTop: "0.8rem",
+                fontSize: "0.95rem",
+            }}
+        >
+            {text}
+        </div>
+    );
 }
 
 function Empty({ title, children }) {
@@ -563,27 +605,30 @@ function LoginPage({ onLoggedIn }) {
     return (
         <div className="container" style={{ maxWidth: 480 }}>
             <div className="card">
-                <h2 style={{ marginTop: 0 }}>Sign in or create your account</h2>
-                <p className="muted">
-                    Enter your email. If you're new, we'll create your Kibbutznik account
-                    automatically — no passwords, no forms. Same email tomorrow =
-                    same account.
+                <h2 style={{ marginTop: 0 }}>Sign in with your email</h2>
+                <p className="muted" style={{ marginBottom: "1.2rem" }}>
+                    No passwords. We'll send a magic link. Same email tomorrow = same account.
                 </p>
                 {!devLink && !sentTo && !rateLimitedSec && (
                     <form className="stack" onSubmit={submit}>
                         <input className="input" type="email" required
-                            placeholder="you@example.com"
+                            placeholder="you@example.com" autoFocus
                             value={email} onChange={(e) => setEmail(e.target.value)} />
-                        <label className="row" style={{ gap: "0.5rem", fontSize: "0.88rem", cursor: "pointer" }}>
+                        {/* Button stays visually active even before the email is typed —
+                         * audit feedback: the previous disabled-on-empty styling looked
+                         * like a permanently dead control on first paint. Form's
+                         * `required` + `onSubmit` validation still gates submission. */}
+                        <button className="btn primary" disabled={sending}
+                                style={{ width: "100%", padding: "0.7rem 1.1rem" }}>
+                            {sending ? "Sending…" : "Send me a magic link →"}
+                        </button>
+                        <label className="row" style={{ gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer", color: "var(--text-dim)" }}>
                             <input type="checkbox" checked={remember}
                                    onChange={(e) => setRemember(e.target.checked)} />
-                            <span>Remember me on this device (30 days)</span>
+                            <span>Stay signed in for 30 days on this device</span>
                         </label>
-                        <button className="btn primary" disabled={sending || !email}>
-                            {sending ? "Sending…" : "Send magic link"}
-                        </button>
-                        <p className="muted" style={{ fontSize: "0.82rem", marginTop: "0.3rem" }}>
-                            We'll email you a one-time link. It expires in {expiresMinutes} minutes.
+                        <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.3rem" }}>
+                            The link expires in {expiresMinutes} minutes.
                         </p>
                     </form>
                 )}
@@ -3725,7 +3770,15 @@ function App() {
             <Header user={user} onLogout={async () => { await logout(); navigate("#/"); }} />
             {content}
             <footer className="app-footer">
-                Kibbutznik · <a href="/kbz/viewer/">AI simulation</a> · <a href="/">landing</a>
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0.4rem 1.1rem", marginBottom: "0.3rem" }}>
+                    <a href="/welcome.html">Home</a>
+                    <a href="/guide.html">Guide</a>
+                    <a href="/kbz/viewer/">Live simulation</a>
+                    <a href="https://github.com/Kibbutznik/kibbutznik" target="_blank" rel="noopener">GitHub</a>
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                    © Kibbutznik · open source · made by people who believe small groups can run themselves
+                </div>
             </footer>
             <ToastHost />
         </>

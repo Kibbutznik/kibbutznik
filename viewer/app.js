@@ -1819,9 +1819,67 @@ function LLMSwitcher({ currentPreset }) {
     );
 }
 
+// ── Heartbeat ───────────────────────────────────────────
+// "Updated Xs ago" badge next to the header brand. Drives off the
+// total_events counter — when it ticks, we reset the local clock and
+// flash green. Without this the viewer has zero liveness signal between
+// rare new-event arrivals; visitors can't tell if the page is alive or
+// stale-cached.
+function LastUpdated({ status }) {
+    const total = status?.total_events ?? 0;
+    const [lastEventTotal, setLastEventTotal] = useState(total);
+    const [lastUpdatedAt, setLastUpdatedAt] = useState(Date.now());
+    const [flash, setFlash] = useState(false);
+    const [, tick] = useState(0);
+
+    useEffect(() => {
+        if (total !== lastEventTotal) {
+            setLastEventTotal(total);
+            setLastUpdatedAt(Date.now());
+            setFlash(true);
+            const t = setTimeout(() => setFlash(false), 600);
+            return () => clearTimeout(t);
+        }
+    }, [total, lastEventTotal]);
+
+    useEffect(() => {
+        const id = setInterval(() => tick(n => n + 1), 1000);
+        return () => clearInterval(id);
+    }, []);
+
+    const secs = Math.floor((Date.now() - lastUpdatedAt) / 1000);
+    const label = secs < 2 ? "just now" : secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+    return (
+        <span
+            style={{
+                fontSize: "0.72rem",
+                color: flash ? "#4ecca3" : "var(--text-muted)",
+                background: flash ? "rgba(78,204,163,0.15)" : "transparent",
+                padding: "2px 8px",
+                borderRadius: 999,
+                transition: "color 0.3s, background 0.3s",
+                whiteSpace: "nowrap",
+            }}
+            title="Time since the last event arrived"
+        >
+            updated {label}
+        </span>
+    );
+}
+
+// Public-viewer control gate: anonymous visitors should not see big red
+// Pause / Restart buttons. Operator can pass ?control=1 in the URL to
+// reveal them. (No auth check — the underlying API endpoints are still
+// gated server-side; this is just to hide footgun UI from spectators.)
+function isOperatorView() {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("control") === "1";
+}
+
 // ── Header ──────────────────────────────────────────────
 function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar, paused, onTogglePause, onRestart, restarting }) {
     const community = status?.community;
+    const operator = isOperatorView();
     return (
         <div className="header">
             <div className="header-left">
@@ -1836,14 +1894,20 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                 <a href="/welcome.html" className="header-home-link" title="Back to the Kibbutznik home page">←</a>
                 <img src="logo.svg" alt="Kibbutznik" className="header-logo" />
                 <div className="header-title">
-                    Kibbutznik · live simulation
-                    <span
-                        className="entity-link header-community-name"
-                        onClick={() => community && openDetail("community", community.id, community.name)}
-                    >
-                        {community?.name || "Loading..."}
-                    </span>
+                    <span>Kibbutznik</span>
+                    <span style={{ opacity: 0.5, margin: "0 6px" }}>·</span>
+                    {community?.name ? (
+                        <span
+                            className="entity-link header-community-name"
+                            onClick={() => openDetail("community", community.id, community.name)}
+                        >
+                            {community.name}
+                        </span>
+                    ) : (
+                        <span style={{ opacity: 0.6 }}>connecting…</span>
+                    )}
                 </div>
+                <LastUpdated status={status} />
             </div>
             <div className="header-stats">
                 <div className="header-stat">
@@ -1870,7 +1934,10 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                         <span className="value" style={{ color: "var(--warning)" }}>PAUSED</span>
                     </div>
                 )}
-                {onTogglePause && (
+                {/* Pause / Restart are hidden from anonymous viewers — a random
+                 * HN visitor would see scary footgun-coded buttons and possibly
+                 * click. Reveal with ?control=1 on the URL for operator access. */}
+                {onTogglePause && operator && (
                     <div className="header-controls">
                         <button
                             className={`header-ctrl-btn ${paused ? "paused" : ""}`}
@@ -3427,6 +3494,62 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity,
 
 // ── Dashboard Tab ───────────────────────────────────────
 
+function ViewerIntroBanner() {
+    const KEY = "kbz.viewer.intro.dismissed.v1";
+    const [dismissed, setDismissed] = useState(() => {
+        try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+    });
+    if (dismissed) return null;
+    const close = () => {
+        try { localStorage.setItem(KEY, "1"); } catch {}
+        setDismissed(true);
+    };
+    return (
+        <div
+            role="region"
+            aria-label="What is this?"
+            style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                padding: "10px 14px",
+                marginBottom: 16,
+                background: "rgba(233,69,96,0.08)",
+                border: "1px solid rgba(233,69,96,0.25)",
+                borderRadius: 8,
+                fontSize: "0.92rem",
+                lineHeight: 1.45,
+            }}
+        >
+            <span style={{ fontSize: "1.05rem" }}>✦</span>
+            <div style={{ flex: 1, color: "var(--text-primary)" }}>
+                <strong>You're watching a live AI kibbutz.</strong>{" "}
+                <span style={{ color: "var(--text-secondary)" }}>
+                    Six AI members are running a self-governing community —
+                    drafting proposals, supporting each other, occasionally
+                    throwing someone out. Every event below is happening right
+                    now. Click any member or proposal for the details.
+                </span>{" "}
+                <a href="/guide.html" style={{ color: "var(--accent)", textDecoration: "underline" }}>What's a kibbutz?</a>
+            </div>
+            <button
+                onClick={close}
+                aria-label="Dismiss intro"
+                style={{
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "1.1rem",
+                    padding: 4,
+                    lineHeight: 1,
+                }}
+                title="Dismiss"
+            >×</button>
+        </div>
+    );
+}
+
 function DashboardTab({ status, events, proposals, pulses, restarting, openDetail, agentsByUserId, communityId, activeCommunity, activeCommunityId, rootCommunityId }) {
     if (restarting) {
         return (
@@ -3439,9 +3562,30 @@ function DashboardTab({ status, events, proposals, pulses, restarting, openDetai
     }
     return (
         <div>
+            {/* One-line context banner for cold visitors. Dismissible; the
+             * choice is remembered in localStorage so returning operators
+             * don't see it. Drops the "is this just data?" tax that the
+             * dashboard otherwise carries. */}
+            <ViewerIntroBanner />
             <div className="dashboard-grid">
                 <CommunityOverview status={status} pulses={pulses} openDetail={openDetail} communityId={communityId} overrideCommunity={activeCommunity} />
                 <ProposalBoard proposals={proposals} openDetail={openDetail} pulses={pulses} status={status} activeCommunity={activeCommunity} agentsByUserId={agentsByUserId} />
+            </div>
+            {/* Live activity feed — was previously buried on the Timeline tab.
+             * A cold visitor landing on /viewer/ now sees the live event stream
+             * on the dashboard itself, which is the entire pitch of the demo. */}
+            <div style={{ marginTop: 24 }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+                    <h2 style={{ fontSize: "1.05rem", margin: 0, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Live activity</h2>
+                    <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>most recent first</span>
+                </div>
+                <ActivityFeed
+                    events={(events || []).slice(0, 25)}
+                    openDetail={openDetail}
+                    agentsByUserId={agentsByUserId}
+                    activeCommunityId={activeCommunityId}
+                    rootCommunityId={rootCommunityId}
+                />
             </div>
         </div>
     );
