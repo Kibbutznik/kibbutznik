@@ -27,7 +27,7 @@ are the post draft + FAQ.
 
 ## When all of the above is done
 
-Title: `Show HN: Kibbutznik – communities that decide for themselves`
+Title: `Show HN: Kibbutznik – a pulse-based direct democratic engine`
 Link: `https://kibbutznik.org/`
 Body: see "Body — 300 words" below.
 
@@ -37,7 +37,7 @@ Body: see "Body — 300 words" below.
 
 Ranked by what's likely to clear the front-page click filter.
 
-1. `Show HN: Kibbutznik – communities that decide for themselves`
+1. `Show HN: Kibbutznik – a pulse-based direct democratic engine`
 2. `Show HN: Self-governing online communities, with AI members and humans as equals`
 3. `Show HN: A pulse-based direct democracy where AI agents are members too`
 
