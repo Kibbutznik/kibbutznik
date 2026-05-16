@@ -498,6 +498,60 @@
     line-height: 1.6;
   }
 
+  /* ── Three-pillar comparison block ──────────────────── */
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-top: 8px;
+  }
+  @media (max-width: 820px) {
+    .pillars { grid-template-columns: 1fr; }
+  }
+  .pillar {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 28px 22px 22px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .pillar:hover {
+    transform: translateY(-3px);
+    border-color: var(--pulse);
+    box-shadow: 0 12px 28px rgba(233, 69, 96, 0.08);
+  }
+  .pillar-num {
+    position: absolute;
+    top: -18px;
+    left: 22px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--pulse);
+    color: white;
+    font-weight: 700;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(233, 69, 96, 0.3);
+  }
+  .pillar-title {
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 6px 0 12px;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+  .pillar-text {
+    font-size: 0.94rem;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    margin: 0;
+  }
+
   /* ── "Who's it for" pill grid ───────────────────────── */
   .audience-grid {
     display: grid;
@@ -768,30 +822,54 @@
   </div>
 </section>
 
-<!-- ── What's different — comparison to existing frameworks ──── -->
+<!-- ── What's different — three revolutionary mechanics ──────── -->
 <section class="alt">
   <div class="container-narrow">
     <div class="section-eyebrow" style="text-align:center;">Why we built another one</div>
     <h2 class="section-title" style="text-align:center;">Not a forum. Not a DAO.</h2>
-    <p style="font-size:1.05rem; color: var(--ink-soft); line-height:1.65; margin-bottom: 1.6rem;">
+    <p style="font-size:1.05rem; color: var(--ink-soft); line-height:1.65; margin-bottom: 2rem; text-align:center; max-width: 620px; margin-left:auto; margin-right:auto;">
       Group chats have no decision moment. Forums collect opinions but never
-      resolve them. Voting apps and DAOs count ballots but have no shared time
-      — proposals drift, threads die, the loudest voice wins.
+      resolve them. Voting apps and DAOs count ballots but have no shared time.
+      Kibbutznik brings three mechanics none of them have.
     </p>
-    <p style="font-size:1.05rem; color: var(--ink-soft); line-height:1.65; margin-bottom: 1.6rem;">
-      Kibbutznik adds the one mechanic the others don't: the <strong>pulse</strong>.
-      A periodic heartbeat where the community says "we're ready, let's decide
-      what we've been building up to." Between pulses, you propose and you
-      support. At a pulse, anything with enough support becomes rule.
-    </p>
-    <p style="font-size:1.05rem; color: var(--ink-soft); line-height:1.65;">
-      The rulebook is open by design: <strong>statements</strong> (the prose) and
-      <strong>variables</strong> (the numbers — the support threshold, the
-      cooldown, the membership rule). Even the support threshold is itself a
-      variable. A community can lower it, raise it, change how proposals cool,
-      throw a member out — all through the same proposal flow. No admins, no
-      moderators, no special seats.
-    </p>
+
+    <div class="pillars">
+      <div class="pillar">
+        <div class="pillar-num">1</div>
+        <h3 class="pillar-title">The pulse</h3>
+        <p class="pillar-text">
+          A periodic heartbeat where the community says "we're ready, let's decide
+          what we've been building up to." Between pulses, you propose and you
+          support. At a pulse, anything with enough support becomes rule. No more
+          proposals drifting forever — every cycle has a deciding moment.
+        </p>
+      </div>
+
+      <div class="pillar">
+        <div class="pillar-num">2</div>
+        <h3 class="pillar-title">Hierarchical communities (Actions)</h3>
+        <p class="pillar-text">
+          Big work needs small teams. Any community can spin off an
+          <strong>action</strong> — a nested sub-community with its own pulse,
+          members, and rulebook. The action does its piece (drafts an artifact,
+          runs a project, ships a thing) and commits results back to the parent.
+          Whole movements can be modeled as one community of actions of actions.
+        </p>
+      </div>
+
+      <div class="pillar">
+        <div class="pillar-num">3</div>
+        <h3 class="pillar-title">No administration. Everything is proposable.</h3>
+        <p class="pillar-text">
+          No admin tier. No moderator role. No founder veto. Every rule, every
+          threshold, every member's status — anything — can be changed through
+          the same proposal flow. Even the support threshold itself is a variable
+          the community can vote to change. The rulebook is open prose
+          (<strong>statements</strong>) and open numbers (<strong>variables</strong>),
+          both editable through the same gate.
+        </p>
+      </div>
+    </div>
   </div>
 </section>
 
