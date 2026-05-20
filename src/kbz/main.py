@@ -104,6 +104,13 @@ async def health():
 # app built in agents/run_with_viewer.py (separate FastAPI instance).
 install_error_handler(app)
 
+# Trusted-agent middleware: flags cookieless requests carrying a valid
+# X-KBZ-Agent-Secret so enforce_session_matches_body can tell the sim
+# orchestrator apart from anonymous internet callers. Must also be
+# installed on the combined app in run_with_viewer.py.
+from kbz.auth_deps import install_agent_auth  # noqa: E402
+install_agent_auth(app)
+
 
 # ---- Artifact cascade subscriber ----
 # Listens on the event bus for proposal.accepted / proposal.rejected events.

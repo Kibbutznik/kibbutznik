@@ -96,6 +96,21 @@ class Settings(BaseSettings):
     # "safe" / "stripe" based on the variable value itself.
     wallet_backing: str = "internal"
 
+    # Shared secret that authorizes a COOKIELESS caller to act as the
+    # user_id named in a request body (the simulation orchestrator does
+    # this — one process acting on behalf of many bot users). Sent as the
+    # `X-KBZ-Agent-Secret` header.
+    #
+    # Empty string (the default) = DISABLED, which preserves the legacy
+    # permissive behavior: any cookieless caller is trusted. That keeps
+    # local dev + the test suite working unchanged. In PROD set this to a
+    # high-entropy random AND give the same value to the sim client
+    # (KBZ_AGENT_API_SECRET in its env) — then any cookieless write that
+    # does NOT carry the secret is rejected 401, closing the anonymous
+    # impersonation hole. nginx should also be configured to strip any
+    # client-supplied X-KBZ-Agent-Secret on the public path.
+    agent_api_secret: str = ""
+
     model_config = {"env_prefix": "KBZ_"}
 
 
