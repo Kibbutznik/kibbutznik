@@ -125,14 +125,26 @@ class ExecutionService:
         var_name = proposal.proposal_text.split("\n")[0].strip()
         var_value = proposal.val_text
         if var_name and var_value:
-            await self.db.execute(
-                update(Variable)
-                .where(
-                    Variable.community_id == proposal.community_id,
-                    Variable.name == var_name,
+            # Pre-fix this was a bare UPDATE — communities created before a
+            # given variable's default landed have no row for it, so the
+            # UPDATE affected zero rows and the ACCEPTED proposal silently
+            # changed nothing (the operator's own _resolve_rate_limit
+            # fallback proves such rows exist in the wild). Upsert instead,
+            # matching _exec_set_membership_handler.
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            stmt = (
+                pg_insert(Variable)
+                .values(
+                    community_id=proposal.community_id,
+                    name=var_name,
+                    value=var_value,
                 )
-                .values(value=var_value)
+                .on_conflict_do_update(
+                    index_elements=["community_id", "name"],
+                    set_={"value": var_value},
+                )
             )
+            await self.db.execute(stmt)
             await self.db.flush()
 
     async def _exec_add_action(self, proposal: Proposal) -> None:

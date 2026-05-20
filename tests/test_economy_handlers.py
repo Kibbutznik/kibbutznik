@@ -798,3 +798,46 @@ async def test_set_membership_handler_updates_when_variable_exists(sf):
             )
         )).scalar_one()
         assert row.value == str(target)
+
+
+# ── ChangeVariable upsert: missing row must be CREATED, not no-op ────
+
+@pytest.mark.asyncio
+async def test_change_variable_creates_row_when_missing(sf):
+    """Regression: _exec_change_variable was a bare UPDATE. A community
+    created before a variable's default landed has no row for it, so an
+    ACCEPTED ChangeVariable affected 0 rows and silently changed nothing.
+    The upsert must CREATE the row instead."""
+    async with sf() as db:
+        cid = await _mk_community(db, financial=False, name="legacy-comm")
+        # Simulate the legacy state: the target variable row does not exist.
+        # (_mk_community only seeds "Financial".) Confirm absence first.
+        before = (
+            await db.execute(
+                select(Variable).where(
+                    Variable.community_id == cid, Variable.name == "ProposalSupport"
+                )
+            )
+        ).scalar_one_or_none()
+        assert before is None
+
+        prop = await _mk_proposal(
+            db, community_id=cid, user_id=uuid.uuid4(),
+            ptype=ProposalType.CHANGE_VARIABLE, val_text="42",
+        )
+        prop.proposal_text = "ProposalSupport"
+        await db.flush()
+
+        await ExecutionService(db)._exec_change_variable(prop)
+        await db.commit()
+
+    async with sf() as db:
+        after = (
+            await db.execute(
+                select(Variable).where(
+                    Variable.community_id == cid, Variable.name == "ProposalSupport"
+                )
+            )
+        ).scalar_one_or_none()
+        assert after is not None, "ChangeVariable must create the row when missing"
+        assert after.value == "42"
