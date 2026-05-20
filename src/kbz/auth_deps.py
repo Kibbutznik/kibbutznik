@@ -16,13 +16,44 @@ return None from `get_current_user`. Existing endpoints that accept
 
 from __future__ import annotations
 
-from fastapi import Cookie, Depends, Header, HTTPException, status
+import contextvars
+import hmac
+
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.config import settings
 from kbz.database import get_db
 from kbz.models.user import User
 from kbz.services.auth_service import AuthService
+
+# Set per-request by `install_agent_auth`'s middleware. True iff the
+# request carried a valid X-KBZ-Agent-Secret header AND a secret is
+# configured. ContextVars are task-local under asyncio, so concurrent
+# requests don't bleed into each other.
+_agent_authorized: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "kbz_agent_authorized", default=False
+)
+
+
+def install_agent_auth(app) -> None:
+    """Register the middleware that flags trusted-agent requests.
+
+    Must be called on EVERY FastAPI app instance that serves the API —
+    both kbz.main:app and the combined app built in
+    agents/run_with_viewer.py (same pattern as install_error_handler).
+    """
+
+    @app.middleware("http")
+    async def _agent_auth_mw(request: Request, call_next):
+        secret = settings.agent_api_secret
+        provided = request.headers.get("X-KBZ-Agent-Secret")
+        ok = bool(secret) and bool(provided) and hmac.compare_digest(provided, secret)
+        token = _agent_authorized.set(ok)
+        try:
+            return await call_next(request)
+        finally:
+            _agent_authorized.reset(token)
 
 
 async def get_current_user(
@@ -97,16 +128,37 @@ def enforce_session_matches_body(
     because `session_user` will be None.
 
     Raises 403 if a logged-in human tries to spoof another user.
+
+    Cookieless callers (no session) used to be trusted unconditionally —
+    the rationale was "agents have no cookie." But agents authenticate
+    with a Bearer token (which populates session_user), so the ONLY
+    callers reaching the cookieless branch are genuinely anonymous, and
+    trusting them lets anyone POST {"user_id": "<victim>"} and act as that
+    victim. When `agent_api_secret` is configured, the cookieless branch
+    now requires the trusted-agent header (set by the middleware); the
+    real simulation orchestrator carries it, anonymous internet callers
+    don't. When the secret is empty (dev/test/legacy) the old permissive
+    behavior is preserved so nothing breaks until an operator opts in.
     """
-    if session_user is None:
+    if session_user is not None:
+        # body_user_id may be uuid.UUID or str depending on pydantic model
+        try:
+            same = str(body_user_id) == str(session_user.id)
+        except Exception:
+            same = False
+        if not same:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="session user does not match body.user_id",
+            )
         return
-    # body_user_id may be uuid.UUID or str depending on pydantic model
-    try:
-        same = str(body_user_id) == str(session_user.id)
-    except Exception:
-        same = False
-    if not same:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="session user does not match body.user_id",
-        )
+
+    # Cookieless caller.
+    if not settings.agent_api_secret:
+        return  # secret disabled → legacy permissive behavior (dev/test)
+    if _agent_authorized.get():
+        return  # trusted simulation orchestrator
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="authentication required to act as a user",
+    )

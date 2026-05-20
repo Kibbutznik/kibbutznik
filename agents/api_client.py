@@ -1,4 +1,5 @@
 """Typed async client wrapping all KBZ API endpoints for agent use."""
+import os
 from typing import Any
 
 import httpx
@@ -58,7 +59,20 @@ class KBZClient:
 
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=30.0)
+        # The sim acts on behalf of many bot users by putting user_id in
+        # the request body (cookieless). When the server has
+        # KBZ_AGENT_API_SECRET set, those writes are rejected 401 unless
+        # they carry the matching X-KBZ-Agent-Secret header. Read it from
+        # the env so the orchestrator and API (same process) agree. Empty
+        # = header omitted, which matches the server's disabled-by-default
+        # behavior, so local dev keeps working with no config.
+        headers = {}
+        agent_secret = os.environ.get("KBZ_AGENT_API_SECRET", "")
+        if agent_secret:
+            headers["X-KBZ-Agent-Secret"] = agent_secret
+        self._client = httpx.AsyncClient(
+            base_url=base_url, timeout=30.0, headers=headers or None
+        )
 
     async def close(self):
         await self._client.aclose()

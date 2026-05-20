@@ -118,14 +118,43 @@ Hetzner Console → server → **Rescale** → pick plan → reboot.
 
 After rescale verify: `free -h && nproc` shows the new specs, `systemctl status kbz` is active, the sim has resumed (look for `OrchestratorTick` lines in the journal).
 
+## Closing the cookieless-impersonation hole (KBZ_AGENT_API_SECRET)
+
+By default any cookieless caller is trusted to act as the `user_id` in a
+request body — this is load-bearing for the simulation (one process acts
+as many bot users) but it means an anonymous internet caller could POST
+`{"user_id": "<victim>"}` and impersonate any user. The fix is gated on a
+shared secret that is **disabled until you set it**:
+
+1. Generate a high-entropy secret: `openssl rand -hex 32`
+2. Set it in the prod env (same file as the DB creds) for BOTH the API
+   and the sim — they're the same process, so one var covers both:
+   ```
+   KBZ_AGENT_API_SECRET=<the hex string>
+   ```
+3. Restart: `systemctl restart kbz`. Now cookieless writes without the
+   `X-KBZ-Agent-Secret: <secret>` header get 401; the sim client reads
+   the same env var and sends the header automatically.
+4. Defense-in-depth: have nginx strip any client-supplied header on the
+   public path so a leaked secret can't be replayed from the internet:
+   ```
+   proxy_set_header X-KBZ-Agent-Secret "";
+   ```
+   (in the `location /kbz/` block) then `nginx -t && systemctl reload nginx`.
+
+Verify: a cookieless `curl -X POST https://kibbutznik.org/kbz/communities
+-d '{"name":"x","founder_user_id":"<any-uuid>"}'` returns 401; the live
+sim keeps producing events (it carries the header).
+
 ## Pre-launch checklist (T-48h to T+0)
 
 - [ ] Hetzner upgrade to CCX13 done, 24h burn-in clean
 - [ ] OpenRouter $100 monthly cap set
-- [ ] `KBZ_AUTH_DEV_EXPOSE_MAGIC_LINK` is NOT in the prod env
+- [ ] `KBZ_AUTH_DEV_EXPOSE_MAGIC_LINK` is NOT in the prod env (link must be `null` in the magic-link response)
+- [ ] `KBZ_AGENT_API_SECRET` set in prod env + nginx strips the public header (see section above) + sim still produces events after restart
 - [ ] `scripts/loadtest.sh` run against prod from non-prod box, p99 ≤ 500ms
 - [ ] OPS.md rollback procedure tested on a no-op commit
-- [ ] `HN_POST.md` reviewed by a friend who hasn't read the codebase
+- [ ] `HN_todo.md` reviewed by a friend who hasn't read the codebase
 - [ ] Launch window blocked on calendar (4h, comment-engagement)
 
 ## Common emergencies

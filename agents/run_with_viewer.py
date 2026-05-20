@@ -404,6 +404,11 @@ Examples:
     # callers. Re-applied here because this is a separate FastAPI app.
     from kbz.error_handler import install as install_error_handler
     install_error_handler(combined_app)
+    # Same trusted-agent middleware as kbz.main:app — without it the
+    # cookieless-impersonation guard can't recognize this very sim's
+    # API calls once KBZ_AGENT_API_SECRET is set in prod.
+    from kbz.auth_deps import install_agent_auth
+    install_agent_auth(combined_app)
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")
 
     @combined_app.get("/health")
