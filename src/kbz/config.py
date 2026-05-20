@@ -47,9 +47,13 @@ class Settings(BaseSettings):
     auth_magic_link_ttl_minutes: int = 15
     auth_invite_ttl_hours: int = 72
     # In dev mode, /auth/request-magic-link returns the verify URL in
-    # the JSON response. In prod this should be FALSE and an SMTP
-    # integration should email the link instead.
-    auth_dev_expose_magic_link: bool = True
+    # the JSON response. Defaults to FALSE so the link is NEVER exposed
+    # over the wire unless an operator explicitly opts in for local dev
+    # (KBZ_AUTH_DEV_EXPOSE_MAGIC_LINK=true). A True default was an
+    # account-takeover footgun: any redeploy/self-host that forgot to
+    # override it would hand the live login token back in the HTTP
+    # response to anyone who requested a link for any address.
+    auth_dev_expose_magic_link: bool = False
     # Cookie name used for the session. Keep stable.
     auth_session_cookie: str = "kbz_session"
     # Set Secure=True on the session cookie. Default True so accidental
