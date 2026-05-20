@@ -105,25 +105,32 @@ async def list_communities(
         recently_created = Community.created_at > func.now() - text("interval '48 hours'")
         where.append(or_(has_human_member, has_recent_activity, recently_created))
 
-    stmt = (
+    base = (
         select(Community)
         .where(and_(*where) if where else True)
         .order_by(Community.created_at.desc())
-        .limit(limit)
-        .offset(offset)
     )
-    rows = (await db.execute(stmt)).scalars().all()
-    # Dedupe root communities by name — keep the most recent per name.
-    # Reason: the sim creates a fresh "AI Kibbutz" every run, which leaves
-    # visitors staring at N identically-named rows with no way to tell
-    # which one is the live demo. Older instances remain reachable via
-    # /communities/{id} direct link.
     if not include_actions:
+        # Dedupe root communities by name — keep the most recent per name.
+        # Reason: the sim creates a fresh "AI Kibbutz" every run, which
+        # leaves visitors staring at N identically-named rows with no way
+        # to tell which one is the live demo. Older instances remain
+        # reachable via /communities/{id} direct link.
+        #
+        # The dedup MUST run before limit/offset, otherwise pagination is
+        # broken: per-page dedup let the same name appear on page 1 AND
+        # page 2, and a page could return fewer than `limit` rows even
+        # when more distinct communities exist. So scan a bounded window
+        # of newest roots, dedup globally, THEN slice the page.
+        scan = (await db.execute(base.limit(500))).scalars().all()
         seen: dict[str, Community] = {}
-        for c in rows:
+        for c in scan:
             if c.name not in seen:
                 seen[c.name] = c
-        rows = list(seen.values())
+        deduped = list(seen.values())  # already newest-first from ORDER BY
+        return deduped[offset : offset + limit]
+
+    rows = (await db.execute(base.limit(limit).offset(offset))).scalars().all()
     return rows
 
 
