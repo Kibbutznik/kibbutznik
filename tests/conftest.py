@@ -19,6 +19,12 @@ TEST_DB_URL = settings.test_database_url
 # flip it to False here so the test client can roundtrip cookies.
 settings.auth_cookie_secure = False
 
+# The magic-link verify URL is no longer exposed in the API response by
+# default (prod-safe). Tests need it to complete the login flow without a
+# real inbox, so opt back in here — mirrors KBZ_AUTH_DEV_EXPOSE_MAGIC_LINK=true
+# for local dev.
+settings.auth_dev_expose_magic_link = True
+
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limits():

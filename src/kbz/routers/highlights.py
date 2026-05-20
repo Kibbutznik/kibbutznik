@@ -113,12 +113,15 @@ async def get_highlights(
     sub-second freshness, and this endpoint is unauthenticated.
     """
     now = time.time()
+    # Always BUILD the cache at the max allowed limit (the Query le=20),
+    # then slice down per request. Previously the cache was built at the
+    # first caller's `limit`, so a caller asking for 20 right after a
+    # caller asking for 6 silently got only 6 for the whole TTL.
+    build_limit = 20
     if _CACHE["payload"] is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
         cached = _CACHE["payload"]
-        # Honor a smaller `limit` than the cached response by slicing.
-        if limit < len(cached.get("highlights", [])):
-            return {**cached, "highlights": cached["highlights"][:limit]}
-        return cached
+        # Honor the requested `limit` by slicing the full cached payload.
+        return {**cached, "highlights": cached.get("highlights", [])[:limit]}
 
     public_roots = await _public_root_ids(db)
     if not public_roots:
@@ -127,9 +130,10 @@ async def get_highlights(
         _CACHE["payload"] = payload
         return payload
 
-    # Pull ~3x the requested number from DB; we'll filter the
-    # uninteresting types client-side and trim to `limit`.
-    raw_limit = limit * 3
+    # Pull ~3x the build target from DB; we'll filter the uninteresting
+    # types client-side and trim to `build_limit`, then cache the full
+    # set and slice to the caller's `limit` on return.
+    raw_limit = build_limit * 3
     rows = (
         await db.execute(
             select(Proposal, Community.name, User.user_name)
@@ -298,10 +302,11 @@ async def get_highlights(
             "link": link_url,
         })
 
-        if len(out) >= limit:
+        if len(out) >= build_limit:
             break
 
     payload = {"highlights": out, "total_public_roots": len(public_roots)}
     _CACHE["ts"] = now
     _CACHE["payload"] = payload
-    return payload
+    # Slice the full (cached) payload down to what this caller asked for.
+    return {**payload, "highlights": out[:limit]}

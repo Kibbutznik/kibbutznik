@@ -45,7 +45,10 @@ async def add_comment(
 async def get_comments(
     entity_type: str,
     entity_id: uuid.UUID,
-    limit: int | None = Query(None, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=500,
+        description="max comments returned. Defaults to 100 — a hot thread "
+                    "with no cap would dump every comment (up to 2000 chars "
+                    "each) on an anonymous, cacheable endpoint."),
     after: datetime | None = Query(None),
     include_replies: bool = Query(
         True,

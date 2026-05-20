@@ -262,7 +262,7 @@ async def export_me(
             select(Member).where(
                 Member.user_id == user.id,
                 Member.status == MemberStatus.ACTIVE,
-            )
+            ).limit(_DEFAULT_LIMIT)
         )
     ).scalars().all()
     proposals = (

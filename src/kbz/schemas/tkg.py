@@ -35,8 +35,11 @@ class EdgeOut(BaseModel):
 
 class SemanticSearchIn(BaseModel):
     user_id: uuid.UUID | None = None
-    query: str
-    limit: int = 10
+    query: str = Field(min_length=1, max_length=2000)
+    # Capped: this drives a pgvector KNN with LIMIT :limit. Without an
+    # upper bound a caller could POST limit=10^8 and pull the entire
+    # node table's `content` text in one request.
+    limit: int = Field(default=10, ge=1, le=100)
     community_id: uuid.UUID | None = None
     from_round: int | None = None
     to_round: int | None = None

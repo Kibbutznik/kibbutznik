@@ -123,3 +123,22 @@ async def test_prune_requires_auth(client, db_engine):
         "/tkg/prune", params={"older_than_round": 999999},
     )
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_semantic_search_limit_is_capped(client):
+    """Pre-fix /tkg/semantic_search accepted any `limit` and passed it
+    straight into LIMIT :limit — POST limit=10^8 would try to pull the
+    whole node table. The schema now caps it at 100, so an absurd limit
+    is a clean 422, not a runaway query."""
+    resp = await client.post(
+        "/tkg/semantic_search",
+        json={"query": "anything", "limit": 100_000_000},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_semantic_search_rejects_empty_query(client):
+    resp = await client.post("/tkg/semantic_search", json={"query": "", "limit": 5})
+    assert resp.status_code == 422
