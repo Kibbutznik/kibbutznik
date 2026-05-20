@@ -111,3 +111,35 @@ async def test_throw_out_deactivates_bot_profiles(db):
         "BotProfile must be deactivated when its owner is thrown out — "
         "otherwise the bot keeps acting after the human is removed."
     )
+
+
+@pytest.mark.asyncio
+async def test_create_duplicate_member_is_idempotent_no_double_count(db):
+    """Regression: two Membership accepts for the same applicant in one
+    pulse used to make the 2nd INSERT raise IntegrityError, which
+    propagated out of execute_pulse and aborted the ENTIRE pulse. The
+    create() savepoint now absorbs the duplicate as a no-op and does NOT
+    double-bump member_count."""
+    founder = await _mk_user(db, "dup-founder")
+    joiner = await _mk_user(db, "dup-joiner")
+    community = await _mk_community(db, founder.id)
+    svc = MemberService(db)
+
+    m1 = await svc.create(community.id, joiner.id)
+    await db.flush()
+    count_after_first = (
+        await db.execute(select(Community).where(Community.id == community.id))
+    ).scalar_one().member_count
+
+    # Second create for the same (community, user) must NOT raise and must
+    # NOT increment the count again.
+    m2 = await svc.create(community.id, joiner.id)
+    await db.flush()
+    count_after_second = (
+        await db.execute(select(Community).where(Community.id == community.id))
+    ).scalar_one().member_count
+
+    assert m1.user_id == m2.user_id
+    assert count_after_second == count_after_first, (
+        "duplicate member create must not double-count"
+    )

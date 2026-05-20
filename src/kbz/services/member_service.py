@@ -33,16 +33,34 @@ class MemberService:
             await self.db.flush()
             return existing
 
-        # Brand new member
+        # Brand new member. Two Membership proposals for the same applicant
+        # can both be OnTheAir and both ACCEPT on the same pulse; the second
+        # INSERT then hits the (community_id, user_id) PK. Pre-fix that
+        # IntegrityError propagated out of execute_pulse and aborted the
+        # ENTIRE pulse transaction. Wrap the INSERT in a savepoint so a
+        # duplicate is absorbed as "already a member" (no-op, no double
+        # count bump) without poisoning the surrounding transaction.
+        from sqlalchemy.exc import IntegrityError
+
         member = Member(
             community_id=community_id,
             user_id=user_id,
             status=MemberStatus.ACTIVE,
             seniority=0,
         )
-        self.db.add(member)
+        try:
+            async with self.db.begin_nested():
+                self.db.add(member)
+                await self.db.flush()
+        except IntegrityError:
+            # Lost the race — another accept already inserted this member.
+            # Return the existing row and DON'T increment the count.
+            existing = await self.get(community_id, user_id)
+            if existing is not None:
+                return existing
+            raise
 
-        # Increment member count
+        # Increment member count only after the INSERT actually landed.
         await self.db.execute(
             update(Community)
             .where(Community.id == community_id)
