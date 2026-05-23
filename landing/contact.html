@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get in touch — Kibbutznik</title>
+<meta name="description" content="Leave us a message — feedback, a bug you hit, or how you'd like to use Kibbutznik.">
+<meta name="theme-color" content="#fdf8f0">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kibbutznik">
+<meta property="og:title" content="Get in touch — Kibbutznik">
+<meta property="og:description" content="Leave us a message — feedback, a bug, or how you'd like to use it.">
+<meta property="og:url" content="https://kibbutznik.org/contact.html">
+<meta property="og:image" content="https://kibbutznik.org/og-image.png">
+
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg:#fdf8f0; --bg-alt:#f4ead8; --card:#ffffff;
+    --ink:#2a2520; --ink-soft:#5a5249; --ink-muted:#8a8076;
+    --pulse:#e94560; --pulse-soft:#fdebee; --pulse-hover:#d9304a;
+    --sage:#6fa885; --line:#e8dec9;
+  }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column;
+  }
+  a { color: var(--pulse); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  nav.topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 24px; border-bottom: 1px solid var(--line);
+  }
+  nav.topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); }
+  nav.topbar .brand img { width: 28px; height: 28px; }
+
+  main { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 48px 24px; }
+  .card {
+    width: 100%; max-width: 560px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 20px; padding: 36px 32px;
+    box-shadow: 0 8px 30px rgba(42,37,32,.05);
+  }
+  .eyebrow { color: var(--pulse); font-weight: 700; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.1rem); letter-spacing: -.01em; margin-bottom: 10px; }
+  .lead { color: var(--ink-soft); margin-bottom: 28px; }
+
+  label { display: block; font-weight: 600; font-size: .9rem; margin: 0 0 6px; }
+  .field { margin-bottom: 18px; }
+  .hint { color: var(--ink-muted); font-weight: 400; font-size: .82rem; }
+  input[type=text], input[type=email], textarea {
+    width: 100%; font: inherit; color: var(--ink);
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: #fffdf9; transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--pulse); box-shadow: 0 0 0 3px var(--pulse-soft); }
+  textarea { resize: vertical; min-height: 140px; }
+
+  /* Honeypot — hidden from humans, catnip for bots. */
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--pulse); color: #fff; border: none;
+    padding: 13px 22px; border-radius: 12px; width: 100%;
+    transition: background .15s, opacity .15s;
+  }
+  button:hover { background: var(--pulse-hover); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+
+  .note { margin-top: 14px; font-size: .9rem; }
+  .note.success { color: var(--sage); }
+  .note.error { color: var(--pulse); }
+
+  .done {
+    text-align: center; padding: 12px 0;
+  }
+  .done h2 { font-size: 1.3rem; margin-bottom: 8px; }
+  .done p { color: var(--ink-soft); }
+  .hidden { display: none; }
+
+  footer { padding: 24px; text-align: center; color: var(--ink-muted); font-size: .85rem; border-top: 1px solid var(--line); }
+  footer a { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<nav class="topbar">
+  <a href="/welcome.html" class="brand"><img src="logo.svg" alt="">Kibbutznik</a>
+</nav>
+
+<main>
+  <div class="card">
+    <div id="form-wrap">
+      <div class="eyebrow">Get in touch</div>
+      <h1>Leave us a message</h1>
+      <p class="lead">Feedback, a bug you hit, or how you'd like to use Kibbutznik — it all lands with us. We read everything.</p>
+
+      <form id="contact-form" novalidate>
+        <div class="field">
+          <label for="name">Name <span class="hint">— optional</span></label>
+          <input type="text" id="name" name="name" maxlength="120" autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="email">Email <span class="hint">— optional, so we can reply</span></label>
+          <input type="email" id="email" name="email" maxlength="320" autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="message">Message</label>
+          <textarea id="message" name="message" maxlength="5000" required placeholder="What's on your mind?"></textarea>
+        </div>
+        <!-- honeypot: real people never fill this -->
+        <div class="hp" aria-hidden="true">
+          <label for="website">Website</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+        <button type="submit" id="submit-btn">Send message</button>
+        <div id="note" class="note"></div>
+      </form>
+    </div>
+
+    <div id="done" class="done hidden">
+      <h2>Thanks — message received.</h2>
+      <p>We read every note. If you left an email, we'll reply there.</p>
+      <p style="margin-top:16px;"><a href="/welcome.html">← Back to Kibbutznik</a></p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <a href="/welcome.html">Home</a> · <a href="/guide.html">Guide</a> · <a href="/kbz/viewer/">Live</a> · <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
+</footer>
+
+<script>
+  // Contact endpoint is behind nginx at /kbz on prod.
+  const ENDPOINT = "/kbz/contact";
+  const form = document.getElementById("contact-form");
+  const btn = document.getElementById("submit-btn");
+  const note = document.getElementById("note");
+
+  function setNote(msg, kind) {
+    note.textContent = msg;
+    note.className = "note" + (kind ? " " + kind : "");
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const message = document.getElementById("message").value.trim();
+    if (!message) { setNote("Please write a message first.", "error"); return; }
+
+    const payload = {
+      message,
+      name: document.getElementById("name").value.trim() || null,
+      email: document.getElementById("email").value.trim() || null,
+      website: document.getElementById("website").value || null, // honeypot
+    };
+
+    btn.disabled = true;
+    setNote("Sending…", "");
+    try {
+      const resp = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (resp.status === 429) {
+        setNote("You've sent a few messages already — please try again later.", "error");
+        btn.disabled = false;
+        return;
+      }
+      if (resp.status === 422) {
+        setNote("That didn't look right — check your email address and try again.", "error");
+        btn.disabled = false;
+        return;
+      }
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      // Success — swap the form for a thank-you.
+      document.getElementById("form-wrap").classList.add("hidden");
+      document.getElementById("done").classList.remove("hidden");
+    } catch (err) {
+      setNote("Something went wrong sending that — please try again in a moment.", "error");
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

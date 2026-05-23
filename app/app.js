@@ -3774,6 +3774,7 @@ function App() {
                     <a href="/welcome.html">Home</a>
                     <a href="/guide.html">Guide</a>
                     <a href="/kbz/viewer/">Live simulation</a>
+                    <a href="/contact.html">Get in touch</a>
                     <a href="https://github.com/Kibbutznik/kibbutznik" target="_blank" rel="noopener">GitHub</a>
                 </div>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
