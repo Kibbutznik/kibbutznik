@@ -2248,7 +2248,19 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
             </div>
         </div>
     );
-    if (data.pairs.length === 0) return <div className="empty-state">No relationships yet — members need to support proposals first</div>;
+    if (data.pairs.length === 0) {
+        // Be accurate about WHY it's empty. The old copy ("members need to
+        // support proposals first") was misleading — most empty cases are a
+        // community with fewer than two members (you can't have a pairwise
+        // relationship alone), or a young community whose members simply
+        // haven't co-supported the same proposals yet. Closeness is a
+        // co-support signal that accrues over rounds, per community.
+        const n = data.members.length;
+        const msg = n < 2
+            ? `This community has ${n} member${n === 1 ? "" : "s"} — relationships appear once at least two members are active here.`
+            : "No closeness signal yet — it builds as members co-support each other's proposals over the coming rounds.";
+        return <div className="empty-state">{msg}</div>;
+    }
 
     const positive = data.pairs.filter((p) => p.score > 0).length;
     const negative = data.pairs.filter((p) => p.score < 0).length;
