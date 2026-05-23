@@ -1752,69 +1752,14 @@ function llmLabelFor(presetKey) {
 }
 
 function LLMSwitcher({ currentPreset }) {
-    const [switching, setSwitching] = React.useState(false);
-    const [current, setCurrent] = React.useState(currentPreset || "custom");
-    // Fetch the preset list from the API on mount. /simulation/status
-    // returns only the CURRENT preset, not the full map, so the
-    // dropdown options have to come from /simulation/llm.
-    const [presets, setPresets] = React.useState(null);
-
-    React.useEffect(() => {
-        if (currentPreset) setCurrent(currentPreset);
-    }, [currentPreset]);
-
-    React.useEffect(() => {
-        let cancelled = false;
-        API.get("/simulation/llm").then((data) => {
-            if (!cancelled) setPresets(data?.presets || {});
-        }).catch(() => {
-            if (!cancelled) setPresets({});
-        });
-        return () => { cancelled = true; };
-    }, []);
-
-    // Build the option list from the API's preset map. Always include
-    // "custom" up top so the current selection still has a slot if
-    // the running model isn't a known preset (custom CLI deploy etc.).
-    const presetKeys = presets ? Object.keys(presets) : [];
-    const optionKeys = ["custom", ...presetKeys.filter(k => k !== "custom")];
-
-    async function handleChange(e) {
-        const preset = e.target.value;
-        setSwitching(true);
-        try {
-            await API.post("/simulation/llm", { preset });
-            setCurrent(preset);
-        } catch (err) {
-            alert(`Failed to switch LLM: ${err.message}`);
-        } finally {
-            setSwitching(false);
-        }
-    }
-
+    // The public viewer pins the model to Mistral Small — the interactive
+    // preset dropdown (and its /simulation/llm switch call) is intentionally
+    // removed so anonymous visitors can't flip the live sim onto a different
+    // / pricier backend. Renders a static, non-interactive label only.
     return (
-        <div className="header-stat" title="Switch LLM backend mid-session">
+        <div className="header-stat" title="The live simulation runs on Mistral Small">
             <span className="label">LLM</span>
-            <select
-                value={current}
-                onChange={handleChange}
-                disabled={switching}
-                style={{
-                    background: "var(--surface)",
-                    color: "var(--text-primary)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 4,
-                    padding: "2px 6px",
-                    fontSize: "0.78rem",
-                    cursor: switching ? "wait" : "pointer",
-                    opacity: switching ? 0.6 : 1,
-                }}
-            >
-                {optionKeys.map((key) => (
-                    <option key={key} value={key}>{llmLabelFor(key)}</option>
-                ))}
-            </select>
-            {switching && <span style={{ marginLeft: 4, fontSize: "0.7rem", color: "var(--text-muted)" }}>…</span>}
+            <span className="value" style={{ fontSize: "0.78rem" }}>Mistral Small</span>
         </div>
     );
 }
