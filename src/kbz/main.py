@@ -14,6 +14,7 @@ from kbz.routers import (
     auth,
     closeness,
     comments,
+    contact,
     export as export_router,
     communities,
     flags,
@@ -85,6 +86,7 @@ app.include_router(export_router.router, tags=["export"])
 app.include_router(search.router, tags=["search"])
 app.include_router(flags.router, tags=["flags"])
 app.include_router(highlights.router)
+app.include_router(contact.router, tags=["contact"])
 app.include_router(auth.router)
 app.include_router(invites.router)
 app.include_router(me.router)

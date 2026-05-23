@@ -96,6 +96,14 @@ class Settings(BaseSettings):
     # "safe" / "stripe" based on the variable value itself.
     wallet_backing: str = "internal"
 
+    # Where to email "Get in touch" contact-form submissions. Empty
+    # (default) = DB-only: messages are still persisted and readable via
+    # the admin-gated GET /admin/contact, just no email is sent. Set to
+    # the operator's address (e.g. an inbox you watch) to also receive a
+    # notification email per submission, with reply_to set to the
+    # visitor so you can reply directly.
+    contact_notify_email: str = ""
+
     # Shared secret that authorizes a COOKIELESS caller to act as the
     # user_id named in a request body (the simulation orchestrator does
     # this — one process acting on behalf of many bot users). Sent as the

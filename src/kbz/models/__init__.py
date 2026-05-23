@@ -21,6 +21,7 @@ from kbz.models.wallet import LedgerEntry, Wallet, WalletWebhookEvent
 from kbz.models.reason import Reason
 from kbz.models.notification import Notification
 from kbz.models.flag import Flag
+from kbz.models.contact_message import ContactMessage
 
 __all__ = [
     "Base",
@@ -54,4 +55,5 @@ __all__ = [
     "Reason",
     "Notification",
     "Flag",
+    "ContactMessage",
 ]

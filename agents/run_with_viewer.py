@@ -368,6 +368,7 @@ Examples:
         closeness,
         comments,
         communities,
+        contact,
         highlights,
         invites,
         me,
@@ -409,6 +410,7 @@ Examples:
     combined_app.include_router(wallet_webhook.router)
     combined_app.include_router(ws.router, tags=["websocket"])
     combined_app.include_router(highlights.router)
+    combined_app.include_router(contact.router, tags=["contact"])
     combined_app.include_router(sim_router)
 
     # HN-launch hardening: same global exception handler + /admin/errors
