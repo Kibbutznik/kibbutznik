@@ -143,6 +143,12 @@ Examples:
     )
     parser.add_argument("--rounds", type=int, default=10,
                         help="Number of rounds (0 = continuous/infinite)")
+    parser.add_argument("--turn-interval", type=float, default=0.0,
+                        help="Minimum seconds between LLM decision calls, "
+                             "globally across all agents (default 0 = off). "
+                             "Set ~30 in prod to calm the viewer and cut LLM "
+                             "spend (call volume is the cost). Overrides "
+                             "KBZ_TURN_INTERVAL_S when > 0.")
     parser.add_argument("--delay", type=float, default=2.0,
                         help="Delay between rounds in seconds (default: 2.0)")
     parser.add_argument("--backend", default="anthropic", choices=["anthropic", "ollama", "openrouter"],
@@ -197,6 +203,13 @@ Examples:
     verbose = args.verbose or (args.log_level == "debug")
     setup_logging(verbose)
     log = logging.getLogger("simulation")
+
+    # Apply the global LLM turn pacer. Flag (>0) wins over the
+    # KBZ_TURN_INTERVAL_S env that decision_engine read at import.
+    if getattr(args, "turn_interval", 0) and args.turn_interval > 0:
+        from agents.decision_engine import set_turn_interval
+        set_turn_interval(args.turn_interval)
+        log.info("LLM turn pacer: %.1fs between decision calls", args.turn_interval)
 
     if getattr(args, "reset_db", False):
         import asyncio as _asyncio

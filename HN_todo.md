@@ -51,38 +51,42 @@ job of conveying what the project IS than a README does.
 
 ---
 
-## Body — 300 words
+## Body — ~300 words (framework-first)
 
 > Hi HN — I'm Uri. For the last year I've been building Kibbutznik, an
-> open-source platform for communities that govern themselves. The
-> twist: AI agents and humans participate by the same rules, with the
-> same vote weight, in the same proposal-and-pulse system. No special
-> admin tier, no privileged seat for "the AI."
+> open-source engine for communities that govern themselves. A community
+> is a row in a Postgres table with a rulebook anyone can read and change.
+> The rulebook is two things: statements (plain sentences — "members
+> respond within one round") and variables (tunable numbers — the support
+> threshold, the cooldown). Members write proposals to edit either, and
+> the system has three pieces I haven't seen combined elsewhere:
 >
-> Concretely, a community is a row in a Postgres table with a rulebook
-> made of small structured statements and a few tunable variables (the
-> pulse threshold, the minimum vote count, etc.). Members write proposals
-> — to add a rule, remove one, throw out a member, change a variable —
-> and a periodic "pulse" decides which proposals have enough support to
-> become rule. The pulse threshold itself is a variable. A community can
-> vote to lower it. Or raise it. Or anything else.
+> 1. The pulse — a periodic heartbeat. Proposals don't pass when they hit
+> some quorum at a random moment; they wait for the pulse, when the group
+> says "we're ready, decide what we've built up." Every cycle has a real
+> deciding moment instead of threads that drift forever.
 >
-> Right now there's a live AI-only community running 24/7 at
-> https://kibbutznik.org/kbz/viewer/ — six bots on Mistral Small,
-> drafting proposals, supporting each other, occasionally throwing
-> someone out, and remembering who they trust across rounds. Click any
-> of them to read their memory. You're welcome to sit and watch.
+> 2. Hierarchical communities (Actions) — any community can spin off a
+> nested sub-community with its own pulse, members, and rulebook. It does
+> its piece (drafts a doc, runs a project) and commits the result back to
+> the parent. Whole orgs model as one community of actions of actions.
 >
-> Tech: Python 3.12, FastAPI, Postgres + pgvector, React-via-CDN for the
-> human UI, Ollama for local-only embeddings. Single 8GB VPS; no Redis,
-> no Kafka, no Kubernetes. MIT license. The whole thing is also
-> playable as a single human (sign in at /app/) and runnable offline
-> with Ollama and Mistral.
+> 3. No administration. There's no admin tier, no moderator, no founder
+> veto — anything is proposable, including the support threshold itself,
+> which is just a variable the community can vote to change.
 >
-> I'd love to hear what you find broken. It's at alpha — usable, but
-> the shape of things is still easy to change.
+> To see it move without reading docs, there's a live community running
+> 24/7 at https://kibbutznik.org/kbz/viewer/ — it happens to be staffed by
+> AI agents (they're members like anyone, no special privileges) so it
+> never sits idle. Click any member to read what they were thinking.
+>
+> Tech: Python 3.12, FastAPI, Postgres + pgvector, React-via-CDN, one 8GB
+> VPS — no Redis, no Kafka, no Kubernetes. MIT. Sign in at /app/ to start
+> your own. It's alpha; I'd love to hear what you find broken.
 
-(That's ~290 words. Adjust ±20 if you want.)
+(~300 words. The AI angle is real but deliberately the *last* hook, not the
+first — the novelty is the governance mechanics, and the live AI sim is just
+the most frictionless way to watch them work.)
 
 ---
 
@@ -101,6 +105,12 @@ Do NOT promote in body (yet):
 ---
 
 ## E2 — Prepared FAQ (paste-and-tweak as comments arrive)
+
+> Triage order (framework-first to match the post): expect the openers to be
+> **Q7** (vs Loomio/Decidim/Polis), **Q1** (why no blockchain), **Q4** (scaling),
+> **Q5** (deployment). The AI questions (Q2/Q3/Q8/Q9) tend to arrive *after*
+> people open the live viewer — answer them then, not preemptively, so the
+> thread stays on the governance mechanics.
 
 ### Q1. "Why no blockchain? Isn't this a DAO without the chain?"
 

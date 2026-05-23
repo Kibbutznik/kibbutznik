@@ -11,10 +11,59 @@ a structured action decision.
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
+
+logger_pacer = logging.getLogger("simulation.pacer")
+
+# ── Global turn pacer ────────────────────────────────────────────────
+# Spaces LLM decision calls at least _TURN_INTERVAL_S apart across the
+# WHOLE process — every Agent, every sub-community (Action) agent, and
+# BotRunner all funnel through DecisionEngine.decide(), so gating there
+# throttles the entire simulation from one place.
+#
+# Why turns and not actions: a bot decides all of a turn's actions in a
+# single LLM call, so spacing actions would only smooth the display while
+# the (already-made) call still cost money. Spacing turns cuts call volume
+# directly — and call volume is our LLM-spend control since we run without
+# an OpenRouter hard cap. A calmer, ~1-burst-per-interval viewer is a
+# bonus.
+#
+# Default 0 = OFF, so local dev and the test suite are unaffected. Prod
+# sets KBZ_TURN_INTERVAL_S (or --turn-interval) to ~30.
+_TURN_INTERVAL_S: float = float(os.environ.get("KBZ_TURN_INTERVAL_S", "0") or 0)
+_turn_pacer_lock = asyncio.Lock()
+_turn_pacer_last: float = 0.0
+
+
+def set_turn_interval(seconds: float) -> None:
+    """Override the global turn interval (used by the --turn-interval CLI
+    flag, which takes precedence over the KBZ_TURN_INTERVAL_S env)."""
+    global _TURN_INTERVAL_S
+    _TURN_INTERVAL_S = max(0.0, float(seconds))
+
+
+def get_turn_interval() -> float:
+    return _TURN_INTERVAL_S
+
+
+async def _pace_turn() -> None:
+    """Block until at least _TURN_INTERVAL_S has elapsed since the last
+    paced call, then stamp now. No-op when the interval is 0. The lock is
+    held across the sleep so concurrent agent turns are serialized and
+    evenly spaced rather than all waking at once."""
+    if _TURN_INTERVAL_S <= 0:
+        return
+    global _turn_pacer_last
+    async with _turn_pacer_lock:
+        now = time.monotonic()
+        wait = _TURN_INTERVAL_S - (now - _turn_pacer_last)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _turn_pacer_last = time.monotonic()
 
 logger = logging.getLogger(__name__)
 
@@ -707,6 +756,11 @@ class DecisionEngine:
         memory_context: str = "",
         recent_failures: list[str] | None = None,
     ) -> list[AgentAction]:
+        # Globally pace LLM calls (no-op unless a turn interval is set).
+        # Gates here so root agents, sub-community agents, and BotRunner
+        # all share one rate.
+        await _pace_turn()
+
         prompt = build_decision_prompt(
             persona_name=persona_name,
             persona_role=persona_role,
