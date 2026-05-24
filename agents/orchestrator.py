@@ -65,6 +65,11 @@ class Orchestrator:
         personas: list[Persona] | None = None,
         max_idle_rounds: int = 3,
         agents_per_round_fraction: float = 0.75,
+        # Bounded-demo controls. auto_pause_every: pause the sim after this
+        # many events since the last resume (0 = never). start_paused: boot
+        # idle so a viewer kicks off the first run via the Play button.
+        auto_pause_every: int = 500,
+        start_paused: bool = False,
         # Ollama-specific options (ignored for Anthropic)
         ollama_timeout: float = 300.0,
         ollama_num_ctx: int = 8192,
@@ -93,15 +98,19 @@ class Orchestrator:
         self.founder_id: str | None = None
         self.events: list[SimulationEvent] = []
         self._round = 0
-        self._paused = False
+        self._paused = start_paused
         self._pause_event = asyncio.Event()
-        self._pause_event.set()  # starts unpaused
+        if start_paused:
+            self._pause_event.clear()  # boot idle — Play button starts the run
+        else:
+            self._pause_event.set()    # starts unpaused
         # ── API-credit safety: auto-pause every N events ──────────────
         # After N events the sim pauses itself so unattended runs don't
         # burn unbounded OpenRouter credit. Set to 0 to disable. When
         # the viewer resumes, the counter resets and the sim runs for
-        # another N events before the next auto-pause.
-        self._auto_pause_every: int = 500
+        # another N events before the next auto-pause. For the public
+        # launch demo this is the per-Play run length (e.g. 100).
+        self._auto_pause_every: int = auto_pause_every
         self._events_since_resume: int = 0
         self.max_idle_rounds = max_idle_rounds
         self.agents_per_round_fraction = agents_per_round_fraction
