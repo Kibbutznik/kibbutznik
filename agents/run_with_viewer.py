@@ -146,9 +146,17 @@ Examples:
     parser.add_argument("--turn-interval", type=float, default=0.0,
                         help="Minimum seconds between LLM decision calls, "
                              "globally across all agents (default 0 = off). "
-                             "Set ~30 in prod to calm the viewer and cut LLM "
+                             "Set ~10-30 in prod to calm the viewer and cut LLM "
                              "spend (call volume is the cost). Overrides "
                              "KBZ_TURN_INTERVAL_S when > 0.")
+    parser.add_argument("--auto-pause-every", type=int, default=500,
+                        help="Pause the simulation after this many events "
+                             "since the last resume (0 = never). For the public "
+                             "demo set ~100 so each Play runs a bounded burst.")
+    parser.add_argument("--start-paused", action="store_true", default=False,
+                        help="Boot the simulation idle (paused) so a viewer "
+                             "kicks off the first run with the Play button. "
+                             "Pairs with --auto-pause-every for on-demand runs.")
     parser.add_argument("--delay", type=float, default=2.0,
                         help="Delay between rounds in seconds (default: 2.0)")
     parser.add_argument("--backend", default="anthropic", choices=["anthropic", "ollama", "openrouter"],
@@ -244,6 +252,8 @@ Examples:
             ollama_num_predict=args.ollama_max_tokens,
             max_retries=args.retries,
             ollama_think=args.ollama_think,
+            auto_pause_every=args.auto_pause_every,
+            start_paused=args.start_paused,
         )
 
     orch = _make_orchestrator(args.members)

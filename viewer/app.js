@@ -1821,6 +1821,46 @@ function isOperatorView() {
     return new URLSearchParams(window.location.search).get("control") === "1";
 }
 
+// ── Play overlay ────────────────────────────────────────
+// The public demo boots paused and auto-pauses after each bounded run, so
+// the viewer drives it. This full-screen overlay is the single, obvious
+// "start the run" affordance — shown whenever the sim is paused.
+function PlayOverlay({ onPlay }) {
+    return (
+        <div
+            style={{
+                position: "fixed", inset: 0, zIndex: 60,
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                background: "rgba(15,15,28,0.84)", backdropFilter: "blur(3px)",
+                padding: 24, textAlign: "center",
+            }}
+            onClick={onPlay}
+        >
+            <button
+                onClick={(e) => { e.stopPropagation(); onPlay(); }}
+                aria-label="Start the simulation run"
+                style={{
+                    width: 116, height: 116, borderRadius: "50%", border: "none",
+                    background: "#e94560", color: "#fff", cursor: "pointer",
+                    fontSize: 46, lineHeight: "116px", paddingLeft: 8,
+                    boxShadow: "0 12px 44px rgba(233,69,96,0.55)",
+                    transition: "transform .15s ease",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.06)")}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+            >▶</button>
+            <div style={{ marginTop: 24, color: "#fff", fontSize: "1.2rem", fontWeight: 700 }}>
+                Press play to run the kibbutz
+            </div>
+            <div style={{ marginTop: 10, color: "rgba(255,255,255,0.72)", fontSize: "0.92rem", maxWidth: 440, lineHeight: 1.55 }}>
+                Six AI members will propose, debate, and decide — about one step
+                every 10 seconds, for a bounded ~100-step run. Watch it unfold live.
+            </div>
+        </div>
+    );
+}
+
 // ── Header ──────────────────────────────────────────────
 function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar, paused, onTogglePause, onRestart, restarting }) {
     const community = status?.community;
@@ -5085,6 +5125,7 @@ function App() {
                 onRestart={handleRestart}
                 restarting={restarting}
             />
+            {paused && !restarting && <PlayOverlay onPlay={handleTogglePause} />}
             <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} agentsByName={agentsByName} />
             {/* Auth UI suppressed from the simulation viewer. The simulation
                 is spectator-only; real human accounts and invites live in
