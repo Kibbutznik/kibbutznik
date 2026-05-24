@@ -49,9 +49,12 @@
     --line:      #e8dec9;
   }
 
-  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; background: var(--bg); }
   body {
-    background: var(--bg);
+    /* Transparent so the fixed .site-bg pulse layer (z-index:-1, a child
+       of body) shows through above the html cream canvas but behind all
+       content. Cream lives on <html> now. */
+    background: transparent;
     color: var(--ink);
     font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     line-height: 1.6;
@@ -60,6 +63,60 @@
 
   a { color: var(--pulse); text-decoration: none; transition: color .15s ease; }
   a:hover { color: var(--ink); }
+
+  /* ── Living "community of communities" background ────────
+     A faint, full-viewport pulse field: one main hub plus three
+     satellite sub-communities, each emitting expanding rings on its own
+     phase so they breathe alongside one another. Sits behind everything
+     (pointer-events:none), low opacity so text stays crisp. Mirrors the
+     hero pulse-illustration's vocabulary (red rings, sage/gold members). */
+  .site-bg {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: 0.5;            /* overall faintness — tune to taste */
+  }
+  .site-bg svg { width: 100%; height: 100%; display: block; }
+  .site-bg .wave {
+    fill: none;
+    stroke: var(--pulse);
+    stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    animation: bg-wave 6s ease-out infinite;
+  }
+  @keyframes bg-wave {
+    0%   { transform: scale(0.10); opacity: 0.5; }
+    65%  { opacity: 0.12; }
+    100% { transform: scale(1);    opacity: 0; }
+  }
+  .site-bg .core {
+    fill: var(--pulse);
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: bg-core 6s ease-out infinite;
+  }
+  @keyframes bg-core {
+    0%, 100% { transform: scale(1);   opacity: 0.55; }
+    12%      { transform: scale(1.5); opacity: 0.9; }
+  }
+  .site-bg .member { fill: var(--sage); opacity: 0.45; }
+  .site-bg .member.ai { fill: var(--gold); }
+  .site-bg .spoke { stroke: var(--ink-muted); stroke-width: 1; opacity: 0.12; }
+  .site-bg .link {
+    stroke: var(--pulse);
+    stroke-width: 1.2;
+    stroke-dasharray: 4 7;
+    opacity: 0.16;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .site-bg .wave { animation: none; opacity: 0.10; transform: scale(0.85); }
+    .site-bg .core { animation: none; opacity: 0.5; }
+  }
 
   /* ── Layout helpers ──────────────────────────────────── */
   .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
@@ -639,6 +696,75 @@
 </style>
 </head>
 <body>
+
+<!-- ── Living pulse background: a community of communities ──
+     Main hub (center) + three satellite sub-communities, each emitting
+     rings on its own phase. Faint, fixed, behind all content. -->
+<div class="site-bg" aria-hidden="true">
+  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+    <!-- hierarchy links: main hub → each sub-community -->
+    <line class="link" x1="720" y1="400" x2="300" y2="660"/>
+    <line class="link" x1="720" y1="400" x2="1150" y2="600"/>
+    <line class="link" x1="720" y1="400" x2="1180" y2="180"/>
+
+    <!-- countering sub-community A (lower-left) -->
+    <g transform="translate(300,660)">
+      <circle class="wave" r="95" style="animation-delay:-1.2s"/>
+      <circle class="wave" r="95" style="animation-delay:-3.2s"/>
+      <circle class="wave" r="95" style="animation-delay:-5.2s"/>
+      <line class="spoke" x2="0" y2="-95"/><line class="spoke" x2="82" y2="48"/>
+      <line class="spoke" x2="-82" y2="48"/><line class="spoke" x2="0" y2="95"/>
+      <circle class="member" cx="0" cy="-95" r="6"/>
+      <circle class="member ai" cx="82" cy="48" r="6"/>
+      <circle class="member" cx="-82" cy="48" r="6"/>
+      <circle class="member" cx="0" cy="95" r="6"/>
+      <circle class="core" r="9" style="animation-delay:-1.2s"/>
+    </g>
+
+    <!-- sub-community B (right) -->
+    <g transform="translate(1150,600)">
+      <circle class="wave" r="80" style="animation-delay:-2.4s"/>
+      <circle class="wave" r="80" style="animation-delay:-4.4s"/>
+      <circle class="wave" r="80" style="animation-delay:-0.4s"/>
+      <line class="spoke" x2="0" y2="-80"/><line class="spoke" x2="69" y2="40"/>
+      <line class="spoke" x2="-69" y2="40"/>
+      <circle class="member" cx="0" cy="-80" r="6"/>
+      <circle class="member" cx="69" cy="40" r="6"/>
+      <circle class="member ai" cx="-69" cy="40" r="6"/>
+      <circle class="core" r="8" style="animation-delay:-2.4s"/>
+    </g>
+
+    <!-- sub-community C (upper-right) -->
+    <g transform="translate(1180,180)">
+      <circle class="wave" r="68" style="animation-delay:-0.6s"/>
+      <circle class="wave" r="68" style="animation-delay:-2.6s"/>
+      <circle class="wave" r="68" style="animation-delay:-4.6s"/>
+      <line class="spoke" x2="0" y2="-68"/><line class="spoke" x2="59" y2="34"/>
+      <line class="spoke" x2="-59" y2="34"/>
+      <circle class="member" cx="0" cy="-68" r="5.5"/>
+      <circle class="member" cx="59" cy="34" r="5.5"/>
+      <circle class="member" cx="-59" cy="34" r="5.5"/>
+      <circle class="core" r="7" style="animation-delay:-0.6s"/>
+    </g>
+
+    <!-- main hub (center) -->
+    <g transform="translate(720,400)">
+      <circle class="wave" r="165"/>
+      <circle class="wave" r="165" style="animation-delay:-2s"/>
+      <circle class="wave" r="165" style="animation-delay:-4s"/>
+      <line class="spoke" x2="0" y2="-165"/><line class="spoke" x2="143" y2="-83"/>
+      <line class="spoke" x2="143" y2="83"/><line class="spoke" x2="0" y2="165"/>
+      <line class="spoke" x2="-143" y2="83"/><line class="spoke" x2="-143" y2="-83"/>
+      <circle class="member" cx="0" cy="-165" r="8"/>
+      <circle class="member ai" cx="143" cy="-83" r="8"/>
+      <circle class="member" cx="143" cy="83" r="8"/>
+      <circle class="member" cx="0" cy="165" r="8"/>
+      <circle class="member ai" cx="-143" cy="83" r="8"/>
+      <circle class="member" cx="-143" cy="-83" r="8"/>
+      <circle class="core" r="13"/>
+    </g>
+  </svg>
+</div>
 
 <!-- ── Top nav ────────────────────────────────────────── -->
 <nav class="topbar" id="topbar">
