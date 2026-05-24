@@ -64,58 +64,92 @@
   a { color: var(--pulse); text-decoration: none; transition: color .15s ease; }
   a:hover { color: var(--ink); }
 
-  /* ── Living "community of communities" background ────────
-     A faint, full-viewport pulse field: one main hub plus three
-     satellite sub-communities, each emitting expanding rings on its own
-     phase so they breathe alongside one another. Sits behind everything
-     (pointer-events:none), low opacity so text stays crisp. Mirrors the
-     hero pulse-illustration's vocabulary (red rings, sage/gold members). */
+  /* ── Living pulse-ORGANISM background ────────────────────
+     One circulatory machine, not a constellation. A root core beats on a
+     master period T=6s; its wave travels OUTWARD along vessels to action
+     cores, which fire when the wave arrives (T/2=3s, phase-locked by a
+     negative animation-delay == vessel travel time); one action feeds a
+     nested sub-action (T/3=2s). Shared members ride the root↔action
+     vessels, wired to both cores, so they visibly feel both beats. Faint,
+     fixed, pointer-events:none — text stays crisp. Designed to let a
+     viewer read the STRUCTURE of a kibbutz at a glance. */
   .site-bg {
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    overflow: hidden;
+    position: fixed; inset: 0; z-index: -1;
+    pointer-events: none; overflow: hidden;
     opacity: 0.5;            /* overall faintness — tune to taste */
   }
   .site-bg svg { width: 100%; height: 100%; display: block; }
-  .site-bg .wave {
-    fill: none;
-    stroke: var(--pulse);
-    stroke-width: 1.4;
-    vector-effect: non-scaling-stroke;
-    transform-box: fill-box;
-    transform-origin: center;
-    opacity: 0;
-    animation: bg-wave 6s ease-out infinite;
+
+  /* vessels: faint conduits root<->action (the "one machine" wiring) */
+  .site-bg .vessel {
+    fill: none; stroke: var(--ink-muted); stroke-width: 1.2;
+    opacity: 0.16; vector-effect: non-scaling-stroke;
   }
+  .site-bg .vessel.sub { opacity: 0.12; }
+  /* tie-lines: shared member -> its two cores (belongs to both) */
+  .site-bg .tie {
+    stroke: var(--ink-muted); stroke-width: 0.8;
+    opacity: 0.10; vector-effect: non-scaling-stroke;
+  }
+
+  /* expanding rings — scale via transform so the stroke stays hairline */
+  .site-bg .wave {
+    fill: none; stroke: var(--pulse); stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+    transform-box: fill-box; transform-origin: center;
+    animation: bg-wave 6s linear infinite;          /* root: master T=6s */
+  }
+  .site-bg .wave.a { animation: bg-wave 3s linear infinite; stroke-width: 1.2; } /* actions T/2 */
+  .site-bg .wave.s { animation: bg-wave 2s linear infinite; stroke-width: 1.1; } /* sub T/3 */
   @keyframes bg-wave {
-    0%   { transform: scale(0.10); opacity: 0.5; }
-    65%  { opacity: 0.12; }
+    0%   { transform: scale(0.10); opacity: 0.45; }
+    70%  { opacity: 0.10; }
     100% { transform: scale(1);    opacity: 0; }
   }
+
+  /* cores: the beating hearts */
   .site-bg .core {
-    fill: var(--pulse);
-    transform-box: fill-box;
-    transform-origin: center;
-    animation: bg-core 6s ease-out infinite;
+    fill: var(--pulse); transform-box: fill-box; transform-origin: center;
   }
+  .site-bg .core.root     { animation: bg-core 6s ease-in-out infinite; opacity: 0.7; }
+  .site-bg .core.action   { animation: bg-core 3s ease-in-out infinite; opacity: 0.6; }
+  .site-bg .core.sub-core { animation: bg-core 2s ease-in-out infinite; opacity: 0.55; }
   @keyframes bg-core {
-    0%, 100% { transform: scale(1);   opacity: 0.55; }
-    12%      { transform: scale(1.5); opacity: 0.9; }
+    0%, 100% { transform: scale(1);    opacity: 0.55; }
+    12%      { transform: scale(1.55); opacity: 0.9; }
   }
+
+  /* traveling pulse dots: the wave visibly flowing outward along vessels */
+  .site-bg .flow {
+    fill: var(--pulse); opacity: 0; offset-rotate: 0deg;
+    animation: bg-flow 6s linear infinite;
+  }
+  .site-bg .flow.sub { animation-duration: 3s; }
+  @keyframes bg-flow {
+    0%   { offset-distance: 0%;   opacity: 0; }
+    8%   { opacity: 0.85; }
+    85%  { opacity: 0.85; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+
+  /* member nodes: humans (sage) + AI (gold) */
   .site-bg .member { fill: var(--sage); opacity: 0.45; }
   .site-bg .member.ai { fill: var(--gold); }
-  .site-bg .spoke { stroke: var(--ink-muted); stroke-width: 1; opacity: 0.12; }
-  .site-bg .link {
-    stroke: var(--pulse);
-    stroke-width: 1.2;
-    stroke-dasharray: 4 7;
-    opacity: 0.16;
+  /* shared members ride a vessel and answer both beats */
+  .site-bg .member.shared {
+    opacity: 0.6; transform-box: fill-box; transform-origin: center;
+    animation: bg-shared 3s ease-in-out infinite; animation-delay: -1.5s;
   }
+  @keyframes bg-shared {
+    0%, 100% { transform: scale(1);   opacity: 0.5; }
+    50%      { transform: scale(1.4); opacity: 0.85; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .site-bg .wave { animation: none; opacity: 0.10; transform: scale(0.85); }
-    .site-bg .core { animation: none; opacity: 0.5; }
+    .site-bg .wave { animation: none; opacity: 0.12; transform: scale(0.82); }
+    .site-bg .core { animation: none; opacity: 0.6; }
+    .site-bg .flow { animation: none; opacity: 0.5; offset-distance: 50%; }
+    .site-bg .member.shared { animation: none; opacity: 0.6; transform: none; }
   }
 
   /* ── Layout helpers ──────────────────────────────────── */
@@ -697,72 +731,86 @@
 </head>
 <body>
 
-<!-- ── Living pulse background: a community of communities ──
-     Main hub (center) + three satellite sub-communities, each emitting
-     rings on its own phase. Faint, fixed, behind all content. -->
+<!-- ── Living pulse-organism: one kibbutz, nested heartbeats ──
+     Root core → vessels carry the pulse outward → actions fire on arrival
+     → one action feeds a nested sub-action. Shared members ride the
+     vessels, wired to two cores. Faint, fixed, behind all content. -->
 <div class="site-bg" aria-hidden="true">
-  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
-    <!-- hierarchy links: main hub → each sub-community -->
-    <line class="link" x1="720" y1="400" x2="300" y2="660"/>
-    <line class="link" x1="720" y1="400" x2="1150" y2="600"/>
-    <line class="link" x1="720" y1="400" x2="1180" y2="180"/>
+  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <!-- vessels (behind everything): root(720,450) → each action -->
+    <path class="vessel" d="M720,450 L420,300"/>
+    <path class="vessel" d="M720,450 L1040,360"/>
+    <path class="vessel" d="M720,450 L640,720"/>
+    <path class="vessel sub" d="M420,300 L220,430"/>
 
-    <!-- countering sub-community A (lower-left) -->
-    <g transform="translate(300,660)">
-      <circle class="wave" r="95" style="animation-delay:-1.2s"/>
-      <circle class="wave" r="95" style="animation-delay:-3.2s"/>
-      <circle class="wave" r="95" style="animation-delay:-5.2s"/>
-      <line class="spoke" x2="0" y2="-95"/><line class="spoke" x2="82" y2="48"/>
-      <line class="spoke" x2="-82" y2="48"/><line class="spoke" x2="0" y2="95"/>
-      <circle class="member" cx="0" cy="-95" r="6"/>
-      <circle class="member ai" cx="82" cy="48" r="6"/>
-      <circle class="member" cx="-82" cy="48" r="6"/>
-      <circle class="member" cx="0" cy="95" r="6"/>
-      <circle class="core" r="9" style="animation-delay:-1.2s"/>
+    <!-- tie-lines: each shared member wired to BOTH cores it sits between -->
+    <line class="tie" x1="570" y1="375" x2="720" y2="450"/>
+    <line class="tie" x1="570" y1="375" x2="420" y2="300"/>
+    <line class="tie" x1="880" y1="405" x2="720" y2="450"/>
+    <line class="tie" x1="880" y1="405" x2="1040" y2="360"/>
+
+    <!-- traveling pulse dots: the wave flowing outward along each vessel -->
+    <circle class="flow" r="3.5" style="offset-path:path('M720,450 L420,300'); animation-delay:0s"/>
+    <circle class="flow" r="3.5" style="offset-path:path('M720,450 L1040,360'); animation-delay:0s"/>
+    <circle class="flow" r="3.5" style="offset-path:path('M720,450 L640,720'); animation-delay:0s"/>
+    <circle class="flow sub" r="3" style="offset-path:path('M420,300 L220,430'); animation-delay:1.5s"/>
+
+    <!-- ROOT hub — master heartbeat T=6s -->
+    <g transform="translate(720,450)">
+      <circle class="wave" r="120" style="animation-delay:-6.0s"/>
+      <circle class="wave" r="120" style="animation-delay:-4.0s"/>
+      <circle class="wave" r="120" style="animation-delay:-2.0s"/>
+      <circle class="core root" r="11"/>
     </g>
 
-    <!-- sub-community B (right) -->
-    <g transform="translate(1150,600)">
-      <circle class="wave" r="80" style="animation-delay:-2.4s"/>
-      <circle class="wave" r="80" style="animation-delay:-4.4s"/>
-      <circle class="wave" r="80" style="animation-delay:-0.4s"/>
-      <line class="spoke" x2="0" y2="-80"/><line class="spoke" x2="69" y2="40"/>
-      <line class="spoke" x2="-69" y2="40"/>
-      <circle class="member" cx="0" cy="-80" r="6"/>
-      <circle class="member" cx="69" cy="40" r="6"/>
-      <circle class="member ai" cx="-69" cy="40" r="6"/>
-      <circle class="core" r="8" style="animation-delay:-2.4s"/>
+    <!-- ACTION A (T/2=3s), fires when root wave arrives (travel 1.5s) -->
+    <g transform="translate(420,300)">
+      <circle class="wave a" r="75" style="animation-delay:-1.5s"/>
+      <circle class="wave a" r="75" style="animation-delay:-3.0s"/>
+      <circle class="core action" r="8" style="animation-delay:-1.5s"/>
     </g>
 
-    <!-- sub-community C (upper-right) -->
-    <g transform="translate(1180,180)">
-      <circle class="wave" r="68" style="animation-delay:-0.6s"/>
-      <circle class="wave" r="68" style="animation-delay:-2.6s"/>
-      <circle class="wave" r="68" style="animation-delay:-4.6s"/>
-      <line class="spoke" x2="0" y2="-68"/><line class="spoke" x2="59" y2="34"/>
-      <line class="spoke" x2="-59" y2="34"/>
-      <circle class="member" cx="0" cy="-68" r="5.5"/>
-      <circle class="member" cx="59" cy="34" r="5.5"/>
-      <circle class="member" cx="-59" cy="34" r="5.5"/>
-      <circle class="core" r="7" style="animation-delay:-0.6s"/>
+    <!-- ACTION B (T/2=3s) -->
+    <g transform="translate(1040,360)">
+      <circle class="wave a" r="70" style="animation-delay:-1.5s"/>
+      <circle class="wave a" r="70" style="animation-delay:-3.0s"/>
+      <circle class="core action" r="8" style="animation-delay:-1.5s"/>
     </g>
 
-    <!-- main hub (center) -->
-    <g transform="translate(720,400)">
-      <circle class="wave" r="165"/>
-      <circle class="wave" r="165" style="animation-delay:-2s"/>
-      <circle class="wave" r="165" style="animation-delay:-4s"/>
-      <line class="spoke" x2="0" y2="-165"/><line class="spoke" x2="143" y2="-83"/>
-      <line class="spoke" x2="143" y2="83"/><line class="spoke" x2="0" y2="165"/>
-      <line class="spoke" x2="-143" y2="83"/><line class="spoke" x2="-143" y2="-83"/>
-      <circle class="member" cx="0" cy="-165" r="8"/>
-      <circle class="member ai" cx="143" cy="-83" r="8"/>
-      <circle class="member" cx="143" cy="83" r="8"/>
-      <circle class="member" cx="0" cy="165" r="8"/>
-      <circle class="member ai" cx="-143" cy="83" r="8"/>
-      <circle class="member" cx="-143" cy="-83" r="8"/>
-      <circle class="core" r="13"/>
+    <!-- ACTION C (T/2=3s), shorter vessel → arrives sooner (1.3s) -->
+    <g transform="translate(640,720)">
+      <circle class="wave a" r="65" style="animation-delay:-1.3s"/>
+      <circle class="wave a" r="65" style="animation-delay:-2.8s"/>
+      <circle class="core action" r="7.5" style="animation-delay:-1.3s"/>
     </g>
+
+    <!-- SUB-ACTION (T/3=2s) nested under Action A; cascade delay 2.7s -->
+    <g transform="translate(220,430)">
+      <circle class="wave s" r="48" style="animation-delay:-2.7s"/>
+      <circle class="wave s" r="48" style="animation-delay:-1.7s"/>
+      <circle class="core sub-core" r="6" style="animation-delay:-2.7s"/>
+    </g>
+
+    <!-- shared members: sit ON the vessels, feel both beats -->
+    <circle class="member shared" cx="570" cy="375" r="5"/>
+    <circle class="member shared ai" cx="880" cy="405" r="5"/>
+
+    <!-- root members -->
+    <circle class="member" cx="800" cy="540" r="4.5"/>
+    <circle class="member ai" cx="660" cy="555" r="4.5"/>
+    <circle class="member" cx="790" cy="375" r="4.5"/>
+    <!-- Action A members -->
+    <circle class="member" cx="360" cy="225" r="4"/>
+    <circle class="member ai" cx="470" cy="215" r="4"/>
+    <!-- Action B members -->
+    <circle class="member ai" cx="1110" cy="290" r="4"/>
+    <circle class="member" cx="1095" cy="430" r="4"/>
+    <!-- Action C members -->
+    <circle class="member" cx="565" cy="785" r="4"/>
+    <circle class="member ai" cx="720" cy="780" r="4"/>
+    <!-- Sub-action members -->
+    <circle class="member" cx="160" cy="375" r="3.5"/>
+    <circle class="member ai" cx="170" cy="495" r="3.5"/>
   </svg>
 </div>
 
