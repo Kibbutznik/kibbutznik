@@ -184,40 +184,77 @@ function proposalDisplayText(p) {
  * For types that carry UUIDs (DelegateArtifact, JoinAction, etc.), fetches
  * the real names asynchronously using the cached API.
  */
+// Clean placeholder shown for UUID-referencing types until the real name
+// resolves — never the raw UUID, never the (often long) body text.
+const _CARD_TITLE_PLACEHOLDER = {
+    EditArtifact: "Edit artifact…", RemoveArtifact: "Remove artifact…",
+    DelegateArtifact: "Delegate artifact…", CommitArtifact: "Commit artifact…",
+    JoinAction: "Join action…", EndAction: "End action…",
+};
 function useProposalCardTitle(p) {
-    const [title, setTitle] = React.useState(() => proposalDisplayText(p) || p.proposal_type);
+    const [title, setTitle] = React.useState(
+        () => _CARD_TITLE_PLACEHOLDER[p?.proposal_type] || proposalDisplayText(p) || p?.proposal_type
+    );
     React.useEffect(() => {
         if (!p) return;
         const pt = p.proposal_type;
         let cancelled = false;
+        let retryTimer = null;
+        let attempts = 0;
+
+        // Resolve an artifact's current human title. Prefer the live
+        // artifact (reliable); fall back to the FIRST history entry; never
+        // return a raw UUID. Returns null if genuinely unresolved so the
+        // caller can retry (e.g. an artifact created in the same pulse
+        // that isn't committed yet).
+        async function artifactTitle(id) {
+            if (!id) return null;
+            try { const a = await API.getCached(`/artifacts/${id}`); if (a?.title) return a.title; } catch {}
+            try { const h = await API.getCached(`/artifacts/${id}/history`); if (h?.length && h[0]?.title) return h[0].title; } catch {}
+            return null;
+        }
+        function scheduleRetry() {
+            // Self-heal transient/not-yet-committed lookups. The effect is
+            // keyed on p.id (so it doesn't churn every poll); without this
+            // a single early miss would stick a UUID title forever.
+            if (cancelled || attempts >= 6) return;
+            attempts++;
+            retryTimer = setTimeout(resolve, 2500);
+        }
+
         async function resolve() {
             try {
                 if (pt === "DelegateArtifact") {
-                    // val_uuid = artifact id, val_text = target action community id
-                    let artName = p.val_uuid ? p.val_uuid.slice(0, 8) : "?";
-                    let actionName = p.val_text ? p.val_text.slice(0, 8) : "?";
-                    try { const h = await API.getCached(`/artifacts/${p.val_uuid}/history`); if (h?.length) artName = h[h.length-1].title || artName; } catch {}
-                    try { const c = await API.getCached(`/communities/${p.val_text}`); actionName = c.name || actionName; } catch {}
-                    if (!cancelled) setTitle(`Delegate "${truncate(artName,30)}" → ${truncate(actionName,25)}`);
+                    let actionName = null;
+                    try { const c = await API.getCached(`/communities/${p.val_text}`); actionName = c?.name; } catch {}
+                    const artName = await artifactTitle(p.val_uuid);
+                    if (cancelled) return;
+                    if (artName) setTitle(`Delegate "${truncate(artName,30)}" → ${truncate(actionName || "a team",25)}`);
+                    else scheduleRetry();
                 } else if (pt === "EditArtifact" || pt === "RemoveArtifact") {
-                    let artName = p.val_uuid ? p.val_uuid.slice(0, 8) : "?";
-                    try { const h = await API.getCached(`/artifacts/${p.val_uuid}/history`); if (h?.length) artName = h[h.length-1].title || artName; } catch {}
-                    if (!cancelled) setTitle(`${pt === "EditArtifact" ? "Edit" : "Remove"}: ${truncate(artName, 45)}`);
+                    const artName = await artifactTitle(p.val_uuid);
+                    if (cancelled) return;
+                    if (artName) setTitle(`${pt === "EditArtifact" ? "Edit" : "Remove"}: ${truncate(artName, 45)}`);
+                    else scheduleRetry();
                 } else if (pt === "JoinAction" || pt === "EndAction") {
-                    let commName = p.val_uuid ? p.val_uuid.slice(0, 8) : "?";
-                    try { const c = await API.getCached(`/communities/${p.val_uuid}`); commName = c.name || commName; } catch {}
-                    if (!cancelled) setTitle(`${pt === "JoinAction" ? "Join" : "End"}: ${truncate(commName, 45)}`);
+                    let commName = null;
+                    try { const c = await API.getCached(`/communities/${p.val_uuid}`); commName = c?.name; } catch {}
+                    if (cancelled) return;
+                    if (commName) setTitle(`${pt === "JoinAction" ? "Join" : "End"}: ${truncate(commName, 45)}`);
+                    else scheduleRetry();
                 } else if (pt === "CommitArtifact") {
-                    let contName = "Container";
-                    try { const c = await API.getCached(`/artifacts/containers/${p.val_uuid}`); contName = c?.container?.title || contName; } catch {}
-                    if (!cancelled) setTitle(`Commit: ${truncate(contName, 45)}`);
+                    let contName = null;
+                    try { const c = await API.getCached(`/artifacts/containers/${p.val_uuid}`); contName = c?.container?.title; } catch {}
+                    if (cancelled) return;
+                    if (contName) setTitle(`Commit: ${truncate(contName, 45)}`);
+                    else scheduleRetry();
                 } else if (pt === "CreateArtifact") {
-                    if (!cancelled) setTitle(p.val_text || p.proposal_text || "Create Artifact");
+                    if (!cancelled) setTitle(p.val_text || p.proposal_text || "Create artifact");
                 }
             } catch {}
         }
         resolve();
-        return () => { cancelled = true; };
+        return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
     }, [p?.id]);
     return title;
 }
