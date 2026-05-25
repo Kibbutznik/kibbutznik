@@ -1,0 +1,48 @@
+#!/bin/bash
+set -e
+echo "=== KBZ Deploy Hook ==="
+
+# Capture the pushed range for refs/heads/main (post-receive stdin lines:
+# "<old> <new> <ref>") so we can tell what changed.
+OLDREV=""; NEWREV=""
+while read old new ref; do
+  if [ "$ref" = "refs/heads/main" ]; then OLDREV="$old"; NEWREV="$new"; fi
+done
+
+git --work-tree=/opt/kbz --git-dir=/opt/kbz-repo.git checkout -f main
+cd /opt/kbz
+
+# Only restart the kbz process (which would reset the live simulation
+# community) when BACKEND or SIM code actually changed. Static pushes
+# (landing/, app/, viewer/, docs) are served straight from disk by nginx,
+# so a restart would only needlessly wipe the running community. Default
+# to restart when the range is unknown (first push / force-push).
+NEEDS_RESTART=1
+ZERO="0000000000000000000000000000000000000000"
+if [ -n "$OLDREV" ] && [ "$OLDREV" != "$ZERO" ] && [ -n "$NEWREV" ]; then
+  CHANGED=$(git --git-dir=/opt/kbz-repo.git diff --name-only "$OLDREV" "$NEWREV" || true)
+  if echo "$CHANGED" | grep -qE '^(src/|agents/|alembic/|pyproject\.toml|uv\.lock)'; then
+    NEEDS_RESTART=1
+  else
+    NEEDS_RESTART=0
+  fi
+fi
+
+if [ "$NEEDS_RESTART" = "1" ]; then
+  if [ ! -f .venv/bin/pip ]; then
+    echo "=== venv missing, creating ==="
+    python3 -m venv .venv
+  fi
+  .venv/bin/pip install -e . -q
+  DB_URL=$(grep -oP "(?<=KBZ_DATABASE_URL=)[^\"]+" /etc/systemd/system/kbz.service | head -1)
+  if [ -z "$DB_URL" ]; then
+    echo "!! could not extract KBZ_DATABASE_URL from systemd unit; skipping alembic"
+  else
+    echo "=== Running alembic migrations ==="
+    KBZ_DATABASE_URL="$DB_URL" .venv/bin/alembic upgrade head 2>&1 | tail -20 || echo "!! alembic failed, continuing"
+  fi
+  systemctl restart kbz
+  echo "=== Deployed and restarted kbz (backend/sim code changed) ==="
+else
+  echo "=== Deployed static files only — kbz NOT restarted, live simulation preserved ==="
+fi
