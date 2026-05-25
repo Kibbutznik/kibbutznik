@@ -133,23 +133,40 @@
   }
 
   /* member nodes: humans (sage) + AI (gold) */
-  .site-bg .member { fill: var(--sage); opacity: 0.45; }
+  .site-bg .member {
+    fill: var(--sage); opacity: 0.4;
+    transform-box: fill-box; transform-origin: center;
+  }
   .site-bg .member.ai { fill: var(--gold); }
+  /* reactive members: brighten + swell as the wavefront passes through
+     them. Each member sits just inside its hub's wave-ring (~0.9·R), so
+     the wave reaches it at ~88% of that wave's life; the per-member
+     animation period + delay (set inline) lock the flash to the SPECIFIC
+     wave crossing it, so successive waves light the ring in sequence. */
+  .site-bg .member.hit { animation: bg-hit 6s linear infinite; }
+  @keyframes bg-hit {
+    0%   { opacity: 0.32; transform: scale(1); }
+    78%  { opacity: 0.32; transform: scale(1); }
+    88%  { opacity: 0.95; transform: scale(2); }
+    96%  { opacity: 0.5;  transform: scale(1.2); }
+    100% { opacity: 0.32; transform: scale(1); }
+  }
   /* shared members ride a vessel and answer both beats */
   .site-bg .member.shared {
-    opacity: 0.6; transform-box: fill-box; transform-origin: center;
+    opacity: 0.6;
     animation: bg-shared 3s ease-in-out infinite; animation-delay: -1.5s;
   }
   @keyframes bg-shared {
     0%, 100% { transform: scale(1);   opacity: 0.5; }
-    50%      { transform: scale(1.4); opacity: 0.85; }
+    50%      { transform: scale(1.45); opacity: 0.9; }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .site-bg .wave { animation: none; opacity: 0.12; transform: scale(0.82); }
     .site-bg .core { animation: none; opacity: 0.6; }
     .site-bg .flow { animation: none; opacity: 0.5; offset-distance: 50%; }
-    .site-bg .member.shared { animation: none; opacity: 0.6; transform: none; }
+    .site-bg .member.hit,
+    .site-bg .member.shared { animation: none; opacity: 0.55; transform: none; }
   }
 
   /* ── Layout helpers ──────────────────────────────────── */
@@ -385,57 +402,8 @@
     flex-wrap: wrap;
   }
 
-  /* ── The pulse circles illustration ─────────────────── */
-  .pulse-illustration {
-    margin: 60px auto 0;
-    width: min(560px, 90vw);
-    aspect-ratio: 1;
-    position: relative;
-  }
-  .pulse-ring {
-    position: absolute;
-    inset: 0;
-    border: 2px solid var(--pulse);
-    border-radius: 50%;
-    opacity: 0;
-    animation: pulse-out 4s ease-out infinite;
-  }
-  .pulse-ring:nth-child(2) { animation-delay: 1.3s; }
-  .pulse-ring:nth-child(3) { animation-delay: 2.6s; }
-  @keyframes pulse-out {
-    0%   { transform: scale(0.4); opacity: 0; }
-    20%  { opacity: 0.6; }
-    100% { transform: scale(1); opacity: 0; }
-  }
-  .pulse-center {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 14%;
-    aspect-ratio: 1;
-    background: var(--pulse);
-    border-radius: 50%;
-    box-shadow: 0 0 0 12px var(--pulse-soft);
-  }
-  .pulse-member {
-    position: absolute;
-    width: 9%;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    background: white;
-    border: 3px solid var(--sage);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  }
-  /* 6 members evenly spaced around the ring */
-  .pulse-member:nth-child(4)  { top:  4%; left: 50%; transform: translateX(-50%); }
-  .pulse-member:nth-child(5)  { top: 20%; right: 7%; }
-  .pulse-member:nth-child(6)  { bottom: 20%; right: 7%; }
-  .pulse-member:nth-child(7)  { bottom:  4%; left: 50%; transform: translateX(-50%); }
-  .pulse-member:nth-child(8)  { bottom: 20%; left: 7%; }
-  .pulse-member:nth-child(9)  { top: 20%; left: 7%; }
-  /* Two of them are AI — show as gold-bordered */
-  .pulse-member.ai { border-color: var(--gold); }
+  /* (hero .pulse-illustration styles removed — superseded by the
+     living .site-bg pulse-organism background.) */
 
   /* ── Highlight reel ──────────────────────────────────── */
   .highlight-grid {
@@ -755,18 +723,35 @@
     <circle class="flow" r="3.5" style="offset-path:path('M720,450 L640,720'); animation-delay:0s"/>
     <circle class="flow sub" r="3" style="offset-path:path('M420,300 L220,430'); animation-delay:1.5s"/>
 
-    <!-- ROOT hub — master heartbeat T=6s -->
+    <!-- ROOT hub — master heartbeat T=6s. 8 members ring the wave at
+         ~0.9·R (108); each is locked to one of the 3 staggered waves
+         (-2/-4/-6s) so the ring lights up in sequence as each wave
+         washes over it (a rotating ripple every ~2s). -->
     <g transform="translate(720,450)">
       <circle class="wave" r="120" style="animation-delay:-6.0s"/>
       <circle class="wave" r="120" style="animation-delay:-4.0s"/>
       <circle class="wave" r="120" style="animation-delay:-2.0s"/>
+      <circle class="member hit"    cx="108"  cy="0"    r="5.5" style="animation-delay:-2.0s"/>
+      <circle class="member hit ai" cx="76"   cy="76"   r="5.5" style="animation-delay:-4.0s"/>
+      <circle class="member hit"    cx="0"    cy="108"  r="5.5" style="animation-delay:-6.0s"/>
+      <circle class="member hit"    cx="-76"  cy="76"   r="5.5" style="animation-delay:-2.0s"/>
+      <circle class="member hit ai" cx="-108" cy="0"    r="5.5" style="animation-delay:-4.0s"/>
+      <circle class="member hit"    cx="-76"  cy="-76"  r="5.5" style="animation-delay:-6.0s"/>
+      <circle class="member hit ai" cx="0"    cy="-108" r="5.5" style="animation-delay:-2.0s"/>
+      <circle class="member hit"    cx="76"   cy="-76"  r="5.5" style="animation-delay:-4.0s"/>
       <circle class="core root" r="11"/>
     </g>
 
-    <!-- ACTION A (T/2=3s), fires when root wave arrives (travel 1.5s) -->
+    <!-- ACTION A (T/2=3s), fires when root wave arrives (travel 1.5s).
+         Members ring at ~66, locked to the action's two waves. -->
     <g transform="translate(420,300)">
       <circle class="wave a" r="75" style="animation-delay:-1.5s"/>
       <circle class="wave a" r="75" style="animation-delay:-3.0s"/>
+      <circle class="member hit"    cx="66"  cy="0"   r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
+      <circle class="member hit ai" cx="20"  cy="63"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
+      <circle class="member hit"    cx="-53" cy="39"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
+      <circle class="member hit"    cx="-53" cy="-39" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
+      <circle class="member hit ai" cx="20"  cy="-63" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
       <circle class="core action" r="8" style="animation-delay:-1.5s"/>
     </g>
 
@@ -774,6 +759,11 @@
     <g transform="translate(1040,360)">
       <circle class="wave a" r="70" style="animation-delay:-1.5s"/>
       <circle class="wave a" r="70" style="animation-delay:-3.0s"/>
+      <circle class="member hit"    cx="62"  cy="0"   r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
+      <circle class="member hit"    cx="19"  cy="59"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
+      <circle class="member hit ai" cx="-50" cy="36"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
+      <circle class="member hit"    cx="-50" cy="-36" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
+      <circle class="member hit ai" cx="19"  cy="-59" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
       <circle class="core action" r="8" style="animation-delay:-1.5s"/>
     </g>
 
@@ -781,6 +771,11 @@
     <g transform="translate(640,720)">
       <circle class="wave a" r="65" style="animation-delay:-1.3s"/>
       <circle class="wave a" r="65" style="animation-delay:-2.8s"/>
+      <circle class="member hit"    cx="58"  cy="0"   r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.3s"/>
+      <circle class="member hit ai" cx="18"  cy="55"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-2.8s"/>
+      <circle class="member hit"    cx="-47" cy="34"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.3s"/>
+      <circle class="member hit"    cx="-47" cy="-34" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-2.8s"/>
+      <circle class="member hit ai" cx="18"  cy="-55" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.3s"/>
       <circle class="core action" r="7.5" style="animation-delay:-1.3s"/>
     </g>
 
@@ -788,29 +783,16 @@
     <g transform="translate(220,430)">
       <circle class="wave s" r="48" style="animation-delay:-2.7s"/>
       <circle class="wave s" r="48" style="animation-delay:-1.7s"/>
+      <circle class="member hit"    cx="42"  cy="0"   r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-2.7s"/>
+      <circle class="member hit ai" cx="0"   cy="42"  r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-1.7s"/>
+      <circle class="member hit"    cx="-42" cy="0"   r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-2.7s"/>
+      <circle class="member hit"    cx="0"   cy="-42" r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-1.7s"/>
       <circle class="core sub-core" r="6" style="animation-delay:-2.7s"/>
     </g>
 
     <!-- shared members: sit ON the vessels, feel both beats -->
     <circle class="member shared" cx="570" cy="375" r="5"/>
     <circle class="member shared ai" cx="880" cy="405" r="5"/>
-
-    <!-- root members -->
-    <circle class="member" cx="800" cy="540" r="4.5"/>
-    <circle class="member ai" cx="660" cy="555" r="4.5"/>
-    <circle class="member" cx="790" cy="375" r="4.5"/>
-    <!-- Action A members -->
-    <circle class="member" cx="360" cy="225" r="4"/>
-    <circle class="member ai" cx="470" cy="215" r="4"/>
-    <!-- Action B members -->
-    <circle class="member ai" cx="1110" cy="290" r="4"/>
-    <circle class="member" cx="1095" cy="430" r="4"/>
-    <!-- Action C members -->
-    <circle class="member" cx="565" cy="785" r="4"/>
-    <circle class="member ai" cx="720" cy="780" r="4"/>
-    <!-- Sub-action members -->
-    <circle class="member" cx="160" cy="375" r="3.5"/>
-    <circle class="member ai" cx="170" cy="495" r="3.5"/>
   </svg>
 </div>
 
@@ -867,20 +849,8 @@
       <a href="/guide.html" class="btn btn-soft">Read the friendly guide</a>
       <a href="/kbz/viewer/" class="btn btn-soft">See a community in action →</a>
     </div>
-
-    <!-- Animated illustration: a community pulsing -->
-    <div class="pulse-illustration" aria-hidden="true">
-      <div class="pulse-ring"></div>
-      <div class="pulse-ring"></div>
-      <div class="pulse-ring"></div>
-      <div class="pulse-member"></div>
-      <div class="pulse-member ai"></div>
-      <div class="pulse-member"></div>
-      <div class="pulse-member"></div>
-      <div class="pulse-member ai"></div>
-      <div class="pulse-member"></div>
-      <div class="pulse-center"></div>
-    </div>
+    <!-- (hero pulse-illustration removed — the living .site-bg organism
+         now carries the pulse motif across the whole page.) -->
   </div>
 </section>
 
