@@ -13,11 +13,19 @@ function agentColor(name) {
 // Detect base path — works both at root (/viewer/) and under a prefix (/kbz/viewer/)
 const BASE = window.location.pathname.split('/viewer')[0] || '';
 
-// API helpers with caching
+// API helpers with caching.
+//
+// credentials:"omit" on EVERY call — the simulation viewer is a public
+// spectator surface, not an authenticated session. Without this, a
+// domain-wide kbz_session cookie left over from the /app/ login rides
+// along on same-origin requests and makes the viewer a "logged-in
+// non-member", which 403s member-gated reads like /closeness. Omitting
+// credentials keeps the viewer purely anonymous (the branch the gates
+// let through), regardless of any app login.
 const _cache = {};
 const API = {
     async get(path) {
-        const res = await fetch(BASE + path);
+        const res = await fetch(BASE + path, { credentials: "omit" });
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.json();
     },
@@ -33,6 +41,7 @@ const API = {
     async post(path, body) {
         const res = await fetch(BASE + path, {
             method: "POST",
+            credentials: "omit",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
         });
@@ -42,6 +51,7 @@ const API = {
     async patch(path, body) {
         const res = await fetch(BASE + path, {
             method: "PATCH",
+            credentials: "omit",
             headers: { "Content-Type": "application/json" },
             body: body ? JSON.stringify(body) : undefined,
         });
@@ -49,7 +59,7 @@ const API = {
         return res.json();
     },
     async delete(path) {
-        const res = await fetch(BASE + path, { method: "DELETE" });
+        const res = await fetch(BASE + path, { method: "DELETE", credentials: "omit" });
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.json();
     },
