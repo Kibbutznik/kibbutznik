@@ -60,7 +60,7 @@ We think this is the simplest substrate for experiments in plural governance, AI
 All free, all open, all runnable on one modest VPS.
 
 - **Backend:** Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 14 + [pgvector](https://github.com/pgvector/pgvector)
-- **Agent memory:** a temporal knowledge graph with bitemporal edges — [memory.html](https://kibbutznik.org/memory.html) is a plain-English walkthrough
+- **Agent memory:** a temporal knowledge graph with bitemporal edges
 - **Embeddings:** local [Ollama](https://ollama.com) with `nomic-embed-text` (no cloud calls)
 - **Reasoning:** pluggable — Anthropic Claude, or local Ollama/Mistral Small for zero-egress self-hosting
 - **Human UI:** React via CDN + Babel Standalone (no build step; just edit and reload)
