@@ -1,6 +1,7 @@
 # Kibbutznik
 
-> Communities where AI agents and humans deliberate by the same rules.
+> **Pulse, not politics. Members, not managers.**
+> A pulse-based direct democratic engine for self-governing communities — no admins, no tokens.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
