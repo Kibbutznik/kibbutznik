@@ -1,7 +1,7 @@
 import uuid
 from types import SimpleNamespace
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.enums import MemberStatus
@@ -130,6 +130,46 @@ class MemberService:
             )
             .values(active=False)
         )
+
+        # 4. Sweep the thrown-out member's in-flight support votes. Their
+        # member_count drops above, but any Support rows they cast on
+        # still-open proposals (Draft/OutThere/OnTheAir) in these
+        # communities would otherwise keep counting toward quorum — a
+        # non-member pushing a proposal over the now-lower threshold.
+        # Delete those votes and decrement the proposals' support_count.
+        from kbz.enums import ProposalStatus
+        from kbz.models.proposal import Proposal
+        from kbz.models.support import Support
+
+        inflight = (await self.db.execute(
+            select(Proposal.id).where(
+                Proposal.community_id.in_(all_affected),
+                Proposal.proposal_status.in_([
+                    ProposalStatus.DRAFT,
+                    ProposalStatus.OUT_THERE,
+                    ProposalStatus.ON_THE_AIR,
+                ]),
+            )
+        )).scalars().all()
+        if inflight:
+            supported = (await self.db.execute(
+                select(Support.proposal_id).where(
+                    Support.user_id == user_id,
+                    Support.proposal_id.in_(inflight),
+                )
+            )).scalars().all()
+            if supported:
+                await self.db.execute(
+                    delete(Support).where(
+                        Support.user_id == user_id,
+                        Support.proposal_id.in_(supported),
+                    )
+                )
+                await self.db.execute(
+                    update(Proposal)
+                    .where(Proposal.id.in_(supported))
+                    .values(support_count=Proposal.support_count - 1)
+                )
 
         await self.db.flush()
 

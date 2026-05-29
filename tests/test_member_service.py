@@ -143,3 +143,43 @@ async def test_create_duplicate_member_is_idempotent_no_double_count(db):
     assert count_after_second == count_after_first, (
         "duplicate member create must not double-count"
     )
+
+
+@pytest.mark.asyncio
+async def test_throw_out_sweeps_stale_support_votes(db):
+    """Regression (audit P1 #6): a thrown-out member's Support rows on
+    still-open proposals used to survive and keep counting toward quorum
+    — a non-member pushing a proposal over the now-lower threshold.
+    throw_out must delete those votes and decrement support_count."""
+    import uuid as _uuid
+    from kbz.enums import ProposalStatus, ProposalType
+    from kbz.models.proposal import Proposal
+    from kbz.models.support import Support
+
+    founder = await _mk_user(db, "sweep-founder")
+    joiner = await _mk_user(db, "sweep-joiner")
+    community = await _mk_community(db, founder.id)
+    svc = MemberService(db)
+    await svc.create(community.id, joiner.id)
+    await db.flush()
+
+    # An open proposal the joiner supports.
+    prop = Proposal(
+        id=_uuid.uuid4(), community_id=community.id, user_id=founder.id,
+        proposal_type=ProposalType.ADD_STATEMENT, proposal_status=ProposalStatus.OUT_THERE,
+        proposal_text="x", val_text="x", age=0, support_count=1,
+    )
+    db.add(prop)
+    db.add(Support(user_id=joiner.id, proposal_id=prop.id, support_value=1))
+    await db.flush()
+
+    await svc.throw_out(community.id, joiner.id)
+    await db.flush()
+
+    # The joiner's support row is gone and support_count dropped to 0.
+    remaining = (await db.execute(
+        select(Support).where(Support.proposal_id == prop.id, Support.user_id == joiner.id)
+    )).scalar_one_or_none()
+    assert remaining is None, "thrown-out member's support vote must be deleted"
+    refreshed = (await db.execute(select(Proposal).where(Proposal.id == prop.id))).scalar_one()
+    assert refreshed.support_count == 0, "support_count must drop when a stale vote is swept"
