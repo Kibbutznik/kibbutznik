@@ -179,11 +179,11 @@ jerk, you'll see it before anyone has to "investigate."
 
 ### Q9. "How much does running the AI cost?"
 
-The live public sim runs on OpenRouter's `mistral-small-2603` and lands
-at roughly $10–30/month for 24/7 operation with 6 bots. You can swap
-to local Ollama for $0; the UI has a one-click LLM picker. There's a
-monthly spend cap configured in OpenRouter so a runaway loop can't
-spike a card.
+The public demo runs on OpenRouter's `mistral-small-2603`. It's idle
+(paused) until a visitor presses play, then runs a bounded ~100-step burst
+at one LLM call every ~10s and auto-pauses — so it costs near-nothing at
+rest and the per-run spend is capped by design (no unbounded 24/7 burn).
+You can also run it on local Ollama for $0; the model is a one-flag swap.
 
 ### Q10. "Is this a research project, or do you want me to actually use it?"
 
@@ -191,6 +191,26 @@ Both, honestly. Real humans can sign up at /app/ and run their own
 kibbutz right now — that's the primary product. But it's also a
 substrate for plural-governance and AI-augmented-coop experiments,
 and I'd love it if researchers picked it apart.
+
+### Q11. "Isn't this just PolicyKit / what about the Metagov crowd?"
+
+PolicyKit (the academic governance-as-code project) is the closest prior
+art and a genuine inspiration, but it's a research prototype whose active
+development largely stopped around 2023 and never shipped a hosted product.
+Kibbutznik is a running product with a live 24/7 demo and a real
+deploy story. I see the Metagov / RadicalxChange / plural-governance orbit
+as allies, not competitors — happy to submit to their tool registries and
+compare notes.
+
+### Q12. "Isn't DAO / governance tooling a crowded, solved space?"
+
+The token-governance corner is actually contracting — Tally, the biggest
+dedicated DAO-governance platform, shut down in early 2026, with its team
+noting demand was driven more by regulatory-avoidance than by groups
+genuinely wanting better collective decisions. That's exactly the gap
+Kibbutznik aims at: membership is earned by showing up, not bought with
+tokens; the substrate is a plain Postgres DB, not a chain. Different
+problem, different shape.
 
 ---
 
