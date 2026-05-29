@@ -193,6 +193,31 @@ class InviteService:
                 community_id=invite.community_id,
             )
 
+        # Global membership cap: mirror ProposalService.create's
+        # MEMBERSHIP_GLOBAL_CAP. The per-community dedupe above doesn't stop
+        # one applicant from holding many concurrent Membership proposals
+        # across DIFFERENT communities via many invite links — claim() builds
+        # the Proposal by hand and bypassed ProposalService.create's global
+        # gate entirely. Re-apply it here.
+        from kbz.services.proposal_service import MEMBERSHIP_GLOBAL_CAP
+        from sqlalchemy import func as _func
+        global_count = (
+            await self.db.execute(
+                select(_func.count())
+                .select_from(Proposal)
+                .where(
+                    Proposal.proposal_type == ProposalType.MEMBERSHIP,
+                    _func.coalesce(Proposal.val_uuid, Proposal.user_id) == user.id,
+                    Proposal.proposal_status.in_(_ACTIVE_DEDUPE_STATUSES),
+                )
+            )
+        ).scalar_one()
+        if global_count >= MEMBERSHIP_GLOBAL_CAP:
+            raise ValueError(
+                f"membership cap: applicant already has {global_count} in-flight "
+                f"Membership proposals across the platform (max {MEMBERSHIP_GLOBAL_CAP})"
+            )
+
         # Draft + submit a Membership proposal so the existing pulse machinery
         # handles the vote. Agents will see it in their next snapshot and
         # vote on it like any other proposal.
