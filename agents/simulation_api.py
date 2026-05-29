@@ -3,15 +3,51 @@ FastAPI router for managing simulations and interviewing agents.
 Mount this on the main app when running simulations.
 """
 import asyncio
+import hmac
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Callable, Awaitable
 
 from agents.orchestrator import Orchestrator
+from kbz.config import settings
+from kbz.request_ip import client_ip
+from kbz.services.rate_limit import magic_link_limiter
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 log = logging.getLogger("simulation")
+
+
+# ── Access guards ────────────────────────────────────────
+# The simulation control surface is mounted on the PUBLIC app (behind the
+# /kbz/ proxy). Read-only GETs stay open for the spectator viewer. Writes
+# split two ways:
+#   • Operator-only (destructive / config / forced-LLM): restart, run-round,
+#     set-llm, chat — gated on the X-KBZ-Agent-Secret header.
+#   • Public cost-levers (the demo's own controls): resume + interview each
+#     trigger LLM spend, so they stay anonymous-usable but per-IP rate-
+#     limited. pause and all GETs are free.
+def _require_operator(request: Request) -> None:
+    """Allow only callers carrying the agent secret. When no secret is
+    configured (local dev / tests) this is permissive, matching
+    enforce_session_matches_body's philosophy — prod sets the secret."""
+    secret = settings.agent_api_secret
+    if not secret:
+        return
+    provided = request.headers.get("X-KBZ-Agent-Secret")
+    if not (provided and hmac.compare_digest(provided, secret)):
+        raise HTTPException(status_code=403, detail="operator only")
+
+
+def _rate_limit(request: Request, bucket: str, limit: int, window_s: int = 3600) -> None:
+    ip = client_ip(request)
+    hit = magic_link_limiter.check(key=f"{bucket}:{ip}", limit=limit, window_s=window_s)
+    if not hit.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests — give it a minute.",
+            headers={"Retry-After": str(hit.retry_after_s)},
+        )
 
 # ── Global state ────────────────────────────────────────
 _orchestrator: Orchestrator | None = None
@@ -113,21 +149,27 @@ async def list_agents():
 
 @router.post("/pause")
 async def pause_simulation():
+    # Harmless (just stops spend); left fully public.
     orch = get_orchestrator()
     orch.pause()
     return {"paused": True}
 
 
 @router.post("/resume")
-async def resume_simulation():
+async def resume_simulation(request: Request):
+    # Public Play button. Each resume can drive up to auto_pause_every events
+    # of LLM spend, so cap per-IP — a real watcher presses Play a handful of
+    # times an hour; a script that tries to keep the sim running 24/7 gets cut.
+    _rate_limit(request, "sim-resume", limit=6)
     orch = get_orchestrator()
     orch.resume()
     return {"paused": False}
 
 
 @router.post("/restart")
-async def restart_simulation():
+async def restart_simulation(request: Request):
     """Stop the running simulation, wipe the DB, and start fresh — same config, no server restart."""
+    _require_operator(request)  # destructive (DB wipe) — operator only
     global _restarting
     if _restarting:
         raise HTTPException(status_code=409, detail="Restart already in progress")
@@ -153,7 +195,9 @@ async def _do_restart():
 # ── Interview ────────────────────────────────────────────
 
 @router.post("/interview", response_model=InterviewResponse)
-async def interview_agent(req: InterviewRequest):
+async def interview_agent(req: InterviewRequest, request: Request):
+    # Public viewer feature, but each interview is a live LLM call — per-IP cap.
+    _rate_limit(request, "sim-interview", limit=15)
     orch = get_orchestrator()
     answer = await orch.interview_agent(req.agent_name, req.question)
     return InterviewResponse(agent_name=req.agent_name, answer=answer)
@@ -162,8 +206,9 @@ async def interview_agent(req: InterviewRequest):
 # ── Chat ─────────────────────────────────────────────────
 
 @router.post("/chat")
-async def post_chat(req: ChatMessageRequest):
+async def post_chat(req: ChatMessageRequest, request: Request):
     """Post a message to the community chat as Big Brother (the viewer operator)."""
+    _require_operator(request)  # posts as the operator account — operator only
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     orch = get_orchestrator()
@@ -232,7 +277,8 @@ async def get_llm():
 
 
 @router.post("/llm")
-async def set_llm(req: LLMSwitchRequest):
+async def set_llm(req: LLMSwitchRequest, request: Request):
+    _require_operator(request)  # switches the live model/backend — operator only
     orch = get_orchestrator()
     if req.preset not in LLM_PRESETS:
         raise HTTPException(status_code=400, detail=f"Unknown preset '{req.preset}'. Available: {list(LLM_PRESETS)}")
@@ -244,7 +290,8 @@ async def set_llm(req: LLMSwitchRequest):
 # ── Manual round ─────────────────────────────────────────
 
 @router.post("/run-round")
-async def run_one_round():
+async def run_one_round(request: Request):
+    _require_operator(request)  # forces a full LLM round — operator only
     orch = get_orchestrator()
     events = await orch.run_round()
     return {

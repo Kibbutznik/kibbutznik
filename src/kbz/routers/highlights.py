@@ -13,11 +13,12 @@ caching is a free DoS vector.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,10 @@ router = APIRouter(prefix="", tags=["highlights"])
 
 _CACHE: dict[str, Any] = {"ts": 0.0, "payload": None}
 _CACHE_TTL_S = 30.0
+# Serializes cache rebuilds. Without it, N concurrent requests arriving on a
+# cold/expired cache each run the (multi-query, per-row root-walk) build — a
+# thundering herd that can exhaust the connection pool under an HN spike.
+_CACHE_LOCK = asyncio.Lock()
 
 # Proposal types that are "interesting" for the public highlight
 # reel. Membership / JoinAction / EndAction are routine plumbing and
@@ -100,8 +105,13 @@ async def _root_id_of(db: AsyncSession, community_id: uuid.UUID) -> uuid.UUID:
     return cid
 
 
+def _sliced(payload: dict, limit: int) -> dict:
+    return {**payload, "highlights": payload.get("highlights", [])[:limit]}
+
+
 @router.get("/highlights")
 async def get_highlights(
+    response: Response,
     limit: int = Query(8, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
 ):
@@ -112,23 +122,33 @@ async def get_highlights(
     Cached for 30s — the calling page (welcome.html) doesn't need
     sub-second freshness, and this endpoint is unauthenticated.
     """
-    now = time.time()
-    # Always BUILD the cache at the max allowed limit (the Query le=20),
-    # then slice down per request. Previously the cache was built at the
-    # first caller's `limit`, so a caller asking for 20 right after a
-    # caller asking for 6 silently got only 6 for the whole TTL.
-    build_limit = 20
-    if _CACHE["payload"] is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
-        cached = _CACHE["payload"]
-        # Honor the requested `limit` by slicing the full cached payload.
-        return {**cached, "highlights": cached.get("highlights", [])[:limit]}
+    # Public read — let the browser/CDN cache it too, matching the TTL.
+    response.headers["Cache-Control"] = "public, max-age=30"
 
+    now = time.time()
+    # Fast path: serve a warm cache without taking the lock.
+    if _CACHE["payload"] is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
+        return _sliced(_CACHE["payload"], limit)
+
+    # Cold/expired: serialize the rebuild so only ONE request does the
+    # expensive work; the rest await the lock and hit the re-check below.
+    async with _CACHE_LOCK:
+        now = time.time()
+        if _CACHE["payload"] is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
+            return _sliced(_CACHE["payload"], limit)
+        payload = await _build_highlights_payload(db)
+        _CACHE["ts"] = time.time()
+        _CACHE["payload"] = payload
+    return _sliced(payload, limit)
+
+
+async def _build_highlights_payload(db: AsyncSession) -> dict:
+    """The expensive build — runs only under _CACHE_LOCK. Always builds at
+    the max allowed limit (Query le=20) so callers can slice down."""
+    build_limit = 20
     public_roots = await _public_root_ids(db)
     if not public_roots:
-        payload = {"highlights": [], "total_public_roots": 0}
-        _CACHE["ts"] = now
-        _CACHE["payload"] = payload
-        return payload
+        return {"highlights": [], "total_public_roots": 0}
 
     # Pull ~3x the build target from DB; we'll filter the uninteresting
     # types client-side and trim to `build_limit`, then cache the full
@@ -305,8 +325,4 @@ async def get_highlights(
         if len(out) >= build_limit:
             break
 
-    payload = {"highlights": out, "total_public_roots": len(public_roots)}
-    _CACHE["ts"] = now
-    _CACHE["payload"] = payload
-    # Slice the full (cached) payload down to what this caller asked for.
-    return {**payload, "highlights": out[:limit]}
+    return {"highlights": out, "total_public_roots": len(public_roots)}
