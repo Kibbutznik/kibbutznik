@@ -9,15 +9,17 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kbz.auth_deps import require_user
 from kbz.database import get_db
 from kbz.models.user import User
+from kbz.request_ip import client_ip
 from kbz.schemas.tkg import EdgeOut, NeighborOut, SemanticHit, SemanticSearchIn
 from kbz.services.embedding_service import EmbeddingService
+from kbz.services.rate_limit import magic_link_limiter
 
 router = APIRouter(prefix="/tkg", tags=["tkg"])
 
@@ -223,11 +225,22 @@ async def timeline(
 @router.post("/semantic_search", response_model=list[SemanticHit])
 async def semantic_search(
     body: SemanticSearchIn,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> list[SemanticHit]:
     """Embed `body.query` via Ollama, then run a pgvector cosine KNN against
     tkg_embeddings, optionally filtered by community_id / round window / kind.
     """
+    # Each call triggers an Ollama embedding HTTP call + a pgvector KNN. The
+    # endpoint isn't used by any public surface, but it's reachable through
+    # the /kbz/ proxy, so cap it per-IP to prevent anonymous resource burn.
+    ip = client_ip(request)
+    hit = magic_link_limiter.check(key=f"tkg-search:{ip}", limit=30, window_s=3600)
+    if not hit.allowed:
+        raise HTTPException(
+            status_code=429, detail="Too many searches — try again later.",
+            headers={"Retry-After": str(hit.retry_after_s)},
+        )
     if not body.query or not body.query.strip():
         raise HTTPException(status_code=400, detail="query must be non-empty")
 
