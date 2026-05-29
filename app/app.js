@@ -987,8 +987,8 @@ function DashboardPage({ user }) {
                                 <div className="row" style={{ justifyContent: "space-between" }}>
                                     <div>
                                         <div className="bold">{a.community_name}</div>
-                                        <div className="muted">
-                                            {a.status} · support {a.support_count} · age {a.age}
+                                        <div className="muted" title={a.status}>
+                                            {PROPOSAL_STATUS_LABEL[a.status] || a.status} · support {a.support_count} · {a.age} {a.age === 1 ? "pulse" : "pulses"} old
                                         </div>
                                     </div>
                                     <WithdrawBtn proposalId={a.proposal_id} userId={user.user_id}
@@ -1983,9 +1983,11 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
                  onClick={(e) => e.stopPropagation()}>
                 <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.6rem" }}>
                     <div className="row">
-                        <span className="pill" style={{ background: `${color}22`, color }}>{proposal.proposal_type}</span>
-                        <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }}>
-                            {proposal.proposal_status}
+                        <span className="pill" style={{ background: `${color}22`, color }} title={proposal.proposal_type}>
+                            {(PROPOSAL_TYPE_META[proposal.proposal_type] || {}).label || proposal.proposal_type}
+                        </span>
+                        <span className="pill" style={{ background: "transparent", border: `1px solid ${color}`, color }} title={proposal.proposal_status}>
+                            {PROPOSAL_STATUS_LABEL[proposal.proposal_status] || proposal.proposal_status}
                         </span>
                     </div>
                     <button className="btn ghost" onClick={onClose}
@@ -2570,13 +2572,13 @@ function MemberDetailModal({ userId, seed, communityId, members, onClose }) {
                                     }}>
                                         <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem" }}>
                                             <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                                                <span className="muted" style={{ fontSize: "0.75rem", marginRight: 6 }}>
-                                                    {p.proposal_type}
+                                                <span className="muted" style={{ fontSize: "0.75rem", marginRight: 6 }} title={p.proposal_type}>
+                                                    {(PROPOSAL_TYPE_META[p.proposal_type] || {}).label || p.proposal_type}
                                                 </span>
                                                 {title.slice(0, 80)}{title.length > 80 ? "…" : ""}
                                             </div>
-                                            <span className="muted" style={{ fontSize: "0.75rem" }}>
-                                                {p.proposal_status}
+                                            <span className="muted" style={{ fontSize: "0.75rem" }} title={p.proposal_status}>
+                                                {PROPOSAL_STATUS_LABEL[p.proposal_status] || p.proposal_status}
                                             </span>
                                         </div>
                                     </div>

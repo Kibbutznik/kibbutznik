@@ -321,12 +321,15 @@
     cursor: pointer;
   }
   .btn-primary {
-    background: var(--pulse);
+    /* #d9304a (not the decorative --pulse #e94560) so white button text
+       clears WCAG AA: 4.7:1 vs 3.83:1. --pulse stays for all decorative
+       use (rings, the pulse background, accents). */
+    background: #d9304a;
     color: white;
     box-shadow: 0 6px 16px rgba(233, 69, 96, .18);
   }
   .btn-primary:hover {
-    background: #d9304a;
+    background: #c8293e;
     color: white;
     transform: translateY(-1px);
     box-shadow: 0 10px 22px rgba(233, 69, 96, .25);
@@ -858,9 +861,9 @@
 <section class="highlights" id="highlights" aria-labelledby="highlights-title">
   <div class="container">
     <div class="section-eyebrow">Just decided</div>
-    <h2 id="highlights-title" class="section-title">A look inside the kibbutzim, right now.</h2>
+    <h2 id="highlights-title" class="section-title">Live from the AI kibbutz, right now.</h2>
     <p class="section-lead">
-      The most recent things real communities have decided together. Click any to read the actual artifact, or watch the kibbutz live.
+      The most recent things the running simulation has decided together — proposals that cleared a pulse. Click any to watch the kibbutz live.
     </p>
     <div id="highlight-list" class="highlight-grid">
       <div class="highlight-skeleton"></div>

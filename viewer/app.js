@@ -1872,7 +1872,8 @@ function isOperatorView() {
 // The public demo boots paused and auto-pauses after each bounded run, so
 // the viewer drives it. This full-screen overlay is the single, obvious
 // "start the run" affordance — shown whenever the sim is paused.
-function PlayOverlay({ onPlay }) {
+function PlayOverlay({ onPlay, memberCount }) {
+    const who = memberCount ? `${memberCount} AI members` : "AI members";
     return (
         <div
             style={{
@@ -1901,7 +1902,7 @@ function PlayOverlay({ onPlay }) {
                 Press play to run the kibbutz
             </div>
             <div style={{ marginTop: 10, color: "rgba(255,255,255,0.72)", fontSize: "0.92rem", maxWidth: 440, lineHeight: 1.55 }}>
-                Six AI members will propose, debate, and decide — about one step
+                {who} will propose, debate, and decide — about one step
                 every 10 seconds, for a bounded ~100-step run. Watch it unfold live.
             </div>
         </div>
@@ -3506,12 +3507,12 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity,
             <div className="card-title">Proposals</div>
             <div className="proposal-columns">
                 <div>
-                    <div className="proposal-column-title">On The Air ({onTheAir.length})</div>
+                    <div className="proposal-column-title" title="OnTheAir">{PROPOSAL_STATUS_LABEL.OnTheAir} ({onTheAir.length})</div>
                     {onTheAir.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                     {onTheAir.length === 0 && <div className="empty-state">None</div>}
                 </div>
                 <div>
-                    <div className="proposal-column-title">Out There ({outThere.length})</div>
+                    <div className="proposal-column-title" title="OutThere">{PROPOSAL_STATUS_LABEL.OutThere} ({outThere.length})</div>
                     {outThere.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                     {outThere.length === 0 && <div className="empty-state">None</div>}
                 </div>
@@ -3538,7 +3539,8 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity,
 
 // ── Dashboard Tab ───────────────────────────────────────
 
-function ViewerIntroBanner() {
+function ViewerIntroBanner({ memberCount }) {
+    const who = memberCount ? `${memberCount} AI members` : "AI members";
     const KEY = "kbz.viewer.intro.dismissed.v1";
     const [dismissed, setDismissed] = useState(() => {
         try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
@@ -3569,7 +3571,7 @@ function ViewerIntroBanner() {
             <div style={{ flex: 1, color: "var(--text-primary)" }}>
                 <strong>You're watching a live AI kibbutz.</strong>{" "}
                 <span style={{ color: "var(--text-secondary)" }}>
-                    Six AI members are running a self-governing community —
+                    {who} are running a self-governing community —
                     drafting proposals, supporting each other, occasionally
                     throwing someone out. Every event below is happening right
                     now. Click any member or proposal for the details.
@@ -3610,7 +3612,7 @@ function DashboardTab({ status, events, proposals, pulses, restarting, openDetai
              * choice is remembered in localStorage so returning operators
              * don't see it. Drops the "is this just data?" tax that the
              * dashboard otherwise carries. */}
-            <ViewerIntroBanner />
+            <ViewerIntroBanner memberCount={status?.community?.member_count} />
             <div className="dashboard-grid">
                 <CommunityOverview status={status} pulses={pulses} openDetail={openDetail} communityId={communityId} overrideCommunity={activeCommunity} />
                 <ProposalBoard proposals={proposals} openDetail={openDetail} pulses={pulses} status={status} activeCommunity={activeCommunity} agentsByUserId={agentsByUserId} />
@@ -5172,7 +5174,7 @@ function App() {
                 onRestart={handleRestart}
                 restarting={restarting}
             />
-            {paused && !restarting && <PlayOverlay onPlay={handleTogglePause} />}
+            {paused && !restarting && <PlayOverlay onPlay={handleTogglePause} memberCount={status?.community?.member_count} />}
             <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} agentsByName={agentsByName} />
             {/* Auth UI suppressed from the simulation viewer. The simulation
                 is spectator-only; real human accounts and invites live in
