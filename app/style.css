@@ -33,6 +33,21 @@
 
 * { box-sizing: border-box; }
 
+/* Keyboard skip-link: visually hidden until focused, then pinned top-left.
+   Lets keyboard/screen-reader users jump past the header to the page body. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 var(--radius) 0;
+  text-decoration: none;
+}
+.skip-link:focus { left: 0; }
+
 html, body {
   margin: 0;
   font-family: var(--font-sans);

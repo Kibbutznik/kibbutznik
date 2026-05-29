@@ -399,6 +399,25 @@ function useHashRoute() {
 }
 function navigate(hash) { window.location.hash = hash; }
 
+// Redirect to login, remembering where the user was headed so we can send
+// them back after they verify (instead of always dumping them on the
+// dashboard — they lose the community/page they came from otherwise).
+function gotoLogin() {
+    try {
+        const here = window.location.hash || "";
+        if (here && !here.startsWith("#/login")) sessionStorage.setItem("kbz.returnTo", here);
+    } catch {}
+    navigate("#/login");
+}
+function consumeReturnTo(fallback = "#/dashboard") {
+    try {
+        const t = sessionStorage.getItem("kbz.returnTo");
+        sessionStorage.removeItem("kbz.returnTo");
+        if (t && t.startsWith("#/")) return t;
+    } catch {}
+    return fallback;
+}
+
 // ── Auth hook ───────────────────────────────────────────
 function useAuth() {
     const [user, setUser]   = useState(null);
@@ -594,7 +613,7 @@ function LoginPage({ onLoggedIn }) {
         try {
             await api.get(devLink);
             await onLoggedIn();
-            navigate("#/dashboard");
+            navigate(consumeReturnTo());
         } catch (err) { setError(err.message); }
     };
 
@@ -1350,7 +1369,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
     const membershipFee = parseFloat(variables?.membershipFee || "0") || 0;
 
     const openApply = () => {
-        if (!user) { navigate("#/login"); return; }
+        if (!user) { gotoLogin(); return; }
         setApplyPitch("");
         setApplyOpen(true);
     };
@@ -1441,7 +1460,9 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                 </div>
             )}
             <ErrorBanner error={error} />
-            <div className="row" style={{ margin: "1rem 0", borderBottom: "1px solid var(--border)" }}>
+            {/* tab-strip (not row): scrolls horizontally on mobile instead of
+                wrapping the tabs onto multiple lines. */}
+            <div className="tab-strip" style={{ margin: "1rem 0", borderBottom: "1px solid var(--border)" }} role="tablist">
                 {(() => {
                     const base = [
                         "proposals", "chat", "members",
@@ -1990,7 +2011,7 @@ function ProposalDetailModal({ proposal, user, imMember, onClose, onChanged }) {
                             {PROPOSAL_STATUS_LABEL[proposal.proposal_status] || proposal.proposal_status}
                         </span>
                     </div>
-                    <button className="btn ghost" onClick={onClose}
+                    <button className="btn ghost" onClick={onClose} aria-label="Close"
                             style={{ fontSize: "1.2rem", padding: "0 0.5rem" }}>×</button>
                 </div>
                 <h3 style={{ marginTop: 0 }}>
@@ -2102,7 +2123,7 @@ const GLOSSARY = {
     },
     Pulse: {
         title: "Pulse",
-        body: "The moment your kibbutz decides. Nothing moves between rounds — proposals just gather support. When enough members call \"support_pulse\", the pulse fires and ALL pending decisions resolve at once.",
+        body: "The moment your kibbutz decides. Nothing moves between rounds — proposals just gather support. When enough members back the pulse (the \"Support pulse\" button), it fires and ALL pending decisions resolve at once.",
     },
     Threshold: {
         title: "Threshold",
@@ -2511,7 +2532,7 @@ function MemberDetailModal({ userId, seed, communityId, members, onClose }) {
                             )}
                         </div>
                     </div>
-                    <button className="btn ghost" onClick={onClose}
+                    <button className="btn ghost" onClick={onClose} aria-label="Close"
                             style={{ fontSize: "1.2rem", padding: "0 0.5rem" }}>×</button>
                 </div>
 
@@ -2811,7 +2832,7 @@ function ArtifactsPanel({ communityId, members }) {
         return (
             <Empty title="No artifacts yet">
                 Artifacts are the concrete outputs a community produces — specs, contracts,
-                decision docs. File a <code>ProposeArtifact</code> proposal via{" "}
+                decision docs. File a <code>CreateArtifact</code> proposal via{" "}
                 <strong>+ New proposal</strong> above to start one.
             </Empty>
         );
@@ -3463,7 +3484,7 @@ function InviteClaimPage({ code, onLoggedIn }) {
         try {
             await api.get(verifyLink);
             await onLoggedIn();
-            navigate("#/dashboard");
+            navigate(consumeReturnTo());
         } catch (err) { setError(err.message); }
     };
 
@@ -3745,22 +3766,22 @@ function App() {
         if (route.path === "/skills") return <SkillsPage />;
         if (root === "invite" && arg) return <InviteClaimPage code={arg} onLoggedIn={refresh} />;
         if (root === "kibbutz" && arg === "new") {
-            if (!user) { navigate("#/login"); return null; }
+            if (!user) { gotoLogin(); return null; }
             return <CreateKibbutzPage user={user} />;
         }
         if (root === "kibbutz" && arg && sub === "propose") {
-            if (!user) { navigate("#/login"); return null; }
+            if (!user) { gotoLogin(); return null; }
             return <ProposePage communityId={arg} user={user} />;
         }
         if (root === "kibbutz" && arg) {
             return <KibbutzPage communityId={arg} user={user} onRefreshMembership={refresh} />;
         }
         if (route.path === "/dashboard") {
-            if (!user) { navigate("#/login"); return null; }
+            if (!user) { gotoLogin(); return null; }
             return <DashboardPage user={user} />;
         }
         if (route.path === "/profile") {
-            if (!user) { navigate("#/login"); return null; }
+            if (!user) { gotoLogin(); return null; }
             return <ProfilePage user={user} onRefresh={refresh}
                         onLogout={async () => { await logout(); navigate("#/"); }} />;
         }
@@ -3769,8 +3790,9 @@ function App() {
 
     return (
         <>
+            <a href="#main-content" className="skip-link">Skip to content</a>
             <Header user={user} onLogout={async () => { await logout(); navigate("#/"); }} />
-            {content}
+            <main id="main-content">{content}</main>
             <footer className="app-footer">
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0.4rem 1.1rem", marginBottom: "0.3rem" }}>
                     <a href="/welcome.html">Home</a>
