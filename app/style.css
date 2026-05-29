@@ -101,11 +101,14 @@ header.app-header {
 .btn:hover, a.btn:hover { border-color: var(--accent); box-shadow: var(--shadow); text-decoration: none; }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  /* --accent-hover (#d9304a) not --accent (#e94560): white button text needs
+     WCAG AA 4.5:1, which #e94560 fails (3.83) and #d9304a clears (4.7).
+     --accent stays for decorative use (links, accents, the left border). */
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
   color: white;
 }
-.btn.primary:hover, a.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: white; box-shadow: var(--shadow-hover); }
+.btn.primary:hover, a.btn.primary:hover { background: #c8293e; border-color: #c8293e; color: white; box-shadow: var(--shadow-hover); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
 .btn.ghost:hover, a.btn.ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
 /* Disabled styling is distinct enough that users don't mistake the "type your
