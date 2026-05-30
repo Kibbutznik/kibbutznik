@@ -296,6 +296,12 @@ class Agent:
             log.eager_front = decision.eager_front
 
             self.action_history.append(log)
+            # Cap retained history — only the last ~20 are ever read
+            # (slices at [-6:]/[-20:]); keep a little extra headroom and
+            # drop the rest so a long-running agent's history doesn't grow
+            # without bound across a 24/7 sim.
+            if len(self.action_history) > 50:
+                self.action_history = self.action_history[-50:]
             logs.append(log)
 
             logger.info(

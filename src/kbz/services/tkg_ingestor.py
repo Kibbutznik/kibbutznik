@@ -77,7 +77,12 @@ class TKGIngestor:
         self._sf = session_factory
         self._embedder = embedder or EmbeddingService()
         self._queue: asyncio.Queue[Event] | None = None
-        self._embed_queue: asyncio.Queue[_EmbedJob] = asyncio.Queue()
+        # Bounded so put_nowait actually raises QueueFull (handled below)
+        # if the embedder stalls — otherwise an unbounded queue grows
+        # without limit in the 24/7 sim, a slow memory leak. 500 jobs is
+        # ample headroom for normal bursts; past that we drop + warn rather
+        # than OOM.
+        self._embed_queue: asyncio.Queue[_EmbedJob] = asyncio.Queue(maxsize=500)
         self._ingest_task: asyncio.Task | None = None
         self._embed_task: asyncio.Task | None = None
         self._stopping = False
