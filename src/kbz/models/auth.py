@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, text
+from sqlalchemy import DateTime, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,6 +54,14 @@ class AuthToken(Base):
     # tell their tokens apart in the management UI. NULL otherwise.
     name: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
+    # Mirror the migration (e0c1d2e3f4a5_human_auth) so create_all (the
+    # test DB) builds the SAME constraints as prod. Without this the
+    # security-critical token_hash uniqueness was never exercised in tests.
+    __table_args__ = (
+        Index("ix_auth_tokens_token_hash", "token_hash", unique=True),
+        Index("ix_auth_tokens_user_id", "user_id"),
+    )
+
 
 class Invite(Base):
     """An invite-link for a community. One-shot: claimed_by_user_id is set
@@ -87,4 +95,11 @@ class Invite(Base):
     )
     claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # Mirror the migration so create_all (test DB) matches prod —
+    # invite_code uniqueness was otherwise untested.
+    __table_args__ = (
+        Index("ix_invites_invite_code", "invite_code", unique=True),
+        Index("ix_invites_community_id", "community_id"),
     )
