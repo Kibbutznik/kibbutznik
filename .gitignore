@@ -13,3 +13,6 @@ simulation.log
 simulation_stdout.log
 .claude/
 kbz_starter/
+
+# Sim community-id persistence (adopt across restart)
+.sim_community_*.id
