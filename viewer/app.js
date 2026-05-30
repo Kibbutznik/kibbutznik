@@ -1872,7 +1872,7 @@ function isOperatorView() {
 // The public demo boots paused and auto-pauses after each bounded run, so
 // the viewer drives it. This full-screen overlay is the single, obvious
 // "start the run" affordance — shown whenever the sim is paused.
-function PlayOverlay({ onPlay, memberCount }) {
+function PlayOverlay({ onPlay, onBrowse, memberCount, hasData }) {
     const who = memberCount ? `${memberCount} AI members` : "AI members";
     return (
         <div
@@ -1883,7 +1883,6 @@ function PlayOverlay({ onPlay, memberCount }) {
                 background: "rgba(15,15,28,0.84)", backdropFilter: "blur(3px)",
                 padding: 24, textAlign: "center",
             }}
-            onClick={onPlay}
         >
             <button
                 onClick={(e) => { e.stopPropagation(); onPlay(); }}
@@ -1905,6 +1904,18 @@ function PlayOverlay({ onPlay, memberCount }) {
                 {who} will propose, debate, and decide — about one step
                 every 10 seconds, for a bounded ~100-step run. Watch it unfold live.
             </div>
+            {onBrowse && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onBrowse(); }}
+                    style={{
+                        marginTop: 26, background: "transparent",
+                        color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.4)",
+                        borderRadius: 8, padding: "9px 18px", cursor: "pointer", fontSize: "0.9rem",
+                    }}
+                >
+                    {hasData ? "Or just browse what's already there →" : "Or look around the (empty) dashboard →"}
+                </button>
+            )}
         </div>
     );
 }
@@ -4937,6 +4948,10 @@ function App() {
     const [proposals, setProposals] = useState([]);
     const [pulses, setPulses] = useState([]);
     const [paused, setPaused] = useState(false);
+    // Browse mode: the viewer dismissed the Play overlay to look at the
+    // existing data WITHOUT starting an LLM-spending run. Independent of
+    // `paused` — the sim stays paused; we just stop blocking the UI.
+    const [browsing, setBrowsing] = useState(false);
     const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
 
@@ -5112,6 +5127,9 @@ function App() {
             if (paused) {
                 await API.post("/simulation/resume", {});
                 setPaused(false);
+                // Reset browse mode so that when the run auto-pauses again,
+                // the Play overlay reappears (offering replay-or-browse).
+                setBrowsing(false);
             } else {
                 await API.post("/simulation/pause", {});
                 setPaused(true);
@@ -5174,7 +5192,28 @@ function App() {
                 onRestart={handleRestart}
                 restarting={restarting}
             />
-            {paused && !restarting && <PlayOverlay onPlay={handleTogglePause} memberCount={status?.community?.member_count} />}
+            {paused && !browsing && !restarting && (
+                <PlayOverlay
+                    onPlay={handleTogglePause}
+                    onBrowse={() => setBrowsing(true)}
+                    memberCount={status?.community?.member_count}
+                    hasData={(status?.total_events || 0) > 0}
+                />
+            )}
+            {paused && browsing && !restarting && (
+                <button
+                    onClick={handleTogglePause}
+                    title="Start a live run"
+                    style={{
+                        position: "fixed", right: 20, bottom: 20, zIndex: 55,
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: "#e94560", color: "#fff", border: "none",
+                        borderRadius: 999, padding: "12px 20px", cursor: "pointer",
+                        fontSize: "0.95rem", fontWeight: 700,
+                        boxShadow: "0 6px 22px rgba(233,69,96,0.5)",
+                    }}
+                >▶ Run the simulation</button>
+            )}
             <NewsTicker openDetail={openDetail} setActiveTab={setActiveTab} agentsByName={agentsByName} />
             {/* Auth UI suppressed from the simulation viewer. The simulation
                 is spectator-only; real human accounts and invites live in
