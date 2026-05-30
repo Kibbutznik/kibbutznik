@@ -58,8 +58,8 @@ class AuthToken(Base):
     # test DB) builds the SAME constraints as prod. Without this the
     # security-critical token_hash uniqueness was never exercised in tests.
     __table_args__ = (
-        Index("ix_auth_tokens_token_hash", "token_hash", unique=True),
-        Index("ix_auth_tokens_user_id", "user_id"),
+        Index("ix_auth_tokens_hash", "token_hash", unique=True),
+        Index("ix_auth_tokens_user_type", "user_id", "token_type"),
     )
 
 
@@ -100,6 +100,6 @@ class Invite(Base):
     # Mirror the migration so create_all (test DB) matches prod —
     # invite_code uniqueness was otherwise untested.
     __table_args__ = (
-        Index("ix_invites_invite_code", "invite_code", unique=True),
-        Index("ix_invites_community_id", "community_id"),
+        Index("ix_invites_code", "invite_code", unique=True),
+        Index("ix_invites_community", "community_id"),
     )

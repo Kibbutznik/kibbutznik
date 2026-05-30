@@ -79,7 +79,7 @@ class BotProfile(Base):
     # endpoint does check-then-insert, which is only race-safe because this
     # DB constraint exists — and it was previously untested.
     __table_args__ = (
-        Index("uq_bot_profiles_user_community", "user_id", "community_id", unique=True),
+        Index("ix_bot_profiles_user_community", "user_id", "community_id", unique=True),
     )
 
 
