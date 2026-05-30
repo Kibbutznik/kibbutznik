@@ -1975,15 +1975,11 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                         <span className="value" style={{ fontSize: "0.75rem" }}>{status.llm.avg_latency_s}s</span>
                     </div>
                 )}
-                {status?.paused && (
-                    <div className="header-stat">
-                        <span className="value" style={{ color: "var(--warning)" }}>PAUSED</span>
-                    </div>
-                )}
-                {/* Pause / Restart are hidden from anonymous viewers — a random
-                 * HN visitor would see scary footgun-coded buttons and possibly
-                 * click. Reveal with ?control=1 on the URL for operator access. */}
-                {onTogglePause && operator && (
+                {/* Play/Pause is for EVERYONE — pause is harmless and resume is
+                 * rate-limited server-side, so a visitor always has a way to
+                 * start, stop, or resume the run. Restart (DB wipe) stays
+                 * operator-only behind ?control=1. */}
+                {onTogglePause && (
                     <div className="header-controls">
                         <button
                             className={`header-ctrl-btn ${paused ? "paused" : ""}`}
@@ -1993,6 +1989,7 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                             <span className="ctrl-icon">{paused ? "▶" : "⏸"}</span>
                             <span className="ctrl-label">{paused ? "Resume" : "Pause"}</span>
                         </button>
+                        {operator && (
                         <button
                             className="header-ctrl-btn restart"
                             onClick={onRestart}
@@ -2001,6 +1998,7 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                         >
                             {restarting ? <><span className="spinner"></span> <span className="ctrl-label">…</span></> : <><span className="ctrl-icon">↺</span><span className="ctrl-label">Restart</span></>}
                         </button>
+                        )}
                     </div>
                 )}
             </div>
