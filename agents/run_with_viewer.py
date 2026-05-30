@@ -434,6 +434,21 @@ Examples:
     # API calls once KBZ_AGENT_API_SECRET is set in prod.
     from kbz.auth_deps import install_agent_auth
     install_agent_auth(combined_app)
+
+    # Force browsers to revalidate the viewer's static assets every load.
+    # StaticFiles only sends an ETag, no Cache-Control, so browsers were
+    # heuristically caching app.js indefinitely — visitors kept running a
+    # stale build (the "Loading…/connecting…/0 members" frozen dashboard
+    # was an old app.js that fetched once and never re-rendered). With
+    # `no-cache` the browser still caches but MUST revalidate against the
+    # ETag, so a deploy is picked up immediately without a hard refresh.
+    @combined_app.middleware("http")
+    async def _viewer_no_stale_cache(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/viewer"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     combined_app.mount("/viewer", StaticFiles(directory=viewer_dir, html=True), name="viewer")
 
     @combined_app.get("/health")
