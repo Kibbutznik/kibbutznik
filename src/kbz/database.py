@@ -16,6 +16,13 @@ from kbz.config import settings
 # pool_recycle=300     : force connection recycling every 5 min so
 #                        we don't accumulate stale connections that
 #                        Postgres has half-closed.
+# pool_timeout=5       : fail fast. If all 40 connections are checked
+#                        out, a new request waits at most 5s for one
+#                        before raising (→ a clean 500/503) instead of
+#                        the SQLAlchemy default 30s. Under a spike,
+#                        queueing 30s just guarantees nginx times out
+#                        the request anyway while the coroutine holds
+#                        resources; failing fast sheds load gracefully.
 engine = create_async_engine(
     settings.database_url,
     echo=False,
@@ -23,6 +30,7 @@ engine = create_async_engine(
     max_overflow=20,
     pool_pre_ping=True,
     pool_recycle=300,
+    pool_timeout=5,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
