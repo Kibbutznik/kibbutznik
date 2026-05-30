@@ -165,22 +165,13 @@ class Orchestrator:
             await agent.register()
             self.agents.append(agent)
 
-        # First agent founds the community
         founder = self.agents[0]
         self.founder_id = founder.user_id
-        community = await self.client.create_community(
-            self.community_name,
-            founder.user_id,
-            initial_artifact_mission=self.mission,
-        )
-        self.community_id = community["id"]
-        founder.community_id = self.community_id
-
-        logger.info(f"Community created: {self.community_name} ({self.community_id})")
-        logger.info(f"Founder: {founder.persona.name}")
 
         # Create the Big Brother observer account used by the viewer operator
-        # to inject messages into the community chat.
+        # to inject messages into the community chat. create_user is
+        # idempotent by username (409 → reuse), so this is safe whether we
+        # adopt or create.
         bb = await self.client.create_user(
             user_name="Big Brother",
             password="bb-observer",
@@ -188,6 +179,52 @@ class Orchestrator:
         )
         self._bb_user_id = str(bb.get("user_id") or bb.get("id"))
         logger.info(f"Big Brother user created: {self._bb_user_id}")
+
+        # ── Adopt an existing community across a process restart ──────────
+        # A deploy runs `systemctl restart kbz`, which re-runs setup(). If
+        # setup() always called create_community(), every restart minted a
+        # fresh EMPTY community and the viewer pointed at it — orphaning the
+        # live community's proposals / members / artifacts / history in the
+        # DB. That reads as "the data resets on every deploy".
+        #
+        # Instead: persist the community id and, on the next startup, ADOPT
+        # it if it still exists — returning before any create / bootstrap /
+        # seed. Agent ids are stable (register() is idempotent by username),
+        # so the adopted community's members already match our agents.
+        # A fresh community is created ONLY when there's nothing to adopt:
+        # the first run ever, or after an explicit wipe (operator
+        # /simulation/restart, or --reset-db).
+        adopted_id = self._read_persisted_community_id()
+        if adopted_id:
+            existing = None
+            try:
+                existing = await self.client.get_community(adopted_id)
+            except Exception:
+                existing = None
+            if existing and existing.get("id"):
+                self.community_id = adopted_id
+                for agent in self.agents:
+                    agent.community_id = self.community_id
+                logger.info(
+                    "Adopted existing community %s (%s) — data preserved across restart",
+                    self.community_id, self.community_name,
+                )
+                await self.refresh_status_cache()
+                return
+
+        # ── Fresh create (first run, or after an explicit wipe) ──────────
+        community = await self.client.create_community(
+            self.community_name,
+            founder.user_id,
+            initial_artifact_mission=self.mission,
+        )
+        self.community_id = community["id"]
+        founder.community_id = self.community_id
+        # Persist so the NEXT restart adopts this community.
+        self._persist_community_id(self.community_id)
+
+        logger.info(f"Community created: {self.community_name} ({self.community_id})")
+        logger.info(f"Founder: {founder.persona.name}")
 
         # Add remaining agents as members through governance
         # For bootstrap, we add them directly via membership proposals that the founder approves
@@ -222,6 +259,34 @@ class Orchestrator:
 
         # Prime the status cache so /simulation/status works immediately.
         await self.refresh_status_cache()
+
+    # ── Community-id persistence (adopt-across-restart) ──────────────────
+    def _community_state_path(self) -> str:
+        """File holding the live community id so a restart can adopt it.
+        Lives in CWD (/opt/kbz in prod, which survives `git checkout -f`
+        deploys); override with KBZ_SIM_COMMUNITY_FILE. Keyed by community
+        name so distinct sims don't clobber each other's id."""
+        import os
+        import re
+        slug = re.sub(r"[^a-z0-9]+", "-", self.community_name.lower()).strip("-")
+        default = f".sim_community_{slug}.id"
+        return os.environ.get("KBZ_SIM_COMMUNITY_FILE", default)
+
+    def _read_persisted_community_id(self) -> str | None:
+        try:
+            with open(self._community_state_path()) as f:
+                return f.read().strip() or None
+        except OSError:
+            return None
+
+    def _persist_community_id(self, community_id) -> None:
+        try:
+            with open(self._community_state_path(), "w") as f:
+                f.write(str(community_id))
+        except OSError as e:
+            logger.warning(
+                "Could not persist sim community id (%s) — next restart will create a fresh community", e
+            )
 
     async def _bootstrap_member(self, agent: Agent) -> None:
         """Add an agent to the community during setup (fast-track membership)."""
