@@ -1882,25 +1882,26 @@ function PlayOverlay({ onPlay, onBrowse, memberCount, hasData }) {
                 alignItems: "center", justifyContent: "center",
                 background: "rgba(15,15,28,0.84)", backdropFilter: "blur(3px)",
                 padding: 24, textAlign: "center",
+                overflowY: "auto", gap: 4,
             }}
         >
             <button
                 onClick={(e) => { e.stopPropagation(); onPlay(); }}
                 aria-label="Start the simulation run"
                 style={{
-                    width: 116, height: 116, borderRadius: "50%", border: "none",
+                    width: 96, height: 96, borderRadius: "50%", border: "none",
                     background: "#e94560", color: "#fff", cursor: "pointer",
-                    fontSize: 46, lineHeight: "116px", paddingLeft: 8,
+                    fontSize: 40, lineHeight: "96px", paddingLeft: 7,
                     boxShadow: "0 12px 44px rgba(233,69,96,0.55)",
-                    transition: "transform .15s ease",
+                    transition: "transform .15s ease", flexShrink: 0,
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.06)")}
                 onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
             >▶</button>
-            <div style={{ marginTop: 24, color: "#fff", fontSize: "1.2rem", fontWeight: 700 }}>
+            <div style={{ marginTop: 18, color: "#fff", fontSize: "1.2rem", fontWeight: 700 }}>
                 Press play to run the kibbutz
             </div>
-            <div style={{ marginTop: 10, color: "rgba(255,255,255,0.72)", fontSize: "0.92rem", maxWidth: 440, lineHeight: 1.55 }}>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: "0.92rem", maxWidth: 440, lineHeight: 1.5 }}>
                 {who} will propose, debate, and decide — about one step
                 every 10 seconds, for a bounded ~100-step run. Watch it unfold live.
             </div>
@@ -1908,9 +1909,10 @@ function PlayOverlay({ onPlay, onBrowse, memberCount, hasData }) {
                 <button
                     onClick={(e) => { e.stopPropagation(); onBrowse(); }}
                     style={{
-                        marginTop: 26, background: "transparent",
-                        color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.4)",
-                        borderRadius: 8, padding: "9px 18px", cursor: "pointer", fontSize: "0.9rem",
+                        marginTop: 18, background: "transparent",
+                        color: "rgba(255,255,255,0.92)", border: "1px solid rgba(255,255,255,0.45)",
+                        borderRadius: 8, padding: "10px 18px", cursor: "pointer", fontSize: "0.92rem",
+                        flexShrink: 0,
                     }}
                 >
                     {hasData ? "Or just browse what's already there →" : "Or look around the (empty) dashboard →"}
