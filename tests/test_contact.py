@@ -102,3 +102,32 @@ async def test_admin_contact_403s_anonymous_even_with_admins(client, monkeypatch
     )
     r = await client.get("/admin/contact")
     assert r.status_code == 403
+
+
+# ── Admin sendmail gate ──────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sendmail_blocked_when_no_admins(client):
+    r = await client.post("/admin/sendmail", json={
+        "to": "x@example.com", "subject": "hi", "body": "yo",
+    })
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_sendmail_blocked_anonymous_even_with_admins(client, monkeypatch):
+    monkeypatch.setattr(
+        config.settings, "admin_user_ids",
+        "11111111-1111-1111-1111-111111111111",
+    )
+    r = await client.post("/admin/sendmail", json={
+        "to": "x@example.com", "subject": "hi", "body": "yo",
+    })
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_sendmail_whoami_reports_non_admin(client):
+    r = await client.get("/admin/sendmail/whoami")
+    assert r.status_code == 200
+    assert r.json()["is_admin"] is False

@@ -21,6 +21,18 @@ class ContactResponse(BaseModel):
     ok: bool
 
 
+class SendMailIn(BaseModel):
+    to: EmailStr
+    subject: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1, max_length=20000)
+    reply_to: EmailStr | None = None
+
+
+class SendMailResponse(BaseModel):
+    ok: bool
+    detail: str | None = None
+
+
 class ContactMessageOut(BaseModel):
     id: uuid.UUID
     name: str | None

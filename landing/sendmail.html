@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Send mail — Kibbutznik (admin)</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700" rel="stylesheet">
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#fdf8f0;--card:#fff;--ink:#2a2520;--ink-soft:#5a5249;--ink-muted:#8a8076;
+        --pulse:#d9304a;--pulse-hover:#c8293e;--sage:#6fa885;--line:#e8dec9;}
+  html,body{background:var(--bg);color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;line-height:1.6;min-height:100vh}
+  body{display:flex;flex-direction:column}
+  a{color:var(--pulse);text-decoration:none}
+  nav{display:flex;align-items:center;gap:10px;padding:16px 24px;border-bottom:1px solid var(--line)}
+  nav .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink)}
+  nav .brand img{width:28px;height:28px}
+  main{flex:1;display:flex;justify-content:center;padding:40px 24px}
+  .card{width:100%;max-width:600px;background:var(--card);border:1px solid var(--line);
+    border-radius:18px;padding:32px}
+  .eyebrow{color:var(--pulse);font-weight:700;font-size:.78rem;letter-spacing:.08em;
+    text-transform:uppercase;margin-bottom:6px}
+  h1{font-size:1.6rem;margin-bottom:6px}
+  .from-line{color:var(--ink-muted);font-size:.9rem;margin-bottom:24px}
+  label{display:block;font-weight:600;font-size:.9rem;margin:0 0 6px}
+  .field{margin-bottom:18px}
+  input[type=text],input[type=email],textarea{width:100%;font:inherit;color:var(--ink);
+    padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:#fffdf9}
+  input:focus,textarea:focus{outline:none;border-color:var(--pulse);
+    box-shadow:0 0 0 3px #fdebee}
+  textarea{resize:vertical;min-height:180px}
+  button{font:inherit;font-weight:600;cursor:pointer;background:var(--pulse);color:#fff;
+    border:none;padding:12px 22px;border-radius:10px;width:100%}
+  button:hover{background:var(--pulse-hover)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .note{margin-top:14px;font-size:.92rem}
+  .note.ok{color:var(--sage)} .note.err{color:var(--pulse)}
+  .gate{text-align:center;color:var(--ink-soft);padding:18px 0}
+  .gate a{font-weight:600}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<nav><a href="/welcome.html" class="brand"><img src="logo.svg" alt="">Kibbutznik</a></nav>
+<main>
+  <div class="card">
+    <div class="eyebrow">Admin</div>
+    <h1>Send an email</h1>
+    <div class="from-line" id="from-line">Checking access…</div>
+
+    <div id="gate" class="gate hidden">
+      This page is for Kibbutznik admins only. Please
+      <a href="/app/#/login">sign in</a> with an admin account, then reload.
+    </div>
+
+    <form id="form" class="hidden">
+      <div class="field">
+        <label for="to">To</label>
+        <input type="email" id="to" required placeholder="recipient@example.com">
+      </div>
+      <div class="field">
+        <label for="subject">Subject</label>
+        <input type="text" id="subject" maxlength="300" required>
+      </div>
+      <div class="field">
+        <label for="reply_to">Reply-to <span style="color:var(--ink-muted);font-weight:400">— optional</span></label>
+        <input type="email" id="reply_to" placeholder="leave blank to use the From address">
+      </div>
+      <div class="field">
+        <label for="body">Message</label>
+        <textarea id="body" maxlength="20000" required></textarea>
+      </div>
+      <button type="submit" id="send-btn">Send email</button>
+      <div id="note" class="note"></div>
+    </form>
+  </div>
+</main>
+
+<script>
+  // API base: behind nginx the backend lives under /kbz.
+  const BASE = "/kbz";
+  const fromLine = document.getElementById("from-line");
+  const gate = document.getElementById("gate");
+  const form = document.getElementById("form");
+  const note = document.getElementById("note");
+  const btn = document.getElementById("send-btn");
+
+  function setNote(msg, kind){ note.textContent = msg; note.className = "note" + (kind?(" "+kind):""); }
+
+  // Gate the UI on admin status before showing the form.
+  fetch(BASE + "/admin/sendmail/whoami", { credentials: "include" })
+    .then(r => r.json())
+    .then(d => {
+      if (d.is_admin) {
+        fromLine.textContent = "From: " + (d.from || "(configured From address)");
+        form.classList.remove("hidden");
+      } else {
+        fromLine.textContent = "";
+        gate.classList.remove("hidden");
+      }
+    })
+    .catch(() => { fromLine.textContent = ""; gate.classList.remove("hidden"); });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      to: document.getElementById("to").value.trim(),
+      subject: document.getElementById("subject").value.trim(),
+      body: document.getElementById("body").value,
+      reply_to: document.getElementById("reply_to").value.trim() || null,
+    };
+    if (!payload.to || !payload.subject || !payload.body){ setNote("Fill in To, Subject and Message.", "err"); return; }
+    btn.disabled = true; setNote("Sending…", "");
+    try {
+      const resp = await fetch(BASE + "/admin/sendmail", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (resp.status === 403) { setNote("Not authorized — sign in as an admin.", "err"); btn.disabled = false; return; }
+      if (!resp.ok || d.ok === false) { setNote("Send failed: " + (d.detail || ("HTTP "+resp.status)), "err"); btn.disabled = false; return; }
+      setNote("✓ Sent. " + (d.detail || ""), "ok");
+      form.reset();
+      btn.disabled = false;
+    } catch (err) {
+      setNote("Something went wrong: " + err, "err"); btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
