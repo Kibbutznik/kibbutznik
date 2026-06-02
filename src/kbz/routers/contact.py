@@ -21,7 +21,13 @@ from kbz.database import get_db
 from kbz.models.contact_message import ContactMessage
 from kbz.models.user import User
 from kbz.request_ip import client_ip
-from kbz.schemas.contact import ContactCreate, ContactMessageOut, ContactResponse
+from kbz.schemas.contact import (
+    ContactCreate,
+    ContactMessageOut,
+    ContactResponse,
+    SendMailIn,
+    SendMailResponse,
+)
 from kbz.services.email_service import EmailMessage, EmailService
 from kbz.services.rate_limit import magic_link_limiter
 
@@ -116,3 +122,52 @@ async def list_contact_messages(
         )
     ).scalars().all()
     return rows
+
+
+def _is_admin(user: User | None) -> bool:
+    admin_ids = {
+        x.strip() for x in (settings.admin_user_ids or "").split(",") if x.strip()
+    }
+    return bool(admin_ids) and user is not None and str(user.id) in admin_ids
+
+
+@router.get("/admin/sendmail/whoami")
+async def sendmail_whoami(user: User | None = Depends(get_current_user)):
+    """Lets the sendmail page check, before showing the form, whether the
+    caller is an admin and what From address mail will go out as."""
+    return {"is_admin": _is_admin(user), "from": settings.email_from}
+
+
+@router.post("/admin/sendmail", response_model=SendMailResponse)
+async def admin_sendmail(
+    data: SendMailIn,
+    user: User | None = Depends(get_current_user),
+):
+    """Send a one-off email AS the configured From address (hello@…), using
+    the same EmailService/Resend backend the app uses for magic links.
+
+    ADMIN-ONLY (settings.admin_user_ids). This is deliberately NOT public:
+    an open "send email" endpoint is a spam relay that would get the domain
+    blacklisted. Anonymous + logged-in-non-admin both get 403.
+    """
+    if not _is_admin(user):
+        return JSONResponse(status_code=403, content={"detail": "forbidden"})
+    try:
+        result = await EmailService().send(EmailMessage(
+            to=str(data.to),
+            subject=data.subject,
+            text=data.body,
+            reply_to=(str(data.reply_to) if data.reply_to else None),
+        ))
+    except Exception as e:
+        logger.warning("admin sendmail failed: %s", e)
+        return JSONResponse(
+            status_code=502,
+            content={"ok": False, "detail": f"send failed: {e}"},
+        )
+    # In log-backend (dev) the send is a no-op stub; surface that honestly.
+    backend = settings.email_backend
+    return SendMailResponse(
+        ok=True,
+        detail=("sent via Resend" if backend == "resend" else f"backend={backend} (not actually emailed)"),
+    )
