@@ -560,23 +560,42 @@ async def test_agent_failure_surfaces_in_next_prompt(community_with_agent):
 
 
 class TestLLMPresets:
-    def test_gpt_oss_20b_nitro_preset_exists(self):
-        """The viewer's LLM-switcher dropdown reads LLM_PRESETS to
-        populate options. Adding a model to the simulation CLI
-        (`--backend openrouter --model openai/gpt-oss-20b:nitro`)
-        works without a preset, but the viewer can't switch into it
-        unless the preset is registered."""
+    def test_gpt_oss_20b_preset_uses_live_id(self):
+        """gpt-oss-20b must be registered under its LIVE catalog id.
+
+        This test previously pinned `openai/gpt-oss-20b:nitro`; OpenRouter
+        retired the :nitro lane, so the preset 404'd on every agent turn.
+        The plain id is the live one."""
         from agents.simulation_api import LLM_PRESETS
-        assert "or-gpt-oss-20b-nitro" in LLM_PRESETS, (
-            "expected the gpt-oss-20b:nitro preset to be registered "
-            "so the viewer dropdown picks it up"
-        )
-        cfg = LLM_PRESETS["or-gpt-oss-20b-nitro"]
+        cfg = LLM_PRESETS["or-gpt-oss-20b"]
         assert cfg["backend"] == "openrouter"
-        assert cfg["model"] == "openai/gpt-oss-20b:nitro"
+        assert cfg["model"] == "openai/gpt-oss-20b"
         # `think` controls the Ollama reasoning-mode toggle and is
         # irrelevant for OpenRouter, but the dict shape requires it.
         assert cfg.get("think") is False
+
+    def test_no_preset_uses_a_known_retired_model_id(self):
+        """Regression guard for the recurring "preset points at a dead
+        model" bug — it fails only at switch time (404 per agent turn), so
+        it hides until someone actually selects that model.
+
+        These ids were all live once and have since been retired by
+        OpenRouter. Add to this list whenever a model is retired.
+        `scripts/check_llm_presets.py` catches NEW retirements against the
+        live catalog; this test pins the ones we've already been burned by
+        so they can't quietly return."""
+        from agents.simulation_api import LLM_PRESETS
+        retired = {
+            "mistralai/mistral-small-creative",
+            "google/gemini-2.5-flash-lite-preview",
+            "minimax/minimax-m2.5:free",
+            "openai/gpt-oss-20b:nitro",
+            "sao10k/l3-lunaris-8b",
+        }
+        in_use = {cfg["model"] for cfg in LLM_PRESETS.values()}
+        assert not (in_use & retired), (
+            f"preset(s) point at retired model ids: {sorted(in_use & retired)}"
+        )
 
     def test_all_presets_have_required_shape(self):
         """Every preset must carry a backend + model — the switcher
