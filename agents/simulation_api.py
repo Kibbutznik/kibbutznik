@@ -247,18 +247,30 @@ LLM_PRESETS = {
     # problem. Removed from the preset list to prevent accidental
     # reuse; if you want to re-test, re-add the line — the prefix
     # system + SUPPORT QUEUE branch on `lunaris-tuning` is preserved.
-    "or-gemini-flash-lite": {"backend": "openrouter", "model": "google/gemini-2.5-flash-lite-preview","think": False},
-    # MiniMax M2.5 — OpenRouter "free" tier, no credit usage (rate-limited
-    # but adequate for sustained bot simulation). Smoke-tested on the
-    # JSON-action prompt format and produces the exact shape we need.
-    # Useful as a fallback when the OpenRouter account runs out of paid
-    # credits.
-    "or-minimax-free":      {"backend": "openrouter", "model": "minimax/minimax-m2.5:free",                  "think": False},
-    # OpenAI gpt-oss-20b via OpenRouter's :nitro lane — same weights
-    # as the local Ollama gpt-oss:20b but routed through providers
-    # tuned for low latency. Useful for 100-bot simulations where
-    # sequential per-turn latency dominates wall time.
-    "or-gpt-oss-20b-nitro": {"backend": "openrouter", "model": "openai/gpt-oss-20b:nitro",          "think": False},
+    #
+    # ── Catalog audit 2026-06-04 ────────────────────────────────────────
+    # Three presets here pointed at model ids OpenRouter had RETIRED —
+    # `google/gemini-2.5-flash-lite-preview`, `minimax/minimax-m2.5:free`,
+    # and `openai/gpt-oss-20b:nitro` all 404 on every call, the same
+    # failure mode as `mistral-small-creative` above. Repointed at live
+    # ids below. Verify against https://openrouter.ai/api/v1/models
+    # before adding a preset — a dead id fails only at switch time.
+    #
+    # gpt-oss-20b: the `:nitro` lane is gone; the plain id is live and
+    # cheap ($0.03/$0.13 per M). MoE, 3.6B active params — fast.
+    "or-gpt-oss-20b":       {"backend": "openrouter", "model": "openai/gpt-oss-20b",                         "think": False},
+    # Free tier (rate-limited) — replaces the retired minimax free slot.
+    # Fallback when the OpenRouter account runs out of paid credit.
+    "or-gpt-oss-20b-free":  {"backend": "openrouter", "model": "openai/gpt-oss-20b:free",                    "think": False},
+    # Qwen3.7 Flash — cheapest capable option on the catalog
+    # ($0.03/$0.13 per M, 1M ctx). NOTE: it's a reasoning + vision model;
+    # reasoning traces bill at OUTPUT rates, so measure real cost per run
+    # before assuming the headline price. Untested on the action format.
+    "or-qwen3.7-flash":     {"backend": "openrouter", "model": "qwen/qwen3.7-flash",                         "think": False},
+    # Gemini 3.5 Flash Lite — live successor to the retired 2.5 preview.
+    # "Lite" is misleading: $0.30/$2.50 per M, i.e. output costs ~4x our
+    # current model. Kept as an option, NOT a cost saving.
+    "or-gemini-flash-lite": {"backend": "openrouter", "model": "google/gemini-3.5-flash-lite",               "think": False},
 }
 
 
