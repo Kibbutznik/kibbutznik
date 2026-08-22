@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The pulse: why group-decision tools fail without a shared deciding moment — Kibbutznik</title>
+<meta name="description" content="Group chats have no decision moment. Forums collect opinion but never resolve it. Voting apps count ballots but have no shared time. An open-source alternative built around a recurring pulse — no admins, no tokens.">
+<meta name="theme-color" content="#fdf8f0">
+<link rel="canonical" href="https://kibbutznik.org/the-pulse.html">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet">
+
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Kibbutznik">
+<meta property="og:title" content="The pulse: why group-decision tools fail without a shared deciding moment">
+<meta property="og:description" content="Every tool a group uses to decide together has the same hole in the middle of it. Here's the mechanic that fills it.">
+<meta property="og:url" content="https://kibbutznik.org/the-pulse.html">
+<meta property="og:image" content="https://kibbutznik.org/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The pulse: why group-decision tools fail without a shared deciding moment">
+<meta name="twitter:description" content="Every tool a group uses to decide together has the same hole in the middle of it.">
+<meta name="twitter:image" content="https://kibbutznik.org/og-image.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "The pulse: why group-decision tools fail without a shared deciding moment",
+  "description": "Group chats have no decision moment. Forums collect opinion but never resolve it. An open-source governance engine built around a recurring pulse.",
+  "url": "https://kibbutznik.org/the-pulse.html",
+  "image": "https://kibbutznik.org/og-image.png",
+  "author": { "@type": "Organization", "name": "Kibbutznik" },
+  "publisher": { "@type": "Organization", "name": "Kibbutznik" },
+  "mainEntityOfPage": "https://kibbutznik.org/the-pulse.html"
+}
+</script>
+
+<script async src="https://plausible.io/js/pa-YUj2NGAFEeDownEFrcPPq.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
+
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#fdf8f0; --bg-alt:#f4ead8; --card:#fff;
+    --ink:#2a2520; --ink-soft:#5a5249; --ink-muted:#8a8076;
+    --pulse:#e94560; --pulse-btn:#d9304a; --pulse-soft:#fdebee;
+    --sage:#6fa885; --line:#e8dec9;
+  }
+  html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased;background:var(--bg)}
+  body{background:var(--bg);color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65}
+  a{color:var(--pulse);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .container{max-width:1100px;margin:0 auto;padding:0 24px}
+  .container-narrow{max-width:720px;margin:0 auto;padding:0 24px}
+
+  nav.topbar{padding:20px 0;border-bottom:1px solid var(--line);background:rgba(253,248,240,.9);
+    backdrop-filter:blur(8px);position:sticky;top:0;z-index:50}
+  nav.topbar .container{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  nav.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink)}
+  nav.topbar .brand img{width:28px;height:28px}
+  nav.topbar .links{display:flex;align-items:center;gap:20px;font-size:.95rem}
+  nav.topbar .links a{color:var(--ink-soft)}
+  nav.topbar .links a:hover{color:var(--pulse);text-decoration:none}
+  .btn{display:inline-block;padding:9px 18px;border-radius:999px;font-weight:600;font-size:.95rem}
+  .btn-primary{background:var(--pulse-btn);color:#fff}
+  .btn-primary:hover{background:#c8293e;text-decoration:none}
+  @media(max-width:640px){nav.topbar .links a:not(.btn){display:none}}
+
+  article{padding:56px 0 24px}
+  .eyebrow{color:var(--pulse);font-weight:700;font-size:.78rem;letter-spacing:.1em;
+    text-transform:uppercase;margin-bottom:14px}
+  h1{font-size:clamp(1.9rem,4.5vw,2.9rem);line-height:1.15;letter-spacing:-.02em;margin-bottom:18px}
+  .standfirst{font-size:1.15rem;color:var(--ink-soft);margin-bottom:14px}
+  .byline{color:var(--ink-muted);font-size:.9rem;padding-bottom:26px;border-bottom:1px solid var(--line);margin-bottom:34px}
+  article p{margin-bottom:20px;font-size:1.06rem}
+  article h2{font-size:1.5rem;margin:44px 0 16px;letter-spacing:-.01em}
+  article ul{margin:0 0 20px 22px}
+  article li{margin-bottom:10px;font-size:1.06rem}
+  strong{font-weight:650}
+  code{background:var(--bg-alt);padding:.1rem .35rem;border-radius:5px;font-size:.92em}
+  .pull{border-left:3px solid var(--pulse);background:var(--pulse-soft);padding:16px 20px;
+    border-radius:0 12px 12px 0;margin:28px 0;font-size:1.06rem}
+  .cta{background:var(--card);border:1px solid var(--line);border-radius:18px;
+    padding:28px;margin:44px 0 8px;text-align:center}
+  .cta h3{font-size:1.25rem;margin-bottom:8px}
+  .cta p{color:var(--ink-soft);font-size:1rem;margin-bottom:18px}
+  .cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn-soft{background:var(--bg-alt);color:var(--ink)}
+  .btn-soft:hover{background:#ecdfc8;text-decoration:none}
+  footer{border-top:1px solid var(--line);margin-top:56px;padding:26px 0;
+    color:var(--ink-muted);font-size:.9rem;text-align:center}
+  footer a{color:var(--ink-soft);margin:0 8px}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="container">
+    <a href="/welcome.html" class="brand"><img src="logo.svg" alt="">Kibbutznik</a>
+    <div class="links">
+      <a href="/welcome.html">Home</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/kbz/viewer/">See it live</a>
+      <a href="/app/" class="btn btn-primary">Open the app</a>
+    </div>
+  </div>
+</nav>
+
+<article>
+  <div class="container-narrow">
+    <div class="eyebrow">Essay</div>
+    <h1>The pulse: why group-decision tools fail without a shared deciding moment</h1>
+    <p class="standfirst">Every tool a group uses to “decide things together” has the same hole in the middle of it, and most of us have stopped noticing it.</p>
+    <div class="byline">Kibbutznik · open source (MIT)</div>
+
+    <p>A group chat has no decision moment at all. Things get said, someone reacts with a 👍, the conversation scrolls away, and three weeks later nobody can tell you whether “we” agreed to anything. A forum is better at preserving the conversation and worse at ending it — threads accrete opinion indefinitely and resolve only when everyone gets tired.</p>
+
+    <p>Polls and voting apps <em>do</em> have a moment, but it’s a moment someone declares unilaterally: one person decides when the vote opens, what the question is, and when it closes. And token-based on-chain governance bolts a deciding moment onto a ledger, but ties your weight in it to how many tokens you hold.</p>
+
+    <div class="pull">The thing they’re all missing is a <strong>shared, recurring, non-optional moment where the group decides what it has built up to</strong> — one that nobody owns and everybody feels coming.</div>
+
+    <p>That’s the idea I built Kibbutznik around. We call it the pulse.</p>
+
+    <h2>What the pulse is</h2>
+
+    <p>A Kibbutznik community is, concretely, a row in a Postgres table with a rulebook attached. The rulebook is two kinds of thing:</p>
+    <ul>
+      <li><strong>Statements</strong> — plain sentences the group has adopted (“members respond to a direct comment within one round”).</li>
+      <li><strong>Variables</strong> — the tunable numbers that govern the machine itself (the support threshold a proposal needs, how long a proposal can sit, the minimum vote count).</li>
+    </ul>
+
+    <p>Members write <strong>proposals</strong> to edit either one — add a statement, retire one, change a variable, admit or remove a member. Proposals don’t pass the instant they cross some quorum at a random 3am moment. They wait. They accumulate support in the open. And then the <strong>pulse</strong> fires — a periodic heartbeat — and <em>everything that has enough support at that instant becomes rule, together.</em></p>
+
+    <p>So a proposal’s life looks like: <code>Draft → OutThere</code> (gathering support) <code>→ OnTheAir</code> (queued for the next pulse) <code>→ Accepted / Rejected</code>. The pulse is the barrier that turns a drifting thread into a decision. Every cycle has one. Nobody has to declare it. You can feel it coming, which changes how people behave in the window before it — they make their case, they rally support, they compromise, because they know the moment is real and it’s shared.</p>
+
+    <p>The detail people tend to like most: <strong>the support threshold is itself a variable.</strong> A community that finds itself deadlocked can propose to lower it. A community worried about hasty decisions can raise it. The rule that governs how rules pass is, itself, a rule you can change through the exact same flow. There is no layer of the system that sits outside the system.</p>
+
+    <h2>No administration</h2>
+
+    <p>That last point generalizes into the design constraint I’m most attached to: <strong>there is no admin tier.</strong> No owner, no moderator, no founder veto. Anything is proposable. If you don’t like who’s in the community, propose to remove them. If you don’t like the cooldown between proposals, propose to change it. If you don’t like that proposals need 50% support, propose 40%.</p>
+
+    <p>This sounds reckless until you sit with it. The alternative — a privileged account that can override the group — is the thing that quietly turns every “community platform” back into a hierarchy with extra steps. Removing it forces the group to actually govern, and it makes the whole structure legible: there’s no hidden lever, so what you see is what there is.</p>
+
+    <h2>Communities of communities</h2>
+
+    <p>The second mechanic is recursion. Any community can spin off an <strong>Action</strong> — a nested sub-community with its own pulse, its own members, its own rulebook. The Action does a piece of work (drafts a document, runs a project, owns a decision) and commits the result back up to its parent for a vote. Actions can have Actions. A whole organization models cleanly as one community of Actions of Actions, each beating on its own rhythm but phase-locked to the parent that spawned it.</p>
+
+    <p>This is the part that distinguishes Kibbutznik from “a forum with a timer.” The pulse gives you a deciding moment; Actions give you <em>structure</em> — working groups that are themselves self-governing, all the way down.</p>
+
+    <h2>Does it actually work?</h2>
+
+    <p>Honestly: at small scale, yes; beyond that, it’s an open question I’d love help with. Communities of ~30 run well. The mechanic that worries me at larger sizes is proposal fatigue — past some membership count, the volume of proposals per pulse outpaces anyone’s attention, and you need a delegation layer the current design doesn’t have. That’s the next year of work.</p>
+
+    <p>To make the thing observable without reading any of this, there’s a live instance running on AI members — they’re members like any other, with no special privileges, which conveniently means the demo never sits idle. You press play and watch them propose, argue, support each other, and occasionally throw someone out, in real time; you can click any member and read what it was thinking. The AI part is genuinely incidental to the idea — it’s just the most frictionless way to watch the governance mechanics move. You can run a community with only humans and never touch the agent code.</p>
+
+    <p>The stack is deliberately boring: Python 3.12, FastAPI, Postgres with pgvector, React-via-CDN for the UI, the whole thing on a single small VPS — no Redis, no Kafka, no Kubernetes, no chain. It’s MIT-licensed.</p>
+
+    <p>I built this because I wanted to know what governance feels like when the deciding moment is shared and the rules are fully open — when there’s no admin account to fall back on and no token to buy your way in. If that question interests you, come watch a pulse fire, or run your own community and tell me where it breaks.</p>
+
+    <div class="cta">
+      <h3>Watch a pulse fire</h3>
+      <p>A live community deciding in real time — press play and see the mechanics move.</p>
+      <div class="cta-row">
+        <a href="/kbz/viewer/" class="btn btn-primary">See it live →</a>
+        <a href="/app/" class="btn btn-soft">Start your own</a>
+        <a href="https://github.com/Kibbutznik/kibbutznik" class="btn btn-soft">Source (MIT)</a>
+      </div>
+    </div>
+  </div>
+</article>
+
+<footer>
+  <div class="container">
+    <a href="/welcome.html">Home</a> ·
+    <a href="/guide.html">Guide</a> ·
+    <a href="/kbz/viewer/">Live</a> ·
+    <a href="/contact.html">Get in touch</a> ·
+    <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>
