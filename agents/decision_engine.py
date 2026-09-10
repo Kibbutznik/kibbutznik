@@ -868,11 +868,44 @@ class DecisionEngine:
             ],
             "temperature": 0.7,
             "max_tokens": 1024,
+            # Reasoning OFF. Several catalog models (inception/mercury-2.5,
+            # qwen3.7-flash, gpt-oss-20b) reason by DEFAULT: the tokens are
+            # billed at output rates AND they eat the max_tokens budget, so
+            # the request hits finish_reason="length" with `content: null`
+            # before a single character of JSON is emitted. Measured on
+            # mercury-2.5: 499/512 tokens spent reasoning, content null.
+            # We never want a reasoning trace here — the task is "emit a
+            # JSON array" — so disable it explicitly. OpenRouter ignores
+            # this field for models that don't support it.
+            "reasoning": {"enabled": False},
         }
         resp = await self._openrouter_client.post("/chat/completions", json=payload)
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        content = message.get("content")
+        if not content:
+            # Empty/None content is a real response shape, not an exception:
+            # a reasoning model that spent its whole budget thinking, or a
+            # refusal. Surface WHY instead of letting `None` reach the
+            # parser (which crashed on `len(text)`).
+            finish = data["choices"][0].get("finish_reason")
+            reasoning = message.get("reasoning")
+            if reasoning:
+                # Some providers put the whole answer in `reasoning` when
+                # reasoning can't be turned off — the parser strips think
+                # tags anyway, so it's worth a shot before giving up.
+                logger.warning(
+                    f"[LLM] {self.model} returned empty content but a reasoning "
+                    f"trace (finish_reason={finish}); parsing the trace instead."
+                )
+                return reasoning
+            raise RuntimeError(
+                f"{self.model} returned empty content (finish_reason={finish}, "
+                f"refusal={message.get('refusal')!r}). If finish_reason is "
+                f"'length', the model burned max_tokens on reasoning."
+            )
+        return content
 
     async def _call_anthropic(self, prompt: str) -> str:
         if self._anthropic_client is None:

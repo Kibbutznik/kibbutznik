@@ -259,14 +259,34 @@ LLM_PRESETS = {
     # gpt-oss-20b: the `:nitro` lane is gone; the plain id is live and
     # cheap ($0.03/$0.13 per M). MoE, 3.6B active params — fast.
     "or-gpt-oss-20b":       {"backend": "openrouter", "model": "openai/gpt-oss-20b",                         "think": False},
-    # Free tier (rate-limited) — replaces the retired minimax free slot.
-    # Fallback when the OpenRouter account runs out of paid credit.
-    "or-gpt-oss-20b-free":  {"backend": "openrouter", "model": "openai/gpt-oss-20b:free",                    "think": False},
+    # Free tier (rate-limited) — the credit-exhaustion lifeboat. When the
+    # OpenRouter balance hits zero EVERY paid preset returns 402 and every
+    # agent turn degrades to do_nothing, so this slot needs to actually be
+    # live. `openai/gpt-oss-20b:free` (the previous occupant) has since been
+    # retired — caught by scripts/check_llm_presets.py. Nemotron 3.5
+    # Lightning is live, 1M ctx, and verified 2026-09-10 to answer with a
+    # clean JSON array at a ZERO credit balance, which is the only condition
+    # that matters for this preset.
+    "or-free-fallback":     {"backend": "openrouter", "model": "nvidia/nemotron-3.5-lightning:free",         "think": False},
     # Qwen3.7 Flash — cheapest capable option on the catalog
     # ($0.03/$0.13 per M, 1M ctx). NOTE: it's a reasoning + vision model;
     # reasoning traces bill at OUTPUT rates, so measure real cost per run
     # before assuming the headline price. Untested on the action format.
     "or-qwen3.7-flash":     {"backend": "openrouter", "model": "qwen/qwen3.7-flash",                         "think": False},
+    # Mercury 2.5 (Inception) — diffusion LLM, 260k ctx.
+    # $0.04/$0.15 per M: ~3.7x cheaper IN and 4x cheaper OUT than
+    # `mistral-small-2603`, and our prompt is input-dominated (~10k in,
+    # ~200 out), so this is close to a 3.7x cost cut per turn.
+    # IMPORTANT: it reasons by DEFAULT and will spend the entire
+    # max_tokens budget on a reasoning trace, returning `content: null`.
+    # `_call_openrouter` sends `reasoning: {enabled: false}` for every
+    # OpenRouter call, which is what makes this preset usable — verified
+    # against the live API 2026-09-10 (reasoning on: 499/512 tokens
+    # reasoning, content null; reasoning off: clean JSON array, 0
+    # reasoning tokens). NOT yet validated on a full simulation round —
+    # see the lunaris entry above for how a model can pass a smoke test
+    # and still fail at copying real ids.
+    "or-mercury-2.5":       {"backend": "openrouter", "model": "inception/mercury-2.5",                      "think": False},
     # Gemini 3.5 Flash Lite — live successor to the retired 2.5 preview.
     # "Lite" is misleading: $0.30/$2.50 per M, i.e. output costs ~4x our
     # current model. Kept as an option, NOT a cost saving.
