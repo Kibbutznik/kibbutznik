@@ -1785,11 +1785,15 @@ const LLM_LABELS = {
     "or-mistral-small":    "🌐 OR mistral-small",
     "or-mistral-small-3.2":"🌐 OR mistral-small-3.2-24b",
     "or-cydonia-24b":      "🌐 OR cydonia-24b (creative)",
-    "or-gemini-flash-lite":"🌐 OR gemini-2.5-flash-lite",
-    "or-gpt-oss-20b-nitro":"🌐 OR gpt-oss-20b :nitro",
+    "or-mercury-2.5":      "🌐 Mercury 2.5",
+    "or-gpt-oss-20b":      "🌐 OR gpt-oss-20b",
+    "or-qwen3.7-flash":    "🌐 OR qwen3.7-flash",
+    "or-free-fallback":    "🌐 OR nemotron-lightning (free)",
+    "or-gemini-flash-lite":"🌐 OR gemini-3.5-flash-lite",
 };
 
 function llmLabelFor(presetKey) {
+    if (!presetKey) return "…";
     if (LLM_LABELS[presetKey]) return LLM_LABELS[presetKey];
     // Unknown key — derive a readable label from the slug.
     if (presetKey.startsWith("or-")) return "🌐 OR " + presetKey.slice(3);
@@ -1799,14 +1803,21 @@ function llmLabelFor(presetKey) {
 }
 
 function LLMSwitcher({ currentPreset }) {
-    // The public viewer pins the model to Mistral Small — the interactive
-    // preset dropdown (and its /simulation/llm switch call) is intentionally
-    // removed so anonymous visitors can't flip the live sim onto a different
-    // / pricier backend. Renders a static, non-interactive label only.
+    // Non-interactive by design: the preset dropdown (and its
+    // /simulation/llm switch call) is deliberately absent so anonymous
+    // visitors can't flip the live sim onto a pricier backend.
+    //
+    // But "non-interactive" was implemented as a HARDCODED "Mistral Small"
+    // string that ignored `currentPreset` entirely, so the badge kept
+    // claiming Mistral for every model we ever switched to — it survived
+    // the move to mercury-2.5 and reported the wrong model to everyone
+    // watching. Read-only must still mean truthful: render what the API
+    // actually reports.
+    const label = llmLabelFor(currentPreset);
     return (
-        <div className="header-stat" title="The live simulation runs on Mistral Small">
+        <div className="header-stat" title={`The live simulation is running on ${label}`}>
             <span className="label">LLM</span>
-            <span className="value" style={{ fontSize: "0.78rem" }}>Mistral Small</span>
+            <span className="value" style={{ fontSize: "0.78rem" }}>{label}</span>
         </div>
     );
 }
