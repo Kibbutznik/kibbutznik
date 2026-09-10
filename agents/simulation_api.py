@@ -88,6 +88,10 @@ class InterviewResponse(BaseModel):
     answer: str
 
 
+class SpeedRequest(BaseModel):
+    turbo: bool
+
+
 class ChatMessageRequest(BaseModel):
     message: str
     community_id: str | None = None  # target community; defaults to root
@@ -164,6 +168,27 @@ async def resume_simulation(request: Request):
     orch = get_orchestrator()
     orch.resume()
     return {"paused": False}
+
+
+@router.post("/speed")
+async def set_speed(req: SpeedRequest, request: Request):
+    """Toggle full-speed mode (no round delay, no LLM turn pacing).
+
+    Public, like the Play button, and for the same reason: a run is capped
+    at `auto_pause_every` events no matter how fast it goes, so turbo
+    changes how LONG a run takes, not how much it costs. What it does
+    change is how often a visitor can *start* one, which is why the
+    per-IP cap below is tighter than resume's.
+    """
+    _rate_limit(request, "sim-speed", limit=20)
+    orch = get_orchestrator()
+    return orch.set_turbo(req.turbo)
+
+
+@router.get("/speed")
+async def get_speed():
+    orch = get_orchestrator()
+    return orch.speed_state()
 
 
 @router.post("/restart")
