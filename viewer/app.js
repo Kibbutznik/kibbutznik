@@ -1883,8 +1883,13 @@ function isOperatorView() {
 // The public demo boots paused and auto-pauses after each bounded run, so
 // the viewer drives it. This full-screen overlay is the single, obvious
 // "start the run" affordance — shown whenever the sim is paused.
-function PlayOverlay({ onPlay, onBrowse, memberCount, hasData }) {
+function PlayOverlay({ onPlay, onBrowse, memberCount, hasData, turbo, paceSeconds }) {
     const who = memberCount ? `${memberCount} AI members` : "AI members";
+    // The promised pace has to track the ACTUAL pacer, not a number
+    // baked into the copy — the header badge just taught us what a
+    // hardcoded claim costs. Falls back to 10 only if status hasn't
+    // loaded yet.
+    paceSeconds = Math.round(paceSeconds ?? 10);
     return (
         <div
             style={{
@@ -1913,8 +1918,10 @@ function PlayOverlay({ onPlay, onBrowse, memberCount, hasData }) {
                 Press play to run the kibbutz
             </div>
             <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: "0.92rem", maxWidth: 440, lineHeight: 1.5 }}>
-                {who} will propose, debate, and decide — about one step
-                every 10 seconds, for a bounded ~100-step run. Watch it unfold live.
+                {who} will propose, debate, and decide — {turbo
+                    ? "at full speed"
+                    : `about one step every ${paceSeconds} seconds`}, for a
+                bounded ~100-step run. Watch it unfold live.
             </div>
             {onBrowse && (
                 <button
@@ -5243,6 +5250,8 @@ function App() {
                     onBrowse={() => setBrowsing(true)}
                     memberCount={status?.community?.member_count}
                     hasData={(status?.total_events || 0) > 0}
+                    turbo={turbo}
+                    paceSeconds={status?.speed?.turn_interval_s}
                 />
             )}
             {paused && browsing && !restarting && (
