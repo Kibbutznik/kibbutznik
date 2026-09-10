@@ -591,11 +591,30 @@ class TestLLMPresets:
             "minimax/minimax-m2.5:free",
             "openai/gpt-oss-20b:nitro",
             "sao10k/l3-lunaris-8b",
+            "openai/gpt-oss-20b:free",
         }
         in_use = {cfg["model"] for cfg in LLM_PRESETS.values()}
         assert not (in_use & retired), (
             f"preset(s) point at retired model ids: {sorted(in_use & retired)}"
         )
+
+    def test_a_free_preset_exists(self):
+        """The zero-balance lifeboat. With no free preset, an exhausted
+        OpenRouter balance turns every agent turn into do_nothing with no
+        way to switch out of it."""
+        from agents.simulation_api import LLM_PRESETS
+        free = [c["model"] for c in LLM_PRESETS.values()
+                if c["backend"] == "openrouter" and c["model"].endswith(":free")]
+        assert free, "no free-tier OpenRouter preset registered"
+
+    def test_mercury_preset_registered_and_shaped(self):
+        """mercury-2.5 is only usable because `_call_openrouter` disables
+        reasoning; if someone adds the preset without that, every turn
+        returns `content: null`."""
+        from agents.simulation_api import LLM_PRESETS
+        cfg = LLM_PRESETS["or-mercury-2.5"]
+        assert cfg["backend"] == "openrouter"
+        assert cfg["model"] == "inception/mercury-2.5"
 
     def test_all_presets_have_required_shape(self):
         """Every preset must carry a backend + model — the switcher
@@ -1216,3 +1235,124 @@ class TestPulseAlwaysLast:
         )
         assert "support_pulse is ALWAYS last" in prompt
         assert "runtime reorders" in prompt
+
+
+class TestOpenRouterEmptyContent:
+    """Reasoning-by-default models (mercury-2.5, qwen3.7-flash, gpt-oss-20b)
+    can spend the whole max_tokens budget on a reasoning trace and return
+    `content: null`. That used to reach `_parse_response`, which crashed on
+    `len(None)` — an unhandled TypeError instead of a retry."""
+
+    def _engine(self):
+        from agents.decision_engine import DecisionEngine
+        return DecisionEngine.__new__(DecisionEngine)
+
+    @pytest.mark.asyncio
+    async def test_null_content_raises_explanatory_error(self, monkeypatch):
+        from agents.decision_engine import DecisionEngine
+
+        eng = self._engine()
+        eng.model = "inception/mercury-2.5"
+
+        class _Resp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"finish_reason": "length", "message": {
+                    "role": "assistant", "content": None,
+                    "refusal": None, "reasoning": None}}]}
+
+        class _Client:
+            async def post(self, *a, **kw): return _Resp()
+
+        eng._openrouter_client = _Client()
+        with pytest.raises(RuntimeError, match="empty content"):
+            await DecisionEngine._call_openrouter(eng, "prompt")
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_reasoning_trace_when_content_empty(self):
+        from agents.decision_engine import DecisionEngine
+
+        eng = self._engine()
+        eng.model = "some/model"
+
+        class _Resp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"finish_reason": "stop", "message": {
+                    "role": "assistant", "content": "",
+                    "reasoning": '[{"action": "do_nothing"}]'}}]}
+
+        class _Client:
+            async def post(self, *a, **kw): return _Resp()
+
+        eng._openrouter_client = _Client()
+        out = await DecisionEngine._call_openrouter(eng, "prompt")
+        assert out == '[{"action": "do_nothing"}]'
+
+    @pytest.mark.asyncio
+    async def test_reasoning_is_disabled_in_the_payload(self):
+        """The actual fix: without this field mercury-2.5 never emits JSON."""
+        from agents.decision_engine import DecisionEngine
+
+        eng = self._engine()
+        eng.model = "inception/mercury-2.5"
+        seen = {}
+
+        class _Resp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"finish_reason": "stop",
+                                     "message": {"content": "[]"}}]}
+
+        class _Client:
+            async def post(self, path, json=None, **kw):
+                seen.update(json or {})
+                return _Resp()
+
+        eng._openrouter_client = _Client()
+        await DecisionEngine._call_openrouter(eng, "prompt")
+        assert seen["reasoning"] == {"enabled": False}
+
+
+class TestLLMPresetEnv:
+    """KBZ_LLM_PRESET makes a model migration survive a restart. The
+    runtime switcher (POST /simulation/llm) only mutates the live engine,
+    so without this the service reverts to its launch flags on restart."""
+
+    class _Args:
+        backend = "anthropic"
+        model = "claude-haiku-4-5-20251001"
+        ollama_think = False
+
+    def _boom(self, msg):
+        raise SystemExit(msg)
+
+    def test_preset_env_overrides_backend_and_model(self, monkeypatch):
+        from agents.run_with_viewer import _apply_preset_env
+        monkeypatch.setenv("KBZ_LLM_PRESET", "or-mercury-2.5")
+        args = self._Args()
+        assert _apply_preset_env(args, [], self._boom) == "or-mercury-2.5"
+        assert args.backend == "openrouter"
+        assert args.model == "inception/mercury-2.5"
+
+    def test_explicit_cli_flags_win_over_env(self, monkeypatch):
+        from agents.run_with_viewer import _apply_preset_env
+        monkeypatch.setenv("KBZ_LLM_PRESET", "or-mercury-2.5")
+        args = self._Args()
+        assert _apply_preset_env(args, ["--model", "gemma4:26b"], self._boom) is None
+        assert args.backend == "anthropic"  # untouched
+
+    def test_unknown_preset_errors_loudly(self, monkeypatch):
+        """Fail at boot with the list of valid names, rather than silently
+        running the wrong (default) model for days."""
+        from agents.run_with_viewer import _apply_preset_env
+        monkeypatch.setenv("KBZ_LLM_PRESET", "or-mercury-25")  # typo
+        with pytest.raises(SystemExit, match="not a known preset"):
+            _apply_preset_env(self._Args(), [], self._boom)
+
+    def test_unset_env_is_a_noop(self, monkeypatch):
+        from agents.run_with_viewer import _apply_preset_env
+        monkeypatch.delenv("KBZ_LLM_PRESET", raising=False)
+        args = self._Args()
+        assert _apply_preset_env(args, [], self._boom) is None
+        assert args.backend == "anthropic"

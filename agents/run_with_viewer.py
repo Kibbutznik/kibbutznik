@@ -124,6 +124,42 @@ async def _resume_simulation(orch: Orchestrator, rounds: int, delay: float):
         logger.error(f"Simulation error after restart: {e}", exc_info=True)
 
 
+def _apply_preset_env(args, argv, on_error) -> str | None:
+    """Apply KBZ_LLM_PRESET to `args`, returning the preset name applied.
+
+    Picks the model by preset name instead of spelling out
+    --backend/--model. The runtime switcher (POST /simulation/llm) only
+    changes the LIVE engine — that choice is lost on the next restart, so
+    a migration made through the viewer silently reverts to whatever the
+    service was launched with. This env var makes the choice durable (one
+    systemd drop-in in prod).
+
+    Explicit --backend/--model on the command line still wins, so the env
+    var can sit in the service file without breaking ad-hoc runs.
+    """
+    preset_name = os.environ.get("KBZ_LLM_PRESET", "").strip()
+    if not preset_name:
+        return None
+    from agents.simulation_api import LLM_PRESETS
+    if preset_name not in LLM_PRESETS:
+        on_error(
+            f"KBZ_LLM_PRESET={preset_name!r} is not a known preset. "
+            f"Available: {', '.join(LLM_PRESETS)}"
+        )
+        return None
+    explicit = {a.split("=")[0] for a in argv}
+    if "--backend" in explicit or "--model" in explicit:
+        print(f"[llm] KBZ_LLM_PRESET={preset_name} ignored "
+              f"(--backend/--model given on the command line)")
+        return None
+    cfg = LLM_PRESETS[preset_name]
+    args.backend = cfg["backend"]
+    args.model = cfg["model"]
+    args.ollama_think = cfg.get("think", False)
+    print(f"[llm] preset {preset_name} -> {args.backend}/{args.model}")
+    return preset_name
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run KBZ simulation with Big Brother viewer",
@@ -236,6 +272,8 @@ Examples:
         log.info("Running in CONTINUOUS mode (rounds=0). Press Ctrl+C to stop.")
 
     mission = args.mission if args.mission is not None else DEFAULT_MISSION
+
+    _apply_preset_env(args, sys.argv[1:], parser.error)
 
     def _make_orchestrator(n_members: int) -> Orchestrator:
         """Build an Orchestrator with the current args but a fresh persona list."""
