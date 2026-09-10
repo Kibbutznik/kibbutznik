@@ -1356,3 +1356,58 @@ class TestLLMPresetEnv:
         args = self._Args()
         assert _apply_preset_env(args, [], self._boom) is None
         assert args.backend == "anthropic"
+
+
+class TestTurboSpeed:
+    """The speed toggle has to change pacing on a RUNNING simulation and
+    restore the CONFIGURED pacing when switched off — not a hardcoded
+    default, or turning turbo off would silently re-pace prod to something
+    it was never launched with."""
+
+    def _orch(self, delay=2.0, turn_interval=10.0):
+        from agents.orchestrator import Orchestrator
+        from agents.decision_engine import set_turn_interval
+        set_turn_interval(turn_interval)
+        o = Orchestrator.__new__(Orchestrator)
+        o.round_delay = delay
+        o._base_round_delay = delay
+        o._base_turn_interval = turn_interval
+        return o
+
+    def teardown_method(self):
+        from agents.decision_engine import set_turn_interval
+        set_turn_interval(0.0)
+
+    def test_turbo_on_releases_both_brakes(self):
+        from agents.decision_engine import get_turn_interval
+        o = self._orch()
+        state = o.set_turbo(True)
+        assert o.round_delay == 0
+        assert get_turn_interval() == 0
+        assert state["turbo"] is True
+
+    def test_turbo_off_restores_configured_pacing(self):
+        from agents.decision_engine import get_turn_interval
+        o = self._orch(delay=2.0, turn_interval=10.0)
+        o.set_turbo(True)
+        o.set_turbo(False)
+        assert o.round_delay == 2.0
+        assert get_turn_interval() == 10.0
+
+    def test_double_enable_does_not_clobber_the_baseline(self):
+        """The bug this guards: capturing the baseline on every enable
+        would record 0/0 the second time, so turning turbo off would leave
+        the sim running at full speed forever."""
+        from agents.decision_engine import get_turn_interval
+        o = self._orch(delay=2.0, turn_interval=10.0)
+        o.set_turbo(True)
+        o.set_turbo(True)
+        o.set_turbo(False)
+        assert o.round_delay == 2.0
+        assert get_turn_interval() == 10.0
+
+    def test_speed_state_reports_live_values(self):
+        o = self._orch(delay=2.0, turn_interval=10.0)
+        assert o.speed_state() == {
+            "turbo": False, "round_delay_s": 2.0, "turn_interval_s": 10.0,
+        }

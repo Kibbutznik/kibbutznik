@@ -1934,7 +1934,7 @@ function PlayOverlay({ onPlay, onBrowse, memberCount, hasData }) {
 }
 
 // ── Header ──────────────────────────────────────────────
-function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar, paused, onTogglePause, onRestart, restarting }) {
+function Header({ status, openDetail, activeCommunityId, activeCommunityName, onBackToRoot, onToggleSidebar, paused, onTogglePause, onRestart, restarting, turbo, onToggleTurbo }) {
     const community = status?.community;
     const operator = isOperatorView();
     return (
@@ -2000,6 +2000,18 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                             <span className="ctrl-icon">{paused ? "▶" : "⏸"}</span>
                             <span className="ctrl-label">{paused ? "Resume" : "Pause"}</span>
                         </button>
+                        {onToggleTurbo && (
+                        <button
+                            className={`header-ctrl-btn ${turbo ? "paused" : ""}`}
+                            onClick={onToggleTurbo}
+                            title={turbo
+                                ? "Turbo ON — no delay between turns. Click to return to the configured pace."
+                                : "Turbo — run with no delay between turns. A run is still capped at the same number of events."}
+                        >
+                            <span className="ctrl-icon">⚡</span>
+                            <span className="ctrl-label">{turbo ? "Turbo on" : "Turbo"}</span>
+                        </button>
+                        )}
                         {operator && (
                         <button
                             className="header-ctrl-btn restart"
@@ -5150,6 +5162,26 @@ function App() {
         }
     }
 
+    // Turbo — drop the delay between turns so a run plays out at full speed.
+    // Optimistic flip so the button responds instantly; `status.speed.turbo`
+    // from the next poll is the source of truth and corrects it if the call
+    // failed (e.g. the per-IP rate limit kicked in).
+    const [turbo, setTurbo] = useState(false);
+    useEffect(() => {
+        if (status?.speed) setTurbo(!!status.speed.turbo);
+    }, [status?.speed?.turbo]);
+
+    async function handleToggleTurbo() {
+        const next = !turbo;
+        setTurbo(next);
+        try {
+            await API.post("/simulation/speed", { turbo: next });
+        } catch (err) {
+            console.error("Turbo toggle error:", err);
+            setTurbo(!next);
+        }
+    }
+
     // Restart simulation loop (data preserved)
     const [restarting, setRestarting] = useState(false);
     async function handleRestart() {
@@ -5202,6 +5234,8 @@ function App() {
                 onTogglePause={handleTogglePause}
                 onRestart={handleRestart}
                 restarting={restarting}
+                turbo={turbo}
+                onToggleTurbo={handleToggleTurbo}
             />
             {paused && !browsing && !restarting && (
                 <PlayOverlay

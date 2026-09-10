@@ -99,6 +99,13 @@ class Orchestrator:
         self.events: list[SimulationEvent] = []
         self._round = 0
         self._paused = start_paused
+        # Speed baselines. run() overwrites round_delay with the real
+        # --delay; these defaults just make set_turbo() safe to call before
+        # the run loop has started (e.g. a toggle while boot-paused).
+        self.round_delay = 0.0
+        self._base_round_delay = 0.0
+        from agents.decision_engine import get_turn_interval
+        self._base_turn_interval = get_turn_interval()
         self._pause_event = asyncio.Event()
         if start_paused:
             self._pause_event.clear()  # boot idle — Play button starts the run
@@ -687,6 +694,51 @@ class Orchestrator:
     def is_paused(self) -> bool:
         return self._paused
 
+    # ── Speed ───────────────────────────────────────────
+    # Two independent brakes slow the simulation down:
+    #   * `round_delay`  — sleep between rounds (--delay)
+    #   * the turn pacer — minimum gap between LLM calls (--turn-interval),
+    #     a module global in decision_engine shared by every agent
+    # Turbo releases BOTH and remembers the configured values, so switching
+    # it off restores the exact pacing the service was launched with rather
+    # than a hardcoded default.
+
+    @property
+    def is_turbo(self) -> bool:
+        from agents.decision_engine import get_turn_interval
+        return self.round_delay == 0 and get_turn_interval() == 0 and (
+            self._base_round_delay > 0 or self._base_turn_interval > 0
+        )
+
+    def set_turbo(self, on: bool) -> dict:
+        """Enable/disable full-speed mode. Returns the resulting speed state."""
+        from agents.decision_engine import get_turn_interval, set_turn_interval
+        if on:
+            # Capture the baseline only on the way IN, so repeated
+            # enable calls can't overwrite it with the turbo values.
+            if not self.is_turbo:
+                self._base_round_delay = self.round_delay
+                self._base_turn_interval = get_turn_interval()
+            self.round_delay = 0.0
+            set_turn_interval(0.0)
+            logger.info("Simulation TURBO on (delay + turn pacer released)")
+        else:
+            self.round_delay = self._base_round_delay
+            set_turn_interval(self._base_turn_interval)
+            logger.info(
+                "Simulation TURBO off (delay=%.1fs, turn pacer=%.1fs)",
+                self._base_round_delay, self._base_turn_interval,
+            )
+        return self.speed_state()
+
+    def speed_state(self) -> dict:
+        from agents.decision_engine import get_turn_interval
+        return {
+            "turbo": self.is_turbo,
+            "round_delay_s": self.round_delay,
+            "turn_interval_s": get_turn_interval(),
+        }
+
     def _current_llm_preset(self) -> str:
         """Return the preset key for the current engine, or 'custom'."""
         from agents.simulation_api import LLM_PRESETS
@@ -869,6 +921,11 @@ class Orchestrator:
             rounds: Number of rounds to run. Use 0 for continuous (infinite) simulation.
             delay: Seconds to wait between rounds.
         """
+        # Held on the instance (not just the local arg) so the speed toggle
+        # can change pacing on a RUNNING simulation. `_base_round_delay` is
+        # the configured value to come back to when turbo is switched off.
+        self.round_delay = delay
+        self._base_round_delay = delay
         continuous = rounds == 0
         label = "continuous" if continuous else f"{rounds} rounds"
         logger.info(f"Starting simulation: {label}, {len(self.agents)} agents, backend={self.engine.backend}/{self.engine.model}")
@@ -937,8 +994,8 @@ class Orchestrator:
                     f"{len(self.events)} events in memory"
                 )
 
-            if delay > 0:
-                await asyncio.sleep(delay)
+            if self.round_delay > 0:
+                await asyncio.sleep(self.round_delay)
 
         logger.info(f"\nSimulation complete after {round_num} rounds. Total events: {len(self.events)}")
 
@@ -1007,6 +1064,7 @@ class Orchestrator:
                 "every": self._auto_pause_every,
                 "events_since_resume": self._events_since_resume,
             },
+            "speed": self.speed_state(),
             "newcomers": self.newcomer_users,
             "agents": [
                 {
