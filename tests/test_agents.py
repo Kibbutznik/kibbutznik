@@ -1458,3 +1458,60 @@ class TestPulseGuidance:
             assert "`support_pulse` EVERY round" not in p
             assert "ALMOST EVERY TURN" not in p
             assert "in MOST of your turns" not in p
+
+
+class TestJudgmentQueue:
+    """Agents backed ~everything, so no proposal ever failed. The cause was
+    the header on the proposal list: "(use support_proposal on these!)" —
+    an imperative sitting right next to the items, which beat the
+    "default to NOT supporting" guidance located far away in the prompt.
+    Proximity wins, so the judgment test now lives WITH the list."""
+
+    def _prompt(self, unsupported=None, **kw):
+        from agents.decision_engine import build_decision_prompt
+        base = dict(
+            persona_name="Y", persona_role="m", persona_background="b",
+            persona_decision_style="d", persona_communication_style="c",
+            persona_trait_summary="t", community_summary="S",
+            action_history=[], unsupported_proposals=unsupported or ["P-11111111 — x"],
+            already_supported_proposals=[], already_commented=[],
+            consecutive_do_nothings=0, initiative=0.5, total_active_proposals=4,
+            interview_context="", memory_context="", recent_failures=[])
+        base.update(kw)
+        return build_decision_prompt(**base)
+
+    def test_list_is_framed_as_judgment_not_a_todo(self):
+        p = self._prompt()
+        assert "Proposals Awaiting YOUR Judgment" in p
+        assert "use support_proposal on these!" not in p
+        assert "This is NOT a to-do list" in p
+
+    def test_withholding_is_named_as_the_vote_against(self):
+        """There is no `oppose` action — a proposal fails only by members
+        declining. If the prompt doesn't say so, declining reads as apathy
+        rather than a position."""
+        p = self._prompt()
+        assert "Withholding IS your vote against" in p
+
+    def test_agents_are_told_to_judge_against_their_own_agenda(self):
+        p = self._prompt()
+        assert "YOUR OWN agenda" in p
+        assert "CURRENT INTENTION" in p
+
+    def test_no_support_quota_is_imposed(self):
+        """A quota suppresses good and bad proposals alike — measured:
+        it dropped support for GOOD proposals to 50% while doing nothing
+        extra to BAD ones. Criteria discriminate; quotas just add noise."""
+        p = self._prompt()
+        assert "NO quota" in p
+        assert "roughly half of what you see" not in p
+
+    def test_objections_are_routed_into_comments(self):
+        """Bad proposals only fail if members CONVERGE on rejecting them,
+        and comments are the only channel for that to spread."""
+        p = self._prompt()
+        assert "`comment`" in p
+
+    def test_child_action_guidance_no_longer_says_support_any(self):
+        p = self._prompt()
+        assert "support ANY good proposals" not in p

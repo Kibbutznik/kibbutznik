@@ -289,8 +289,40 @@ def build_decision_prompt(
 
     unsupported_block = ""
     if unsupported_proposals:
+        # This header used to read "(use support_proposal on these!)" — an
+        # imperative sitting directly next to the list. It read as a to-do
+        # queue and beat the far-away "default to NOT supporting" guidance
+        # by sheer proximity, so agents backed nearly everything and no
+        # proposal ever failed. The test belongs WHERE the list is.
         unsupported_block = (
-            "\n## Proposals You Have NOT Supported Yet (use support_proposal on these!)\n"
+            "\n## Proposals Awaiting YOUR Judgment\n"
+            "This is NOT a to-do list. Each line is a question: does this\n"
+            "deserve your name on it? Judge each one against YOUR OWN agenda\n"
+            "— your CURRENT INTENTION above, your background, what you have\n"
+            "been pushing for. You are a member with a position, not a\n"
+            "rubber stamp.\n"
+            "\n"
+            "WITHHOLD support (just don't emit support_proposal) when:\n"
+            "  • the text is vague — 'ensure quality', 'we value excellence',\n"
+            "    'various improvements' — with nothing concrete in it\n"
+            "  • it moves the community AWAY from what you want, or replaces\n"
+            "    specific detail with platitudes\n"
+            "  • it duplicates another pending proposal — back ONE, ignore\n"
+            "    the copy\n"
+            "  • it is premature, or you would have written it MATERIALLY\n"
+            "    differently — a wording quibble is not a reason to decline\n"
+            "\n"
+            "**Withholding IS your vote against.** A proposal fails only when\n"
+            "enough members quietly decline, so declining is a real act, not\n"
+            "a non-action.\n"
+            "\n"
+            "There is NO quota. Do not decline good work to seem discerning:\n"
+            "if a proposal is concrete and moves your agenda forward, back it\n"
+            "without hesitation — that is how the community ships anything.\n"
+            "Be hard on weak proposals and generous with strong ones.\n"
+            "If a proposal is actively BAD, add ONE sharp `comment` saying\n"
+            "why — other members read comments before they support, and an\n"
+            "objection nobody voices is an objection nobody can act on.\n"
             + "\n".join(f"  - {pid}" for pid in unsupported_proposals)
         )
     if already_supported_proposals:
@@ -545,7 +577,7 @@ You joined this action because it has artifacts delegated to it that need conten
 **Action priority per round (child ACTION):**
 1. **EditArtifact on EMPTY artifacts** — ⚡ MANDATORY. You MUST propose this before anything else. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
 2. **support_pulse** — once your EditArtifact is proposed and has had a turn to gather support. It won't execute without a pulse, but pulsing the same turn you propose denies everyone else a chance to back it.
-3. **support_proposal** — support ANY good proposals. Without support, proposals die. This is just as important as in root!
+3. **support_proposal** — back the proposals that are actually good. Without support, proposals die — but backing weak work is how a container fills up with platitudes. Same judgment test as root: concrete, on-mission, not a duplicate.
 4. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
 5. **For EditArtifact proposals by others: read the CURRENT vs PROPOSED diff first — only support if the new version is better.**
 6. NOTHING ELSE until artifacts are filled. Do NOT propose AddStatement, governance, or other distractions unless all artifacts have content.
