@@ -323,6 +323,54 @@ def build_decision_prompt(
             + "\n"
         )
 
+    # Pulse guidance, computed from state rather than asserted flat.
+    #
+    # The static prompt used to say "support_pulse EVERY round" in five
+    # places. That was tuned against a model that UNDER-pulsed and let
+    # proposals rot. A model that follows instructions faithfully obeys it
+    # literally and pulses on ~100% of turns — including when the board is
+    # empty and the pulse decides nothing. Measured effect on the live
+    # community: every proposal was pulsed to a verdict almost as soon as
+    # it appeared, a 98% acceptance rate (68 Accepted / 4 Rejected at
+    # root, 36/36 and 39/39 in two sub-communities), a permanently empty
+    # queue, and agents idling with "No proposals exist — pulse support
+    # would be wasted". Nothing got deliberated because nothing was ever
+    # left open long enough to deliberate ON.
+    #
+    # So: pulse when there is something to decide, and not otherwise.
+    if total_active_proposals == 0:
+        pulse_guidance = (
+            "## PULSE STRATEGY — NOT THIS TURN\n"
+            "⛔ There are **no open proposals**. A pulse decides nothing and "
+            "wastes your turn.\n"
+            "**DO NOT emit `support_pulse` this turn.**\n"
+            "The board is empty, so the community needs SUPPLY, not a "
+            "verdict. Create a proposal — the thing you most want changed, "
+            "or content for an empty artifact."
+        )
+    elif total_active_proposals <= 2:
+        pulse_guidance = (
+            "## PULSE STRATEGY — LET IT BREATHE\n"
+            f"Only {total_active_proposals} proposal(s) are open. Pulsing now "
+            "resolves them before the rest of the community has had a turn "
+            "to read, support, or argue against them.\n"
+            "**Prefer supporting or commenting this turn.** Pulse only if a "
+            "proposal is clearly stuck or aging out."
+        )
+    else:
+        pulse_guidance = (
+            "## PULSE STRATEGY — DEFAULT IS TO SUPPORT!\n"
+            f"⚡ {total_active_proposals} proposals are open — enough that "
+            "the board can afford a verdict. Proposals ROT if the community "
+            "never pulses.\n"
+            "- Which proposals WILL PASS if the pulse fires now? Pulse to "
+            "lock them in.\n"
+            "- Some will fail? That's fine — failed proposals can be "
+            "re-proposed. A stuck community is worse.\n"
+            "- **If the state shows \"PULSE STUCK\" or many proposals "
+            "OutThere → support_pulse is your #1 action.**"
+        )
+
     # Build initiative-specific guidance
     if initiative >= 0.7:
         propose_guidance = (
@@ -478,7 +526,7 @@ You joined this action because it has artifacts delegated to it that need conten
 **If you are in an action and do NOT propose EditArtifact on an EMPTY artifact, you are wasting your membership. Act.**
 
 **Action priority per round (ROOT community):**
-1. **support_pulse** — do this EVERY round unless you have a specific 1-round reason to delay. Nothing moves without pulses!
+1. **support_pulse** — see PULSE STRATEGY below; pulse when there is something to decide, NOT reflexively. Nothing moves without pulses, but a pulse on an empty board decides nothing.
 2. If root has EMPTY artifacts AND a matching Action exists → propose **DelegateArtifact** to hand work to the Action.
 3. If root has EMPTY artifacts AND no Action exists → propose **AddAction with `val_uuid=A-<that artifact's id>`** — one proposal that creates the team AND delegates the artifact in a single accept. (The slow two-step `AddAction` then `DelegateArtifact` still works, but wastes a pulse cycle.)
 4. **JoinAction** — if "Actions You Can Join" lists actions AND no pending JoinAction proposal exists for that action, propose one. If a JoinAction is already pending, SUPPORT it instead.
@@ -496,7 +544,7 @@ You joined this action because it has artifacts delegated to it that need conten
 
 **Action priority per round (child ACTION):**
 1. **EditArtifact on EMPTY artifacts** — ⚡ MANDATORY. You MUST propose this before anything else. If ANY artifact in the container is EMPTY, write its content NOW. No other action matters more than this.
-2. **support_pulse** — EVERY round. Your EditArtifact won't execute without it. Nothing moves without pulses!
+2. **support_pulse** — once your EditArtifact is proposed and has had a turn to gather support. It won't execute without a pulse, but pulsing the same turn you propose denies everyone else a chance to back it.
 3. **support_proposal** — support ANY good proposals. Without support, proposals die. This is just as important as in root!
 4. **CommitArtifact** — once ALL artifacts have content, seal the container and ship to parent.
 5. **For EditArtifact proposals by others: read the CURRENT vs PROPOSED diff first — only support if the new version is better.**
@@ -505,20 +553,14 @@ You joined this action because it has artifacts delegated to it that need conten
 
 **DO NOT SPAM ACTIONS!** Before proposing AddAction, check "Active Actions" AND pending AddAction proposals. If a similar action or pending AddAction proposal already exists for that topic, DO NOT create another. Support the existing one instead. Creating duplicate actions for the same topic (e.g., multiple "Conflict Resolution" teams) is a waste that fragments the community.
 
-## PULSE STRATEGY — DEFAULT IS TO SUPPORT!
-⚡ Remember: proposals ROT if the community doesn't pulse. You should `support_pulse` EVERY round
-unless you have a concrete 1-round reason to delay. Check the community state:
-- Which proposals WILL PASS if pulse fires now? Great — pulse to lock them in!
-- Some proposals will fail? That's OK — failed proposals can be re-proposed. A stuck community is worse.
-- Old proposals piling up? Pulse to clear them via aging.
-- **If the state shows "PULSE STUCK" or many proposals OutThere → support_pulse is your #1 action.**
+{pulse_guidance}
 
 ## THIS TURN — take MULTIPLE actions (1 to 5)
 
 You can create proposals, support others, comment, AND push the pulse — all in one turn.
 
 Available actions:
-- **support_pulse** — ⚡ INCLUDE THIS ALMOST EVERY TURN! Without pulses, proposals sit forever.
+- **support_pulse** — include when the board has proposals worth deciding (see PULSE STRATEGY). Without pulses, proposals sit forever; with too many, nothing is ever debated.
 - **create_proposal** — propose something new
 - **support_proposal** — back a proposal (use EXACT id from state)
 - **comment** — ONE brief comment per proposal (never repeat). HARD LIMIT 50 words / 300 chars.
@@ -648,8 +690,9 @@ something else.
    AddAction to come with an artifact, use a NON-Plan A- id from state
    (or omit val_uuid).
 
-REMEMBER: include `support_pulse` in MOST of your turns. A turn without
-`support_pulse` should be the exception, not the rule."""
+REMEMBER: `support_pulse` is a VERDICT, not a greeting. Emit it when the
+board holds proposals that deserve deciding — and leave it out when the
+board is empty or the proposals are still gathering support."""
 
 
 class DecisionEngine:
