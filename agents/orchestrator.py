@@ -7,6 +7,7 @@ governance cycles. This is the "simulation engine".
 import asyncio
 import logging
 import random
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -780,13 +781,24 @@ class Orchestrator:
         curated names we generate `Member_NNN`, the same convention
         `build_persona_list` already uses for large simulations.
         """
+        pending = {n["name"] for n in self.newcomer_users}
         idx = self._newcomer_name_idx
-        if idx < len(NEWCOMER_NAMES):
-            return NEWCOMER_NAMES[idx]
-        # 1000 is persona.MAX_MEMBERS — a sanity bound, not a design limit.
-        if idx >= 1000:
-            return None
-        return f"Member_{idx:03d}"
+        # Skip names already waiting on a vote. This used to be an early
+        # `return` at the call site, which meant that while ONE applicant sat
+        # pending, no other newcomer could be created at all — the community
+        # could only ever have a single application in flight, each needing
+        # support plus a pulse. That, not the spawn probability, is why the
+        # roster crawled. Skipping forward lets several people knock at once.
+        #
+        # There is NO population cap. The curated names are flavour for the
+        # first arrivals; past them, applicants are generated on demand and
+        # the community can grow as large as it votes itself.
+        while True:
+            name = (NEWCOMER_NAMES[idx] if idx < len(NEWCOMER_NAMES)
+                    else f"Member_{idx:03d}")
+            if name not in pending:
+                return name
+            idx += 1
 
     async def _spawn_newcomers(self) -> None:
         """Spawn this round's applicants.
@@ -809,10 +821,15 @@ class Orchestrator:
         name = self._next_newcomer_name()
         if name is None:
             return
-        # Skip if this name already has a pending membership proposal
-        if any(n["name"] == name for n in self.newcomer_users):
-            return
-        user_name = f"{name.lower()}_applicant"
+        # A UNIQUE login per attempt. This used to be a deterministic
+        # `f"{name.lower()}_applicant"`, and create_user is idempotent by
+        # username — so every restart reused the SAME account for a given
+        # name and filed yet another Membership proposal on it. Live, "Alex"
+        # accumulated 14 in-flight applications and crossed the platform cap
+        # of 10; from then on every spawn 429'd on that identity. A fresh
+        # login per attempt means an applicant never inherits someone else's
+        # backlog, and no name can ever become permanently unusable.
+        user_name = f"{name.lower()}_{uuid.uuid4().hex[:6]}_applicant"
         try:
             user = await self.client.create_user(
                 user_name=user_name,
@@ -873,7 +890,31 @@ class Orchestrator:
                 eager_front="propose",
             )
         except Exception as e:
-            logger.error(f"Newcomer spawn error ({name}): {e}")
+            # Advance PAST this name even on failure. Without this the same
+            # applicant is retried every round forever and growth stops dead
+            # — which is exactly what happened live:
+            #
+            #   Newcomer spawn error (Alex): HTTP 429 — Membership cap:
+            #   applicant already has 14 in-flight Membership proposals
+            #   across the platform (max 10).
+            #
+            # Applicant usernames are deterministic (`alex_applicant`), and
+            # create_user is idempotent by username, so every restart reused
+            # the SAME identity and filed yet another application for them.
+            # Alex eventually crossed the platform cap, and from then on
+            # every spawn 429'd on the same name: no new members, no error
+            # anyone would notice, a community frozen at its current size.
+            #
+            # A burned name is cheap (the pool falls back to Member_NNN);
+            # a wedged simulation is not.
+            if (self._newcomer_name_idx >= len(NEWCOMER_NAMES)
+                    or NEWCOMER_NAMES[self._newcomer_name_idx] == name):
+                self._newcomer_name_idx += 1
+            self.newcomer_users = [n for n in self.newcomer_users if n["name"] != name]
+            logger.error(
+                "Newcomer spawn error (%s): %s — skipping this applicant "
+                "(name index now %d)", name, e, self._newcomer_name_idx,
+            )
 
     async def _reconcile_agents_with_members(self) -> None:
         """Give every community member an acting agent.
