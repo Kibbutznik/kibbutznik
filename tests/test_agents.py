@@ -1603,6 +1603,7 @@ class TestGrowthCeilings:
         o = Orchestrator.__new__(Orchestrator)
         o._newcomer_name_idx = idx
         o._newcomers_per_round = 3
+        o.newcomer_users = []
         return o
 
     def test_curated_names_used_first(self):
@@ -1621,8 +1622,11 @@ class TestGrowthCeilings:
         b = self._orch(41)._next_newcomer_name()
         assert a != b
 
-    def test_sanity_bound_still_exists(self):
-        assert self._orch(1000)._next_newcomer_name() is None
+    def test_there_is_no_population_cap(self):
+        """Growth must not dead-end at any number — the community grows as
+        large as it votes itself."""
+        for idx in (1000, 5000, 50000):
+            assert self._orch(idx)._next_newcomer_name() is not None
 
     @pytest.mark.asyncio
     async def test_multiple_applicants_may_knock_per_round(self):
@@ -1632,3 +1636,57 @@ class TestGrowthCeilings:
         o._maybe_spawn_newcomer = _fake
         await o._spawn_newcomers()
         assert len(calls) == 3, "growth was capped at one applicant per round"
+
+
+class TestNewcomerSpawnDoesNotWedge:
+    """Applicant usernames are deterministic and create_user is idempotent
+    by username, so every restart re-used the SAME applicant identity and
+    filed another Membership proposal for them. Live, Alex accumulated 14
+    in-flight applications and crossed the platform cap of 10; every spawn
+    then 429'd on the same name. Because the except branch didn't advance
+    the name index, the sim retried Alex forever and the community could
+    never gain another member — silently."""
+
+    def _orch(self):
+        from agents.orchestrator import Orchestrator
+        o = Orchestrator.__new__(Orchestrator)
+        o._newcomer_name_idx = 0
+        o._newcomer_prob = 1.0
+        o.newcomer_users = []
+        o.community_id = "c1"
+        class _C:
+            async def create_user(self, **kw): raise RuntimeError("HTTP 429 Membership cap")
+        o.client = _C()
+        return o
+
+    @pytest.mark.asyncio
+    async def test_failed_spawn_advances_past_the_blocked_name(self):
+        o = self._orch()
+        await o._maybe_spawn_newcomer()
+        assert o._newcomer_name_idx == 1, "a failing applicant must not be retried forever"
+
+    @pytest.mark.asyncio
+    async def test_repeated_failures_keep_making_progress(self):
+        o = self._orch()
+        for _ in range(4):
+            await o._maybe_spawn_newcomer()
+        assert o._newcomer_name_idx == 4
+
+    @pytest.mark.asyncio
+    async def test_a_pending_applicant_does_not_block_the_next_one(self):
+        """The original guard returned early when the name at the current
+        index was already pending — so while ONE applicant waited on a vote,
+        no other newcomer could be created at all. That, not the spawn
+        probability, is what kept the roster crawling."""
+        from agents.orchestrator import NEWCOMER_NAMES
+        o = self._orch()
+        o.newcomer_users = [{"name": NEWCOMER_NAMES[0], "id": "u1", "persona": None}]
+        assert o._next_newcomer_name() == NEWCOMER_NAMES[1]
+
+    @pytest.mark.asyncio
+    async def test_several_applicants_can_be_in_flight_at_once(self):
+        from agents.orchestrator import NEWCOMER_NAMES
+        o = self._orch()
+        o.newcomer_users = [{"name": n, "id": "u", "persona": None}
+                            for n in NEWCOMER_NAMES[:3]]
+        assert o._next_newcomer_name() == NEWCOMER_NAMES[3]
