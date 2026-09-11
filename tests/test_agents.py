@@ -1411,3 +1411,50 @@ class TestTurboSpeed:
         assert o.speed_state() == {
             "turbo": False, "round_delay_s": 2.0, "turn_interval_s": 10.0,
         }
+
+
+class TestPulseGuidance:
+    """The prompt used to order `support_pulse` EVERY round in five places.
+    That was tuned against a model that under-pulsed. A faithful
+    instruction-follower obeys it literally and pulses on ~100% of turns —
+    including on an empty board, where a pulse decides nothing. On the live
+    community that produced a 98% acceptance rate and a permanently empty
+    proposal queue: nothing stayed open long enough to be deliberated."""
+
+    def _prompt(self, active, initiative=0.5):
+        from agents.decision_engine import build_decision_prompt
+        return build_decision_prompt(
+            persona_name="Y", persona_role="m", persona_background="b",
+            persona_decision_style="d", persona_communication_style="c",
+            persona_trait_summary="t", community_summary="S",
+            action_history=[], unsupported_proposals=[],
+            already_supported_proposals=[], already_commented=[],
+            consecutive_do_nothings=0, initiative=initiative,
+            total_active_proposals=active, interview_context="",
+            memory_context="", recent_failures=[])
+
+    def test_empty_board_forbids_pulsing(self):
+        p = self._prompt(0)
+        assert "PULSE STRATEGY — NOT THIS TURN" in p
+        assert "DO NOT emit `support_pulse` this turn" in p
+
+    def test_thin_board_asks_for_patience_not_a_verdict(self):
+        p = self._prompt(2)
+        assert "PULSE STRATEGY — LET IT BREATHE" in p
+        assert "NOT THIS TURN" not in p
+
+    def test_busy_board_still_encourages_pulsing(self):
+        """Guard against over-correcting: the original guidance existed
+        because proposals rotted when nobody pulsed."""
+        p = self._prompt(5)
+        assert "PULSE STRATEGY — DEFAULT IS TO SUPPORT!" in p
+        assert "support_pulse is your #1 action" in p
+
+    def test_no_unconditional_every_round_orders_remain(self):
+        """These absolutes are what caused the over-pulsing; if one comes
+        back it silently re-breaks deliberation."""
+        for active in (0, 2, 5):
+            p = self._prompt(active)
+            assert "`support_pulse` EVERY round" not in p
+            assert "ALMOST EVERY TURN" not in p
+            assert "in MOST of your turns" not in p
