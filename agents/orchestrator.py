@@ -124,6 +124,10 @@ class Orchestrator:
         self.newcomer_users: list[dict] = []  # users who applied but aren't members yet
         self._newcomer_name_idx: int = 0   # monotonic counter — never decreases even when newcomers are promoted
         self._newcomer_prob: float = 0.8   # ~80% chance per round — frequent membership activity
+        # How many applicants may knock in a single round. Each still rolls
+        # _newcomer_prob independently, so this raises the CEILING on growth
+        # rather than forcing a fixed intake.
+        self._newcomers_per_round: int = 3
         # Cached community data refreshed during rounds, used by get_status()
         # to avoid self-referencing HTTP calls that cause httpx.ReadError.
         self._cached_community: dict | None = None
@@ -216,6 +220,7 @@ class Orchestrator:
                     "Adopted existing community %s (%s) — data preserved across restart",
                     self.community_id, self.community_name,
                 )
+                await self._reconcile_agents_with_members()
                 await self.refresh_status_cache()
                 return
 
@@ -767,15 +772,43 @@ class Orchestrator:
             agent.engine = new_engine
         logger.info("LLM switched to backend=%s model=%s", backend, model)
 
+    def _next_newcomer_name(self) -> str | None:
+        """Next unused applicant name.
+
+        The curated pool is 30 names and used to be a hard ceiling: once
+        exhausted the community could never grow again, silently. Past the
+        curated names we generate `Member_NNN`, the same convention
+        `build_persona_list` already uses for large simulations.
+        """
+        idx = self._newcomer_name_idx
+        if idx < len(NEWCOMER_NAMES):
+            return NEWCOMER_NAMES[idx]
+        # 1000 is persona.MAX_MEMBERS — a sanity bound, not a design limit.
+        if idx >= 1000:
+            return None
+        return f"Member_{idx:03d}"
+
+    async def _spawn_newcomers(self) -> None:
+        """Spawn this round's applicants.
+
+        Growth used to be capped at ONE applicant per round at 80%
+        probability, so the community grew by at most ~0.8 members per
+        round even when every membership proposal passed. Membership was
+        also the slowest possible path: apply, wait for support, wait for a
+        pulse. Allowing a small batch lets several applications be in
+        flight at once, which is how a real community grows — several
+        people knocking, not a queue of one.
+        """
+        for _ in range(self._newcomers_per_round):
+            await self._maybe_spawn_newcomer()
+
     async def _maybe_spawn_newcomer(self) -> None:
         """Randomly spawn a newcomer who submits a Membership proposal."""
         if random.random() > self._newcomer_prob:
             return
-        idx = self._newcomer_name_idx
-        if idx >= len(NEWCOMER_NAMES):
-            return  # name pool exhausted
-
-        name = NEWCOMER_NAMES[idx]
+        name = self._next_newcomer_name()
+        if name is None:
+            return
         # Skip if this name already has a pending membership proposal
         if any(n["name"] == name for n in self.newcomer_users):
             return
@@ -841,6 +874,81 @@ class Orchestrator:
             )
         except Exception as e:
             logger.error(f"Newcomer spawn error ({name}): {e}")
+
+    async def _reconcile_agents_with_members(self) -> None:
+        """Give every community member an acting agent.
+
+        Membership survives a restart (it's in Postgres); the agent roster
+        does not (it's rebuilt from --members on every boot). `newcomer_users`
+        is in-memory too, so `_check_newcomer_acceptance` — which only walks
+        that list — could never promote anyone admitted before the restart.
+
+        The result was silently corrosive: a member voted in yesterday counts
+        toward every threshold today but never takes a turn. Observed live at
+        10 members / 6 agents — Emery, Sage, River and Hayden were all
+        admitted by Accepted Membership proposals and then sat inert. With
+        ProposalSupport at 25% of 10 members, the 6 who could actually act
+        needed 3 of their own 6 to move anything, so quorum quietly got
+        harder every time someone joined. Growth capped itself.
+
+        Runs on adopt, so restarts heal the roster instead of shrinking it.
+        """
+        try:
+            members = await self.client.get_members(self.community_id)
+        except Exception as e:
+            logger.error("Roster reconcile: could not fetch members: %s", e)
+            return
+
+        have = {a.user_id for a in self.agents}
+        added = []
+        for m in members:
+            uid = m.get("user_id")
+            if not uid or uid in have:
+                continue
+            # `user_name` is the login ("sage_applicant"); the persona wants
+            # the display name it was generated under.
+            raw = str(m.get("user_name") or m.get("name") or "member")
+            name = raw.replace("_applicant", "").strip() or "member"
+            name = name[:1].upper() + name[1:]
+            agent = Agent(
+                persona=generate_persona(name),
+                client=self.client,
+                engine=self.engine,
+                user_id=uid,
+                memory_store=self.memory_store,
+                tkg_client=self.tkg_client,
+            )
+            agent.community_id = self.community_id
+            agent.users_cache[uid] = name
+            self.agents.append(agent)
+            added.append(name)
+
+        # Never re-offer a name that is already in the community — otherwise
+        # a restart starts the pool at "Alex" again and spends rounds
+        # proposing people who are already members.
+        taken = {
+            str(m.get("user_name") or "").replace("_applicant", "").strip().lower()
+            for m in members
+        }
+        while (self._newcomer_name_idx < len(NEWCOMER_NAMES)
+               and NEWCOMER_NAMES[self._newcomer_name_idx].lower() in taken):
+            self._newcomer_name_idx += 1
+
+        if added:
+            logger.info(
+                "Roster reconcile: %d member(s) had no agent and were inert — "
+                "now acting: %s", len(added), ", ".join(added),
+            )
+        for name in added:
+            self.events.append(SimulationEvent(
+                timestamp=datetime.now(timezone.utc),
+                agent_name=name,
+                action_type="promoted",
+                details=f"{name} was already a member but had no agent — now active",
+                reason="Roster reconciled after restart",
+                success=True, eagerness=6, eager_front="observe",
+                community_id=self.community_id,
+            ))
 
     async def _check_newcomer_acceptance(self) -> None:
         """Promote accepted newcomers to full AI agents."""
@@ -952,7 +1060,7 @@ class Orchestrator:
             events = await self.run_round()
 
             # Maybe a newcomer applies this round
-            await self._maybe_spawn_newcomer()
+            await self._spawn_newcomers()
 
             # Print round summary
             for ev in events:

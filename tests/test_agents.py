@@ -1515,3 +1515,120 @@ class TestJudgmentQueue:
     def test_child_action_guidance_no_longer_says_support_any(self):
         p = self._prompt()
         assert "support ANY good proposals" not in p
+
+
+class TestRosterReconcile:
+    """Membership lives in Postgres and survives a restart; the agent roster
+    is rebuilt from --members on every boot and does not. `newcomer_users`
+    is in-memory too, so `_check_newcomer_acceptance` (which only walks that
+    list) could never promote anyone admitted before the restart.
+
+    Observed live: 10 members, 6 agents. Emery, Sage, River and Hayden were
+    all voted in by Accepted Membership proposals and then sat inert —
+    counting toward every threshold, never taking a turn."""
+
+    def _orch(self, members, agent_ids=()):
+        from agents.orchestrator import Orchestrator
+        o = Orchestrator.__new__(Orchestrator)
+        o.community_id = "c1"
+        o.events = []
+        o._newcomer_name_idx = 0
+        o.memory_store = None
+        o.tkg_client = None
+        o.engine = None
+
+        class _C:
+            async def get_members(self_inner, cid): return members
+        o.client = _C()
+
+        class _A:
+            def __init__(self, uid): self.user_id = uid; self.users_cache = {}
+        o.agents = [_A(i) for i in agent_ids]
+        return o
+
+    @pytest.mark.asyncio
+    async def test_inert_members_get_agents(self):
+        o = self._orch(
+            members=[{"user_id": "u1", "user_name": "diego"},
+                     {"user_id": "u2", "user_name": "sage_applicant"},
+                     {"user_id": "u3", "user_name": "river_applicant"}],
+            agent_ids=("u1",),
+        )
+        await o._reconcile_agents_with_members()
+        assert len(o.agents) == 3, "members without an agent must become agents"
+        assert {a.user_id for a in o.agents} == {"u1", "u2", "u3"}
+
+    @pytest.mark.asyncio
+    async def test_existing_agents_are_not_duplicated(self):
+        o = self._orch(members=[{"user_id": "u1", "user_name": "diego"}],
+                       agent_ids=("u1",))
+        await o._reconcile_agents_with_members()
+        assert len(o.agents) == 1
+
+    @pytest.mark.asyncio
+    async def test_applicant_suffix_is_stripped_for_the_persona_name(self):
+        o = self._orch(members=[{"user_id": "u2", "user_name": "sage_applicant"}])
+        await o._reconcile_agents_with_members()
+        assert o.agents[0].users_cache["u2"] == "Sage"
+
+    @pytest.mark.asyncio
+    async def test_name_pool_skips_people_already_in_the_community(self):
+        """Without this the pool restarts at "Alex" on every boot and the
+        sim spends rounds proposing members it already has."""
+        from agents.orchestrator import NEWCOMER_NAMES
+        members = [{"user_id": f"u{i}", "user_name": f"{n.lower()}_applicant"}
+                   for i, n in enumerate(NEWCOMER_NAMES[:3])]
+        o = self._orch(members=members)
+        await o._reconcile_agents_with_members()
+        assert o._newcomer_name_idx == 3
+        assert NEWCOMER_NAMES[o._newcomer_name_idx] not in {m["user_name"] for m in members}
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_leaves_roster_untouched(self):
+        o = self._orch(members=[], agent_ids=("u1",))
+        class _Boom:
+            async def get_members(self, cid): raise RuntimeError("db down")
+        o.client = _Boom()
+        await o._reconcile_agents_with_members()
+        assert len(o.agents) == 1
+
+
+class TestGrowthCeilings:
+    """Two silent caps kept the community small: one applicant per round,
+    and a 30-name pool that dead-ended with `return  # name pool exhausted`
+    — after which the community could never grow again, with no error."""
+
+    def _orch(self, idx=0):
+        from agents.orchestrator import Orchestrator
+        o = Orchestrator.__new__(Orchestrator)
+        o._newcomer_name_idx = idx
+        o._newcomers_per_round = 3
+        return o
+
+    def test_curated_names_used_first(self):
+        from agents.orchestrator import NEWCOMER_NAMES
+        assert self._orch(0)._next_newcomer_name() == NEWCOMER_NAMES[0]
+        assert self._orch(5)._next_newcomer_name() == NEWCOMER_NAMES[5]
+
+    def test_pool_does_not_dead_end_at_30(self):
+        from agents.orchestrator import NEWCOMER_NAMES
+        n = self._orch(len(NEWCOMER_NAMES))._next_newcomer_name()
+        assert n is not None, "growth must not stop when curated names run out"
+        assert n.startswith("Member_")
+
+    def test_generated_names_are_unique_per_index(self):
+        a = self._orch(40)._next_newcomer_name()
+        b = self._orch(41)._next_newcomer_name()
+        assert a != b
+
+    def test_sanity_bound_still_exists(self):
+        assert self._orch(1000)._next_newcomer_name() is None
+
+    @pytest.mark.asyncio
+    async def test_multiple_applicants_may_knock_per_round(self):
+        o = self._orch()
+        calls = []
+        async def _fake(): calls.append(1)
+        o._maybe_spawn_newcomer = _fake
+        await o._spawn_newcomers()
+        assert len(calls) == 3, "growth was capped at one applicant per round"
