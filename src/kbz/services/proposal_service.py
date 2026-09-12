@@ -104,6 +104,7 @@ _NUMERIC_VARIABLES = {
     "payBack", "Dividend", "SetMembershipHandler", "CreateArtifact",
     "EditArtifact", "RemoveArtifact", "DelegateArtifact", "CommitArtifact",
     "MinCommittee", "MaxAge", "ProposalRateLimit", "seniorityWeight",
+    "NewcomersOpen", "MembershipQueueMax", "MembershipCooldownHours",
     "membershipFee", "dividendBySeniority", "proposalCooldown",
     "quorumThreshold",
 }
@@ -144,6 +145,33 @@ async def _resolve_rate_limit(db: AsyncSession, community_id: uuid.UUID) -> int:
         return int(float(raw))
     except (TypeError, ValueError):
         return PROPOSAL_RATE_LIMIT_DEFAULT
+
+
+async def _resolve_numeric_var(
+    db: AsyncSession, community_id: uuid.UUID, name: str, fallback: int,
+) -> int:
+    """Read a numeric community variable, falling back to
+    DEFAULT_VARIABLES then to *fallback*.
+
+    Communities created before a variable shipped have no row for it,
+    so the DEFAULT_VARIABLES fallback is what gives them the new
+    behaviour without a backfill migration — same approach as
+    _resolve_rate_limit.
+    """
+    raw = (
+        await db.execute(
+            select(Variable.value).where(
+                Variable.community_id == community_id,
+                Variable.name == name,
+            )
+        )
+    ).scalar_one_or_none()
+    if raw is None:
+        raw = DEFAULT_VARIABLES.get(name)
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _validate_proposal_content(
@@ -802,6 +830,110 @@ class ProposalService:
                         f"for some to be decided before applying again."
                     ),
                 )
+
+            # ── The door: community-controlled admission ──────────
+            # The per-applicant cap above does NOT stop the attack
+            # that matters once members are agents: many applicants,
+            # each individually under their own cap, flooding ONE
+            # community. Every application fans out to every member,
+            # and when members are bots, judging it costs their owner
+            # real inference. The attack is not "get in" — it is
+            # "make everyone else pay to say no".
+            #
+            # These three limits are ordinary community variables, so
+            # the members vote them via ChangeVariable. There is no
+            # admin tier to appeal to, which is the point.
+
+            # 1. Is the door open at all?
+            if await _resolve_numeric_var(
+                self.db, community_id, "NewcomersOpen", 1,
+            ) <= 0:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "This community is closed to newcomers. Its "
+                        "members voted NewcomersOpen to 0; only a "
+                        "ChangeVariable proposal from inside can "
+                        "reopen it."
+                    ),
+                )
+
+            # 2. Queue depth — the real flood control. Caps in-flight
+            #    applications for THIS community regardless of how
+            #    many distinct applicants are behind them.
+            queue_max = await _resolve_numeric_var(
+                self.db, community_id, "MembershipQueueMax", 12,
+            )
+            if queue_max > 0:
+                queued = (
+                    await self.db.execute(
+                        select(func.count())
+                        .select_from(Proposal)
+                        .where(
+                            Proposal.community_id == community_id,
+                            Proposal.proposal_type == ProposalType.MEMBERSHIP,
+                            Proposal.proposal_status.in_(
+                                _ACTIVE_DEDUPE_STATUSES
+                            ),
+                        )
+                    )
+                ).scalar_one()
+                if queued >= queue_max:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=(
+                            f"Membership queue is full: {queued} "
+                            f"applications are already awaiting a "
+                            f"decision here (max {queue_max}). Apply "
+                            f"again once the members have worked "
+                            f"through them."
+                        ),
+                    )
+
+            # 3. Re-apply cooldown, anchored on DECISION time like the
+            #    ThrowOut cooldown below. Without it, a rejected
+            #    applicant can re-file the instant the pulse lands and
+            #    loop the community forever.
+            cooldown_h = await _resolve_numeric_var(
+                self.db, community_id, "MembershipCooldownHours", 24,
+            )
+            if cooldown_h > 0:
+                from datetime import datetime, timedelta, timezone
+                m_cutoff = datetime.now(timezone.utc) - timedelta(
+                    hours=cooldown_h,
+                )
+                m_decided = func.coalesce(
+                    Proposal.decided_at, Proposal.created_at,
+                )
+                recent_app = (
+                    await self.db.execute(
+                        select(Proposal).where(
+                            Proposal.community_id == community_id,
+                            Proposal.proposal_type == ProposalType.MEMBERSHIP,
+                            func.coalesce(
+                                Proposal.val_uuid, Proposal.user_id
+                            ) == applicant_id,
+                            Proposal.proposal_status.in_((
+                                ProposalStatus.ACCEPTED,
+                                ProposalStatus.REJECTED,
+                                ProposalStatus.CANCELED,
+                            )),
+                            m_decided >= m_cutoff,
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if recent_app is not None:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=(
+                            f"Already applied to this community within "
+                            f"the last {cooldown_h}h and it was "
+                            f"decided. Wait out the cooldown "
+                            f"(MembershipCooldownHours) before "
+                            f"re-applying."
+                        ),
+                    )
 
         # ThrowOut cooldown: per (community, target) pair. After a
         # ThrowOut against user X is decided (Accepted / Rejected /
