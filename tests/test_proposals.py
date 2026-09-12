@@ -1676,3 +1676,106 @@ async def test_ghost_support_endpoint_removed(client):
     assert r.status_code == 404, (
         f"ghost_support must not exist; got {r.status_code} {r.text}"
     )
+
+
+# ── The door: community-controlled newcomer admission ────────────
+#
+# Under the federated-bot model anyone can point an agent at a public
+# community. The pre-existing cap is per APPLICANT (10 in-flight
+# platform-wide), which does not stop the attack that matters: many
+# applicants, each under their own cap, flooding ONE community. Every
+# application fans out to every member, and when members are bots,
+# judging it costs their owner real inference. The attack is not
+# "get in" — it is "make everyone else pay to say no".
+
+
+async def _apply(client, community_id, applicant_id, text="applied to join"):
+    return await client.post(f"/communities/{community_id}/proposals", json={
+        "user_id": applicant_id,
+        "proposal_type": "Membership",
+        "proposal_text": text,
+        "val_uuid": applicant_id,
+    })
+
+
+async def _set_var(db, community_id, name, value):
+    """Set a community variable straight in the DB.
+
+    Variables are deliberately read-only over HTTP — only an executed
+    ChangeVariable proposal moves them — so a test that wants a
+    non-default door has to write the row.
+    """
+    from sqlalchemy import update as _update
+    from kbz.models.variable import Variable
+    await db.execute(
+        _update(Variable)
+        .where(Variable.community_id == community_id, Variable.name == name)
+        .values(value=str(value))
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_membership_queue_cap_blocks_a_flood(client, db):
+    """Many DISTINCT applicants flooding one community is the attack the
+    per-applicant cap misses. Queue depth is what bounds it."""
+    founder = await create_test_user(client, "founder")
+    community = await create_test_community(client, founder["id"])
+    await _set_var(db, community["id"], "MembershipQueueMax", 3)
+
+    accepted = 0
+    blocked = None
+    for i in range(6):
+        applicant = await create_test_user(client, f"flood{i}")
+        resp = await _apply(client, community["id"], applicant["id"])
+        if resp.status_code == 201:
+            accepted += 1
+        else:
+            blocked = resp
+            break
+
+    assert blocked is not None, "queue cap never engaged — flood succeeded"
+    assert blocked.status_code == 429
+    assert "queue is full" in blocked.json()["detail"].lower()
+    assert accepted <= 3
+
+
+@pytest.mark.asyncio
+async def test_closed_community_refuses_newcomers(client, db):
+    """NewcomersOpen=0 shuts the door. It is a plain variable, so the
+    members vote it — there is no admin tier to appeal to."""
+    founder = await create_test_user(client, "founder")
+    applicant = await create_test_user(client, "applicant")
+    community = await create_test_community(client, founder["id"])
+    await _set_var(db, community["id"], "NewcomersOpen", 0)
+
+    resp = await _apply(client, community["id"], applicant["id"])
+    assert resp.status_code == 403, resp.text
+    assert "closed to newcomers" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_open_community_still_accepts_newcomers(client):
+    """Guard against the door defaulting shut — a closed-by-accident
+    community would look identical to a working one until nobody could
+    ever join."""
+    founder = await create_test_user(client, "founder")
+    applicant = await create_test_user(client, "applicant")
+    community = await create_test_community(client, founder["id"])
+    resp = await _apply(client, community["id"], applicant["id"])
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_door_variables_are_change_variable_targets(client):
+    """The door must be votable from inside — otherwise closing it is
+    irreversible and the community has accidentally acquired an admin."""
+    from kbz.services.proposal_service import _NUMERIC_VARIABLES
+    from kbz.enums import DEFAULT_VARIABLES
+    for name in ("NewcomersOpen", "MembershipQueueMax",
+                 "MembershipCooldownHours"):
+        assert name in DEFAULT_VARIABLES, f"{name} missing from defaults"
+        assert name in _NUMERIC_VARIABLES, (
+            f"{name} not numeric-validated — ChangeVariable could set it "
+            f"to a string and crash the pulse"
+        )

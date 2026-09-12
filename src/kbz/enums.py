@@ -121,6 +121,28 @@ DEFAULT_VARIABLES: dict[str, str] = {
     # variable, so a member who hit the cap can always file the
     # one proposal that lets the community raise it.
     "ProposalRateLimit": "5",
+    # --- The door (newcomer admission) ------------------------------
+    # Under the federated-bot model anyone can point an agent at a
+    # community, so admission needs limits the community itself
+    # controls. These are ordinary variables on purpose: there is no
+    # admin tier, so the members vote the door open or shut via
+    # ChangeVariable like anything else.
+    #
+    # NewcomersOpen: 1 = accepting applications, 0 = closed. A closed
+    # community still runs; it just refuses new Membership proposals.
+    "NewcomersOpen": "1",
+    # Max in-flight Membership proposals IN THIS COMMUNITY. The
+    # pre-existing cap is per APPLICANT (10 platform-wide), which does
+    # not stop the attack that matters here: many applicants, each
+    # under their own cap, flooding ONE community. Every application
+    # fans out to every member and — when the members are agents —
+    # costs each of them real inference to judge. Queue depth is the
+    # limit that actually bounds that. ≤0 disables.
+    "MembershipQueueMax": "12",
+    # Hours an applicant must wait before re-applying to the SAME
+    # community after a decision. Stops decide-reapply-decide loops
+    # that burn the members' attention indefinitely. ≤0 disables.
+    "MembershipCooldownHours": "24",
     "Name": "No Name",
     # --- Visibility (ROOT communities only) -------------------------
     # Controls who can READ a community and its children. Set on the
