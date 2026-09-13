@@ -1690,3 +1690,107 @@ class TestNewcomerSpawnDoesNotWedge:
         o.newcomer_users = [{"name": n, "id": "u", "persona": None}
                             for n in NEWCOMER_NAMES[:3]]
         assert o._next_newcomer_name() == NEWCOMER_NAMES[3]
+
+
+class TestCommunityCatalog:
+    """The three seeded communities. `--communities` selects from this by
+    slug; a typo must fail loudly at boot rather than silently starting a
+    simulation with a community missing."""
+
+    def test_all_expands_to_three_distinct_communities(self):
+        from agents.communities import resolve
+        specs = resolve("all")
+        assert len(specs) == 3
+        assert len({s.slug for s in specs}) == 3
+
+    def test_slugs_resolve_individually(self):
+        from agents.communities import resolve
+        assert [s.slug for s in resolve("oracle")] == ["oracle"]
+        assert [s.slug for s in resolve("registry,commons")] == ["registry", "commons"]
+
+    def test_duplicates_are_collapsed(self):
+        """Otherwise `commons,commons` boots two orchestrators that fight
+        over the same persisted community id file."""
+        from agents.communities import resolve
+        assert len(resolve("commons,commons")) == 1
+
+    def test_unknown_slug_raises_with_the_options(self):
+        from agents.communities import resolve
+        with pytest.raises(ValueError, match="unknown community"):
+            resolve("oracel")
+
+    def test_empty_means_legacy_single_community_mode(self):
+        from agents.communities import resolve
+        assert resolve("") == []
+        assert resolve(None) == []
+
+    def test_every_mission_names_a_concrete_first_task(self):
+        """A mission seeds the Plan artifact — it is the first thing an
+        arriving agent reads and the highest-leverage text in the sim.
+        'Cooperate on this topic' gives an agent nothing to file."""
+        from agents.communities import CATALOG
+        for spec in CATALOG.values():
+            assert "First task" in spec.mission, f"{spec.slug} has no first task"
+            assert "Done looks like" in spec.mission, f"{spec.slug} has no done state"
+            assert len(spec.mission) > 400, f"{spec.slug} mission is too thin"
+
+
+class TestOrchestratorRegistry:
+    """One process, N root communities sharing the API. Endpoints default
+    to the primary so single-community clients keep working untouched."""
+
+    def _orch(self, name):
+        from agents.orchestrator import Orchestrator
+        o = Orchestrator.__new__(Orchestrator)
+        o.community_name = name
+        o.community_id = None
+        o.mission = ""
+        o.events = []
+        o._round = 0
+        o._paused = False
+        o._cached_members = []
+        return o
+
+    def teardown_method(self):
+        import agents.simulation_api as api
+        api._orchestrators.clear()
+        api._orchestrator = None
+
+    def test_slug_is_url_safe(self):
+        from agents.simulation_api import community_slug
+        assert community_slug(self._orch("The Commons")) == "the-commons"
+        assert community_slug(self._orch("The Oracle")) == "the-oracle"
+
+    def test_first_registered_becomes_primary(self):
+        from agents.simulation_api import register_orchestrator, get_orchestrator
+        a = self._orch("The Commons")
+        register_orchestrator(a)
+        register_orchestrator(self._orch("The Oracle"))
+        assert get_orchestrator() is a
+
+    def test_lookup_by_slug_and_by_display_name(self):
+        """The viewer holds the display name, not always the slug."""
+        from agents.simulation_api import register_orchestrator, get_orchestrator
+        register_orchestrator(self._orch("The Commons"))
+        o = self._orch("The Oracle")
+        register_orchestrator(o)
+        assert get_orchestrator("the-oracle") is o
+        assert get_orchestrator("The Oracle") is o
+
+    def test_unknown_community_404s_and_names_what_is_running(self):
+        from fastapi import HTTPException
+        from agents.simulation_api import register_orchestrator, get_orchestrator
+        register_orchestrator(self._orch("The Commons"))
+        with pytest.raises(HTTPException) as e:
+            get_orchestrator("nope")
+        assert e.value.status_code == 404
+        assert "the-commons" in e.value.detail
+
+    def test_communities_are_isolated(self):
+        """Pausing one must not pause the others — a shared pause flag
+        would make the whole process stop when any one run auto-pauses."""
+        from agents.simulation_api import register_orchestrator, get_orchestrator
+        a, b = self._orch("The Commons"), self._orch("The Oracle")
+        register_orchestrator(a); register_orchestrator(b)
+        get_orchestrator("the-commons")._paused = True
+        assert get_orchestrator("the-oracle")._paused is False

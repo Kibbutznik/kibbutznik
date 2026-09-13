@@ -60,9 +60,43 @@ _restart_callback: Callable[[], Awaitable[None]] | None = None
 _restarting: bool = False
 
 
+# Slug -> Orchestrator. One process can host several root communities;
+# they share the API, the DB and the global LLM turn pacer (so total spend
+# stays bounded no matter how many run), but each keeps its own agents,
+# round counter, pause state and persisted community id.
+_orchestrators: dict[str, Orchestrator] = {}
+
+
 def set_orchestrator(orch: Orchestrator):
+    """Register the PRIMARY orchestrator.
+
+    Every /simulation/* endpoint defaults to this one when no `community`
+    is given, so single-community deployments and existing clients keep
+    working untouched.
+    """
     global _orchestrator
     _orchestrator = orch
+    _orchestrators.setdefault(community_slug(orch), orch)
+
+
+def register_orchestrator(orch: Orchestrator, primary: bool = False) -> str:
+    """Add an orchestrator to the registry, returning its slug."""
+    slug = community_slug(orch)
+    _orchestrators[slug] = orch
+    if primary or _orchestrator is None:
+        set_orchestrator(orch)
+    return slug
+
+
+def community_slug(orch: Orchestrator) -> str:
+    """Stable url-safe key for a community name."""
+    return "".join(
+        c if c.isalnum() else "-" for c in orch.community_name.lower()
+    ).strip("-").replace("--", "-")
+
+
+def list_orchestrators() -> dict[str, Orchestrator]:
+    return dict(_orchestrators)
 
 
 def set_restart_callback(cb: Callable[[], Awaitable[None]]):
@@ -70,7 +104,30 @@ def set_restart_callback(cb: Callable[[], Awaitable[None]]):
     _restart_callback = cb
 
 
-def get_orchestrator() -> Orchestrator:
+def get_orchestrator(community: str | None = None) -> Orchestrator:
+    """Resolve a community to its orchestrator.
+
+    `community` may be a slug or the community's display name; omitted, it
+    resolves to the primary.
+    """
+    if community:
+        orch = _orchestrators.get(community)
+        if orch is None:
+            # Accept a display name too — the viewer has the name, not
+            # always the slug.
+            for candidate in _orchestrators.values():
+                if candidate.community_name == community:
+                    orch = candidate
+                    break
+        if orch is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Unknown community {community!r}. Running: "
+                    f"{', '.join(_orchestrators) or 'none'}"
+                ),
+            )
+        return orch
     if _orchestrator is None:
         raise HTTPException(status_code=503, detail="No simulation running")
     return _orchestrator
@@ -103,11 +160,34 @@ class LLMSwitchRequest(BaseModel):
 
 # ── Status / agents ─────────────────────────────────────
 
+@router.get("/communities")
+async def list_communities():
+    """Every root community this process is running.
+
+    The viewer uses this to offer a switcher; a delegate uses it to see
+    what is on offer before picking one to apply to.
+    """
+    out = []
+    for slug, orch in list_orchestrators().items():
+        out.append({
+            "slug": slug,
+            "name": orch.community_name,
+            "community_id": orch.community_id,
+            "mission": (orch.mission or "")[:400],
+            "paused": orch.is_paused,
+            "round": orch._round,
+            "total_events": len(orch.events),
+            "members": len(orch._cached_members or []),
+            "primary": orch is _orchestrator,
+        })
+    return {"communities": out}
+
+
 @router.get("/status")
-async def simulation_status():
+async def simulation_status(community: str | None = None):
     if _restarting:
         return {"restarting": True, "round": 0, "paused": False, "total_events": 0}
-    orch = get_orchestrator()
+    orch = get_orchestrator(community)
     return await orch.get_status()
 
 
@@ -152,26 +232,26 @@ async def list_agents():
 # ── Control ──────────────────────────────────────────────
 
 @router.post("/pause")
-async def pause_simulation():
+async def pause_simulation(community: str | None = None):
     # Harmless (just stops spend); left fully public.
-    orch = get_orchestrator()
+    orch = get_orchestrator(community)
     orch.pause()
     return {"paused": True}
 
 
 @router.post("/resume")
-async def resume_simulation(request: Request):
+async def resume_simulation(request: Request, community: str | None = None):
     # Public Play button. Each resume can drive up to auto_pause_every events
     # of LLM spend, so cap per-IP — a real watcher presses Play a handful of
     # times an hour; a script that tries to keep the sim running 24/7 gets cut.
     _rate_limit(request, "sim-resume", limit=6)
-    orch = get_orchestrator()
+    orch = get_orchestrator(community)
     orch.resume()
     return {"paused": False}
 
 
 @router.post("/speed")
-async def set_speed(req: SpeedRequest, request: Request):
+async def set_speed(req: SpeedRequest, request: Request, community: str | None = None):
     """Toggle full-speed mode (no round delay, no LLM turn pacing).
 
     Public, like the Play button, and for the same reason: a run is capped
@@ -181,13 +261,13 @@ async def set_speed(req: SpeedRequest, request: Request):
     per-IP cap below is tighter than resume's.
     """
     _rate_limit(request, "sim-speed", limit=20)
-    orch = get_orchestrator()
+    orch = get_orchestrator(community)
     return orch.set_turbo(req.turbo)
 
 
 @router.get("/speed")
-async def get_speed():
-    orch = get_orchestrator()
+async def get_speed(community: str | None = None):
+    orch = get_orchestrator(community)
     return orch.speed_state()
 
 

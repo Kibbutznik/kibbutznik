@@ -42,10 +42,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from agents.orchestrator import Orchestrator
+from agents.communities import resolve as resolve_communities
 from agents.persona import build_persona_list, MAX_MEMBERS
 from agents.simulation_api import (
     router as sim_router,
     set_orchestrator,
+    register_orchestrator,
     set_restart_callback,
 )
 
@@ -201,6 +203,13 @@ Examples:
                         help="LLM model name (e.g. gemma4:26b for Ollama)")
     parser.add_argument("--community-name", default="AI Kibbutz", help="Community name")
     parser.add_argument(
+        "--communities", default="",
+        help="Comma-separated slugs from the seeded catalog (commons, "
+             "registry, oracle) or 'all'. Runs one root community per slug "
+             "in this process. Omit for the legacy single-community mode "
+             "driven by --community-name/--mission.",
+    )
+    parser.add_argument(
         "--members", type=int, default=6,
         metavar="N",
         help=f"Number of agents to start with (2–{MAX_MEMBERS}, default: 6). "
@@ -275,11 +284,19 @@ Examples:
 
     _apply_preset_env(args, sys.argv[1:], parser.error)
 
-    def _make_orchestrator(n_members: int) -> Orchestrator:
-        """Build an Orchestrator with the current args but a fresh persona list."""
+    def _make_orchestrator(
+        n_members: int,
+        community_name: str | None = None,
+        community_mission: str | None = None,
+    ) -> Orchestrator:
+        """Build an Orchestrator with the current args but a fresh persona list.
+
+        name/mission default to the single-community CLI args; the
+        multi-community path passes a spec's own values instead.
+        """
         return Orchestrator(
-            community_name=args.community_name,
-            mission=mission,
+            community_name=community_name or args.community_name,
+            mission=community_mission or mission,
             api_url=f"http://localhost:{args.port}",
             llm_backend=args.backend,
             llm_model=args.model,
@@ -294,8 +311,29 @@ Examples:
             start_paused=args.start_paused,
         )
 
-    orch = _make_orchestrator(args.members)
-    set_orchestrator(orch)
+    # ── Community set ────────────────────────────────────────────────
+    # One process, N root communities. They share this API, the DB and the
+    # global LLM turn pacer — so total spend is bounded by the pacer no
+    # matter how many run — while each keeps its own agents, round
+    # counter, pause state and persisted community id. The id file is
+    # already keyed by community slug, so the three never collide.
+    specs = resolve_communities(args.communities) if args.communities else []
+    orchestrators: list[Orchestrator] = []
+    if specs:
+        for spec in specs:
+            o = _make_orchestrator(
+                spec.members, community_name=spec.name,
+                community_mission=spec.mission,
+            )
+            register_orchestrator(o)
+            orchestrators.append(o)
+        register_orchestrator(orchestrators[0], primary=True)
+        log_names = ", ".join(s.name for s in specs)
+        print(f"[sim] running {len(specs)} communities: {log_names}")
+    else:
+        orchestrators = [_make_orchestrator(args.members)]
+        set_orchestrator(orchestrators[0])
+    orch = orchestrators[0]  # primary — restart + BotRunner engine source
 
     viewer_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "viewer")
 
@@ -388,12 +426,29 @@ Examples:
             api_base_url="http://localhost:8000",
         )
         await bot_runner.start()
+        # One loop per community. They interleave through the shared
+        # global turn pacer rather than each running flat out, so N
+        # communities cost the same per unit time as one.
         sim_task = asyncio.create_task(run_simulation(orch, rounds=args.rounds, delay=args.delay))
         _sim_state["task"] = sim_task
+        extra_tasks = [
+            asyncio.create_task(
+                run_simulation(o, rounds=args.rounds, delay=args.delay)
+            )
+            for o in orchestrators[1:]
+        ]
+        _sim_state["extra_tasks"] = extra_tasks
         set_restart_callback(_restart)
         try:
             yield
         finally:
+            for t in _sim_state.get("extra_tasks") or []:
+                t.cancel()
+            for t in _sim_state.get("extra_tasks") or []:
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
             cascade_task.cancel()
             try:
                 await cascade_task
