@@ -1536,6 +1536,7 @@ class TestRosterReconcile:
         o.memory_store = None
         o.tkg_client = None
         o.engine = None
+        o.support_judge = None
 
         class _C:
             async def get_members(self_inner, cid): return members

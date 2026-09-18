@@ -37,6 +37,7 @@ import logging
 
 from agents.orchestrator import Orchestrator
 from agents.persona import load_all_personas
+from agents.support_judge import SupportJudgeUnavailable, make_support_judge
 
 
 def setup_logging(verbose: bool = False):
@@ -74,6 +75,10 @@ Examples:
                         help="LLM model name (e.g. gemma4:26b for Ollama)")
     parser.add_argument("--api-url", default="http://localhost:8000", help="KBZ API URL")
     parser.add_argument("--community-name", default="AI Kibbutz", help="Community name")
+    parser.add_argument("--support-judge", choices=["auto", "typesafe", "llm"],
+                        default=os.environ.get("KBZ_SUPPORT_JUDGE", "auto"),
+                        help="Who decides support votes: typesafe, llm, or auto = "
+                             "TypeSafe when configured (default; env KBZ_SUPPORT_JUDGE)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
 
     # Ollama-specific options
@@ -96,6 +101,11 @@ Examples:
     personas = load_all_personas()
     logger.info(f"Loaded {len(personas)} personas: {[p.name for p in personas]}")
 
+    try:
+        support_judge = make_support_judge(args.support_judge)
+    except (SupportJudgeUnavailable, ValueError) as e:
+        parser.error(f"--support-judge {args.support_judge}: {e}")
+
     orch = Orchestrator(
         community_name=args.community_name,
         api_url=args.api_url,
@@ -107,6 +117,7 @@ Examples:
         ollama_temperature=args.ollama_temp,
         ollama_num_predict=args.ollama_max_tokens,
         max_retries=args.retries,
+        support_judge=support_judge,
     )
 
     try:
@@ -135,6 +146,8 @@ Examples:
         logger.error(f"Simulation error: {e}", exc_info=True)
     finally:
         await orch.cleanup()
+        if support_judge is not None:
+            await support_judge.aclose()
 
 
 if __name__ == "__main__":
