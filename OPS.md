@@ -131,10 +131,24 @@ ssh root@157.180.29.140 'journalctl -u kbz --since "5 min ago" | grep "Support v
 ssh root@157.180.29.140 'echo KBZ_SUPPORT_JUDGE=llm >> /etc/kbz/env && systemctl restart kbz'
 ```
 
-`/simulation/status` reports `support_judge` (model, calls, errors); `null`
-means the LLM is voting. A TypeSafe error costs nothing but that turn's votes
-going back to the LLM. Re-measure the voting thresholds after a Jev upgrade
-with `python -m agents.bench_support`.
+`/simulation/status` reports `support_judge` (model, calls, errors, questions
+asked vs reused from the cache); `null` means the LLM is voting. A TypeSafe
+error costs nothing but that turn's votes going back to the LLM. Re-measure the
+voting thresholds after a Jev upgrade with `python -m agents.bench_support`.
+
+TypeSafe answers are cached in-process: questions that don't depend on the
+member (is it concrete, harmful, a duplicate…) are asked once for everyone,
+and a member's stance is re-asked only when the proposal, its comments, the
+rules or the member's plan change.
+
+`KBZ_VOTE_ONLY_TURNS=1` (or `--vote-only-turns`) lets agents skip the LLM on
+turns with nothing to write about and only vote. It is off by default because
+it trades writing for LLM calls. Measured over 8 live rounds against the same
+setup with it off: 34% fewer LLM calls and 35% less wall-clock time, but 39%
+fewer proposals, 70% fewer comments and half as many proposals accepted. It
+suits a slow local model more than prod. The log's `turn:` lines say which
+turns called the LLM and why, and `/simulation/status` counts `turns.llm` vs
+`turns.vote_only`.
 
 ## Vertical scale up / down (Hetzner)
 
