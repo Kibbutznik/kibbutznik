@@ -137,6 +137,26 @@ class CommunitySnapshot:
     def member_names(self, users_cache: dict[str, str]) -> list[str]:
         return [users_cache.get(m["user_id"], m["user_id"][:8]) for m in self.members]
 
+    def unclaimed_empty_artifacts(self) -> list[dict]:
+        """Empty artifacts in OPEN containers that no in-flight EditArtifact
+        is already filling: work a member could pick up right now. A Plan still
+        showing its template counts as empty; an artifact delegated to a child
+        action is that action's work, not this community's."""
+        in_flight = {
+            p.get("val_uuid") for p in self.proposals_out_there + self.proposals_on_the_air + self.proposals_draft
+            if p.get("proposal_type") == "EditArtifact"
+        }
+        work = []
+        for c in self.containers:
+            if c.get("status") != 1:  # OPEN
+                continue
+            for a in self.container_artifacts.get(c["id"], []):
+                content = (a.get("content") or "").strip()
+                template = a.get("is_plan") and content.startswith("## Plan") and "(What is this" in content
+                if (not content or template) and a["id"] not in in_flight and a["id"] not in self.delegations_out:
+                    work.append(a)
+        return work
+
     def _threshold_for_type(self, proposal_type: str) -> int:
         """Calculate the support count needed for a proposal type to pass."""
         import math

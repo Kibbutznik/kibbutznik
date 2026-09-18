@@ -32,8 +32,11 @@ member voted, so its comments can explain the votes.
 from __future__ import annotations
 
 import configparser
+import hashlib
+import json
 import logging
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from agents.community_state import CommunitySnapshot, tag_id
@@ -345,13 +348,66 @@ _CHAT_QUESTIONS = {
 }
 
 
+# ── Cache ─────────────────────────────────────────────────────────────
+# A proposal is re-judged every turn until the member backs it, and every
+# member asks about the same proposals. Most answers don't depend on who is
+# asking: whether a text is concrete, whether an edit improves its section,
+# whether a change would harm the community, whether a comment names a real
+# flaw, whether two proposals are the same change. Those are cached once for
+# everyone, keyed by exactly what they read, so members also agree on them.
+# Only stance (how much THIS member wants it) is per member, and it holds
+# until the member's plan, the proposal, its comments or the rules change.
+
+
+def _fingerprint(obj) -> str:
+    return hashlib.sha1(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+class AnswerCache:
+    """LRU of question answers, keyed by what each question reads."""
+
+    def __init__(self, maxsize: int = 20_000):
+        self._answers: OrderedDict[tuple, float] = OrderedDict()
+        self._maxsize = maxsize
+
+    def get(self, key: tuple) -> float | None:
+        value = self._answers.get(key)
+        if value is not None:
+            self._answers.move_to_end(key)
+        return value
+
+    def put(self, key: tuple, value: float) -> None:
+        self._answers[key] = value
+        self._answers.move_to_end(key)
+        if len(self._answers) > self._maxsize:
+            self._answers.popitem(last=False)
+
+
+def _cache_key(qid: str, fp: dict[str, str], member_fp: str, context_fp: str) -> tuple | None:
+    """What a question reads, as a cache key; None for uncacheable (chat)."""
+    kind, key, *other = qid.split(":")
+    if kind == "stance":
+        return (kind, member_fp, context_fp, fp[key], fp[f"{key}#comments"])
+    if kind == "harmful":
+        return (kind, context_fp, fp[key])
+    if kind in ("concrete", "improves"):
+        return (kind, fp[key])
+    if kind == "objection":
+        return (kind, fp[key], fp[f"{key}#comments"])
+    if kind == "duplicate":
+        return (kind, fp[key], fp[other[0]])
+    return None
+
+
 @dataclass
 class VoteRequest:
     state: dict
-    questions: dict
+    questions: dict               # asked this turn
     candidates: dict[str, dict]   # state key ("p3") → proposal, in rank order; ids never reach the model
     backed_keys: set[str] = field(default_factory=set)       # proposals the member already backs
     same_target: dict[str, list[str]] = field(default_factory=dict)  # candidate → earlier keys with its target
+    cached: dict[str, float] = field(default_factory=dict)       # question → answer reused from the cache
+    cache_keys: dict[str, tuple] = field(default_factory=dict)   # asked question → where to store its answer
 
 
 def build_request(
@@ -362,6 +418,7 @@ def build_request(
     supported_ids: set[str],
     users_cache: dict[str, str],
     my_user_id: str | None,
+    cache: AnswerCache | None = None,
 ) -> VoteRequest:
     open_props = sorted(snapshot.proposals_on_the_air + snapshot.proposals_out_there, key=_rank)
     backed = [p for p in open_props if _is_supported(p, supported_ids, my_user_id)]
@@ -387,20 +444,20 @@ def build_request(
     req = VoteRequest(state=state, questions={}, candidates={})
 
     if pending:
-        # Proposals the member already backs sit in state too, so a pending
-        # copy of one of them is recognised as a duplicate.
+        # Proposals the member already backs are candidates for comparison,
+        # so a pending copy of one of them is recognised as a duplicate.
         proposals: dict = {}
         keys: dict[str, str] = {}
         for i, p in enumerate(backed + pending, start=1):
             keys[p["id"]] = f"p{i}"
             proposals[f"p{i}"] = _proposal_state(p, snapshot, users_cache, my_user_id)
-        state["proposals"] = proposals
         req.backed_keys = {keys[p["id"]] for p in backed}
+        wanted: dict = {}
         earlier = list(backed)
         for p in pending:
             key, ptype = keys[p["id"]], p.get("proposal_type", "")
             req.candidates[key] = p
-            req.questions.update(_proposal_questions(key, ptype, proposals[key], bool(intention)))
+            wanted.update(_proposal_questions(key, ptype, proposals[key], bool(intention)))
             same_type = [e for e in earlier if e.get("proposal_type") == ptype]
             target = _target_key(p)
             if target is not None:
@@ -409,8 +466,29 @@ def build_request(
                     req.same_target[key] = matches
             elif ptype in _SEMANTIC_DUPLICATE_TYPES:
                 for e in same_type:
-                    req.questions[f"duplicate:{key}:{keys[e['id']]}"] = _duplicate_question(key, keys[e["id"]])
+                    wanted[f"duplicate:{key}:{keys[e['id']]}"] = _duplicate_question(key, keys[e["id"]])
             earlier.append(p)
+
+        fp: dict[str, str] = {}
+        for k, pstate in proposals.items():
+            fp[k] = _fingerprint({f: v for f, v in pstate.items() if f != "comments"})
+            fp[f"{k}#comments"] = _fingerprint(pstate.get("comments", []))
+        member_fp, context_fp = _fingerprint(member), _fingerprint(community)
+        referenced: set[str] = set()
+        for qid, question in wanted.items():
+            ckey = _cache_key(qid, fp, member_fp, context_fp)
+            hit = cache.get(ckey) if cache is not None and ckey is not None else None
+            if hit is not None:
+                req.cached[qid] = hit
+                continue
+            req.questions[qid] = question
+            if ckey is not None:
+                req.cache_keys[qid] = ckey
+            referenced.update(qid.split(":")[1:])
+        # Only proposals a question still reads go to the model: less to
+        # pay for, and less irrelevant state to distract the judgment.
+        if referenced:
+            state["proposals"] = {k: v for k, v in proposals.items() if k in referenced}
 
     if snapshot.chat_messages and open_props:
         state["recent_chat"] = [
@@ -598,6 +676,10 @@ class SupportVotes:
     # Raw chat signals, when chat was read (None = no chat this turn).
     chat_wait: float | None = None
     chat_pulse: float | None = None
+    # What the turn cost: questions sent vs reused, and billed input tokens.
+    asked: int = 0
+    cached: int = 0
+    input_tokens: int = 0
 
     def actions(self) -> list[AgentAction]:
         acts = [
@@ -629,36 +711,36 @@ class SupportVotes:
         return lines
 
 
-def _judgment(response, req: VoteRequest, key: str, backed_keys: set[str]) -> ProposalJudgment:
-    def noul(kind: str) -> float | None:
-        a = response.nouls.get(f"{kind}:{key}")
-        return None if a is None else a.noul
-
+def _judgment(answers: dict[str, float], req: VoteRequest, key: str, backed_keys: set[str]) -> ProposalJudgment:
     # How surely this repeats a proposal the member backs (so far this turn
     # included): 1.0 for a same-target match, the model's yes otherwise.
     copies = [1.0 for other in req.same_target.get(key, []) if other in backed_keys]
     copies += [
-        response.nouls[qid].noul for qid in req.questions
+        value for qid, value in answers.items()
         if qid.startswith(f"duplicate:{key}:") and qid.rsplit(":", 1)[1] in backed_keys
     ]
     return ProposalJudgment(
-        stance=response.scores[f"stance:{key}"].score,
-        harmful=response.nouls[f"harmful:{key}"].noul,
-        concrete=noul("concrete"),
-        improves=noul("improves"),
+        stance=answers[f"stance:{key}"],
+        harmful=answers[f"harmful:{key}"],
+        concrete=answers.get(f"concrete:{key}"),
+        improves=answers.get(f"improves:{key}"),
         duplicate=max(copies) if copies else None,
-        objection=noul("objection"),
+        objection=answers.get(f"objection:{key}"),
     )
 
 
 class SupportJudge:
-    """Decides an agent's support votes with one TypeSafe request per turn."""
+    """Decides an agent's support votes with at most one TypeSafe request per
+    turn, and none when every answer it needs is already cached."""
 
     def __init__(self, client, model: str = TYPESAFE_MODEL):
         self._client = client
         self.model = model
+        self._cache = AnswerCache()
         self._call_count = 0
         self._error_count = 0
+        self._asked = 0
+        self._cached = 0
 
     @classmethod
     def from_config(cls) -> SupportJudge:
@@ -689,7 +771,10 @@ class SupportJudge:
 
     @property
     def stats(self) -> dict:
-        return {"model": self.model, "calls": self._call_count, "errors": self._error_count}
+        return {
+            "model": self.model, "calls": self._call_count, "errors": self._error_count,
+            "questions_asked": self._asked, "questions_cached": self._cached,
+        }
 
     async def vote(
         self,
@@ -705,9 +790,10 @@ class SupportJudge:
         req = build_request(
             persona=persona, intention=intention, snapshot=snapshot,
             supported_ids=supported_proposals, users_cache=users_cache, my_user_id=my_user_id,
+            cache=self._cache,
         )
-        votes = SupportVotes(model=self.model)
-        response = None
+        votes = SupportVotes(model=self.model, asked=len(req.questions), cached=len(req.cached))
+        answers = dict(req.cached)
         if req.questions:
             try:
                 response = await self._client.system_one(req.state, req.questions, model=self.model)
@@ -716,12 +802,20 @@ class SupportJudge:
                 raise
             self._call_count += 1
             votes.model = response.model
+            votes.input_tokens = getattr(getattr(response, "usage", None), "input_tokens", 0) or 0
+            for qid in req.questions:
+                value = response.scores[qid].score if qid.startswith("stance:") else response.nouls[qid].noul
+                answers[qid] = value
+                if qid in req.cache_keys:
+                    self._cache.put(req.cache_keys[qid], value)
+        self._asked += votes.asked
+        self._cached += votes.cached
 
         # Rank order: a proposal backed earlier in this loop is one its later
         # copies defer to.
         backed_keys = set(req.backed_keys)
         for key, p in req.candidates.items():
-            j = _judgment(response, req, key, backed_keys)
+            j = _judgment(answers, req, key, backed_keys)
             support, reason = decide_proposal(persona, p.get("proposal_type", ""), j)
             if support:
                 backed_keys.add(key)
@@ -732,9 +826,9 @@ class SupportJudge:
             p["id"] for p in snapshot.proposals_on_the_air + snapshot.proposals_out_there
             if _is_supported(p, supported_proposals, my_user_id)
         } | newly_backed
-        if response is not None and "chat:wait" in req.questions:
-            votes.chat_wait = response.nouls["chat:wait"].noul
-            votes.chat_pulse = response.nouls["chat:pulse"].noul
+        if "chat:wait" in answers:
+            votes.chat_wait = answers["chat:wait"]
+            votes.chat_pulse = answers["chat:pulse"]
         next_pulse = snapshot.next_pulse
         votes.pulse, votes.pulse_reason = decide_pulse(
             persona, snapshot,

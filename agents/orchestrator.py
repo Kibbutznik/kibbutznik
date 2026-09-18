@@ -83,9 +83,13 @@ class Orchestrator:
         # leaves them to the LLM. Owned by the caller, which may share one
         # judge across orchestrators and the BotRunner.
         support_judge: SupportJudge | None = None,
+        # With a judge: agents skip the LLM on turns with nothing to write
+        # about and just vote (Agent._writing_triggers).
+        vote_only_turns: bool = False,
     ):
         self.community_name = community_name
         self.support_judge = support_judge
+        self.vote_only_turns = vote_only_turns
         self.mission = mission
         self.api_url = api_url
         self.client = KBZClient(api_url)
@@ -180,6 +184,7 @@ class Orchestrator:
                 memory_store=self.memory_store,
                 tkg_client=self.tkg_client,
                 support_judge=self.support_judge,
+                vote_only_turns=self.vote_only_turns,
             )
             await agent.register()
             self.agents.append(agent)
@@ -966,6 +971,7 @@ class Orchestrator:
                 memory_store=self.memory_store,
                 tkg_client=self.tkg_client,
                 support_judge=self.support_judge,
+                vote_only_turns=self.vote_only_turns,
             )
             agent.community_id = self.community_id
             agent.users_cache[uid] = name
@@ -1022,6 +1028,7 @@ class Orchestrator:
                     memory_store=self.memory_store,
                     tkg_client=self.tkg_client,
                     support_judge=self.support_judge,
+                    vote_only_turns=self.vote_only_turns,
                 )
                 agent.community_id = self.community_id
                 # Ensure the agent recognizes itself in community snapshots
@@ -1248,6 +1255,10 @@ class Orchestrator:
             },
             # Who casts support votes: TypeSafe stats, or null for the LLM.
             "support_judge": self.support_judge.stats if self.support_judge else None,
+            "turns": {
+                "llm": sum(a.llm_turns for a in self.agents),
+                "vote_only": sum(a.vote_only_turn_count for a in self.agents),
+            },
             "recent_events": [
                 {
                     "agent": e.agent_name,

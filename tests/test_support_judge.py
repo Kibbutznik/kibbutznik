@@ -5,7 +5,7 @@ pin the request shape, the voting policy and the pulse arithmetic.
 """
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -499,3 +499,179 @@ class TestAgentTurnWithJudge:
         agent = Agent(persona=_persona(), client=None, engine=None, user_id="me")
         merged = agent._merge_support_votes([AgentAction("do_nothing", "idle")], SupportVotes())
         assert [d.action_type for d in merged] == ["do_nothing"]
+
+
+class TestAnswerCache:
+    """Answers are reused only while what they read is unchanged, and the
+    ones that don't depend on the member are shared across members."""
+
+    def _kinds(self, client, call=-1):
+        return sorted({qid.split(":")[0] for qid in client.calls[call][1]})
+
+    async def test_an_unchanged_board_needs_no_second_request(self):
+        client = _FakeClient({"Be respectful.": {"concrete": 0.05}})
+        judge = SupportJudge(client)
+        snap = _snapshot([_proposal("Be respectful."), _proposal("Cite ids."), _proposal("Rate-limit.")])
+        first = await _judge_vote(judge, snap)
+        second = await _judge_vote(judge, snap)
+        assert len(client.calls) == 1
+        assert [v.support for v in second.proposals] == [v.support for v in first.proposals]
+        assert (second.asked, second.cached) == (0, first.asked)
+        assert second.pulse == first.pulse
+
+    async def test_a_second_member_is_only_asked_its_own_stance(self):
+        client = _FakeClient()
+        judge = SupportJudge(client)
+        snap = _snapshot([_proposal("Cite ids."), _proposal("Cite ids, please.")])
+        await _judge_vote(judge, snap, persona=_persona(name="Mei"))
+        await _judge_vote(judge, snap, persona=_persona(name="Henrik"))
+        assert self._kinds(client) == ["stance"]
+
+    async def test_a_new_comment_reasks_only_what_reads_comments(self):
+        client = _FakeClient()
+        judge = SupportJudge(client)
+        p = _proposal("Cite ids.")
+        snap = _snapshot([p])
+        await _judge_vote(judge, snap)
+        snap.proposal_comments[p["id"]] = [{"user_id": "u-2", "comment_text": "Conflicts with rule 2."}]
+        await _judge_vote(judge, snap)
+        assert self._kinds(client) == ["objection", "stance"]
+
+    async def test_a_changed_plan_reasks_only_stance(self):
+        client = _FakeClient()
+        judge = SupportJudge(client)
+        snap = _snapshot([_proposal("Cite ids.")])
+        await judge.vote(persona=_persona(), intention="", snapshot=snap, supported_proposals=set(),
+                         supported_pulse_ids=set(), users_cache={}, my_user_id="me")
+        await judge.vote(persona=_persona(), intention="Get attribution adopted", snapshot=snap,
+                         supported_proposals=set(), supported_pulse_ids=set(), users_cache={}, my_user_id="me")
+        assert self._kinds(client) == ["stance"]
+
+    async def test_only_proposals_a_question_reads_go_to_the_model(self):
+        client = _FakeClient()
+        judge = SupportJudge(client)
+        old = _proposal("Cite ids.", ptype="AddStatement")
+        snap = _snapshot([old])
+        await _judge_vote(judge, snap, persona=_persona(name="Mei"))
+        snap.proposals_out_there.append(_proposal("Onboarding steps", ptype="CreateArtifact", val_text="Onboarding steps"))
+        await _judge_vote(judge, snap, persona=_persona(name="Mei"))
+        sent = client.calls[-1][0]["proposals"]
+        assert [v.get("section_title") for v in sent.values()] == ["Onboarding steps"]
+
+
+class TestUnclaimedWork:
+    def test_empty_artifacts_nobody_is_filling(self):
+        c_open, c_done = {"id": "c1", "status": 1}, {"id": "c2", "status": 3}
+        arts = {
+            "c1": [
+                {"id": "a-empty", "content": ""},
+                {"id": "a-editing", "content": ""},
+                {"id": "a-delegated", "content": ""},
+                {"id": "a-full", "content": "Real text"},
+                {"id": "a-plan", "content": "## Plan\n(What is this container for?)", "is_plan": True},
+            ],
+            "c2": [{"id": "a-sealed", "content": ""}],
+        }
+        snap = _snapshot([_proposal("x", ptype="EditArtifact", val_uuid="a-editing")])
+        snap.containers, snap.container_artifacts = [c_open, c_done], arts
+        snap.delegations_out = {"a-delegated": {}}
+        assert [a["id"] for a in snap.unclaimed_empty_artifacts()] == ["a-empty", "a-plan"]
+
+
+class TestVoteOnlyTurns:
+    """With vote_only_turns, the LLM is called only when there is something
+    to write about; otherwise the agent just casts its TypeSafe votes."""
+
+    def _agent(self, snap, vote_only=True, llm=None, judge=None, initiative=0.5):
+        engine = SimpleNamespace(calls=[])
+
+        async def decide(**kw):
+            engine.calls.append(kw)
+            return list(llm or [AgentAction("do_nothing", "idle")])
+        engine.decide = decide
+        persona = _persona()
+        persona.traits.initiative = initiative
+        agent = Agent(persona=persona, client=None, engine=engine, user_id="me",
+                      support_judge=judge or SupportJudge(_FakeClient()), vote_only_turns=vote_only)
+        agent.community_id = "c1"
+        executed = []
+
+        async def execute(decision, snapshot):
+            executed.append(decision)
+            return ActionLog(datetime.now(timezone.utc), decision.action_type, decision.reason, "ok", True)
+        agent._execute_action = execute
+
+        async def observe():
+            return snap
+        agent.observe = observe
+        return agent, engine, executed
+
+    def _quiet_board(self):
+        # Mine only: nothing new from others, nothing to object to.
+        return _snapshot([_proposal("My rule", author="me", support=1)])
+
+    async def test_nothing_to_write_about_skips_the_llm(self):
+        agent, engine, _ = self._agent(self._quiet_board())
+        await agent.think_and_act()          # first turn is always an LLM turn ("due")
+        await agent.think_and_act()
+        assert len(engine.calls) == 1
+        assert (agent.llm_turns, agent.vote_only_turn_count) == (1, 1)
+
+    async def test_a_new_proposal_from_someone_else_is_worth_a_call(self):
+        snap = self._quiet_board()
+        agent, engine, _ = self._agent(snap)
+        await agent.think_and_act()
+        fresh = _proposal("New rule", created_at=(datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat())
+        snap.proposals_out_there.append(fresh)
+        await agent.think_and_act()
+        assert len(engine.calls) == 2
+
+    async def test_a_reply_on_my_proposal_is_worth_a_call(self):
+        snap = self._quiet_board()
+        agent, engine, _ = self._agent(snap)
+        await agent.think_and_act()
+        mine = snap.proposals_out_there[0]
+        later = (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat()
+        snap.proposal_comments[mine["id"]] = [{"user_id": "u-2", "comment_text": "Why 10?", "created_at": later}]
+        await agent.think_and_act()
+        assert len(engine.calls) == 2
+
+    async def test_open_work_keeps_calling_the_llm(self):
+        snap = self._quiet_board()
+        snap.containers = [{"id": "c1", "status": 1}]
+        snap.container_artifacts = {"c1": [{"id": "a1", "content": "", "author_user_id": "u-2"}]}
+        agent, engine, _ = self._agent(snap)
+        for _ in range(3):
+            await agent.think_and_act()
+        assert len(engine.calls) == 3
+
+    async def test_an_objection_is_offered_once(self):
+        vague = _proposal("Be respectful.")
+        snap = _snapshot([vague])
+        judge = SupportJudge(_FakeClient({"Be respectful.": {"concrete": 0.05}}))
+        agent, engine, _ = self._agent(snap, judge=judge)
+        await agent.think_and_act()          # new proposal + objection
+        await agent.think_and_act()          # already offered: vote-only
+        assert len(engine.calls) == 1
+
+    async def test_quiet_members_are_still_due_a_turn(self):
+        agent, engine, _ = self._agent(self._quiet_board(), initiative=0.9)   # cadence 2
+        for _ in range(4):
+            await agent.think_and_act()
+        assert len(engine.calls) == 2          # turns 1 and 3
+
+    async def test_votes_still_happen_on_vote_only_turns(self):
+        theirs = _proposal("Rate-limit to 10 per minute.", support=1)
+        snap = _snapshot([theirs])
+        agent, engine, executed = self._agent(snap)
+        await agent.think_and_act()          # LLM turn: backs it
+        agent.supported_proposals.clear()    # pretend the vote did not land, so it's still pending
+        await agent.think_and_act()          # vote-only: backs it again, no LLM
+        assert len(engine.calls) == 1
+        assert [d.action_type for d in executed].count("support_proposal") == 2
+
+    async def test_with_the_gate_off_every_turn_calls_the_llm(self):
+        agent, engine, _ = self._agent(self._quiet_board(), vote_only=False)
+        await agent.think_and_act()
+        await agent.think_and_act()
+        assert len(engine.calls) == 2

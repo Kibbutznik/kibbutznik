@@ -211,6 +211,13 @@ Examples:
              "configured, else the LLM (default; env KBZ_SUPPORT_JUDGE).",
     )
     parser.add_argument(
+        "--vote-only-turns", action="store_true",
+        default=os.environ.get("KBZ_VOTE_ONLY_TURNS", "").lower() in ("1", "true", "yes"),
+        help="With TypeSafe votes, agents skip the LLM on turns with nothing to "
+             "write about (no new proposals, replies, objections or open work) "
+             "and only vote. Cuts LLM calls; env KBZ_VOTE_ONLY_TURNS=1.",
+    )
+    parser.add_argument(
         "--communities", default="",
         help="Comma-separated slugs from the seeded catalog (commons, "
              "registry, oracle) or 'all'. Runs one root community per slug "
@@ -299,6 +306,8 @@ Examples:
         support_judge = make_support_judge(args.support_judge)
     except (SupportJudgeUnavailable, ValueError) as e:
         parser.error(f"--support-judge {args.support_judge}: {e}")
+    if args.vote_only_turns and support_judge is None:
+        print("[sim] --vote-only-turns ignored: it needs TypeSafe support votes")
 
     def _make_orchestrator(
         n_members: int,
@@ -326,6 +335,7 @@ Examples:
             auto_pause_every=args.auto_pause_every,
             start_paused=args.start_paused,
             support_judge=support_judge,
+            vote_only_turns=args.vote_only_turns,
         )
 
     # ── Community set ────────────────────────────────────────────────

@@ -55,6 +55,19 @@ def _truncate_comment(text: str, cap: int = _COMMENT_CHAR_CAP) -> str:
     return t[:cap].rstrip() + "…"
 
 
+def _after(timestamp: str | None, since: datetime) -> bool:
+    """True when an API timestamp (ISO 8601) is later than `since`."""
+    if not timestamp:
+        return False
+    try:
+        t = datetime.fromisoformat(str(timestamp))
+    except ValueError:
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t > since
+
+
 @dataclass
 class ActionLog:
     """Record of an action taken by the agent."""
@@ -81,6 +94,7 @@ class Agent:
         memory_store: MemoryStore | None = None,
         tkg_client: TKGClient | None = None,
         support_judge: SupportJudge | None = None,
+        vote_only_turns: bool = False,
     ):
         self.persona = persona
         self.client = client
@@ -88,6 +102,16 @@ class Agent:
         # When set, support_proposal / support_pulse are decided by TypeSafe
         # (agents/support_judge.py) instead of inside the LLM's turn.
         self.support_judge = support_judge
+        # With a judge, skip the LLM on turns with nothing to write about
+        # (see _writing_triggers). Per community: when this agent last took
+        # a turn, when it last called the LLM, and which objections it has
+        # already had the chance to voice.
+        self.vote_only_turns = vote_only_turns
+        self._last_turn_at: dict[str, datetime] = {}
+        self._turns_since_llm: dict[str, int] = {}
+        self._objections_offered: dict[str, set[str]] = {}
+        self.llm_turns = 0
+        self.vote_only_turn_count = 0
         self.user_id = user_id
         self.user_name = user_name or persona.name.lower()
         self.community_id: str | None = None
@@ -170,83 +194,10 @@ class Agent:
         Returns a list of logs for every action taken this turn.
         """
         self._chat_this_round = 0  # reset per-round chat rate limit
+        turn_started = datetime.now(timezone.utc)
 
         # 1. OBSERVE — browse the community
         snapshot = await self.observe()
-        community_summary = snapshot.summarize(
-            my_user_id=self.user_id,
-            users_cache=self.users_cache,
-            supported_proposals=self.supported_proposals,
-        )
-
-        # 2. READ MEMORY — fetch persistent memory context for LLM prompt
-        memory_context = ""
-        if self.memory_formatter and self.user_id:
-            try:
-                # Update the formatter's users_cache reference
-                self.memory_formatter.users_cache = self.users_cache
-                memory_context = await self.memory_formatter.build_memory_context(
-                    self.user_id,
-                    current_round=self.current_round,
-                    current_intention=self.current_intention,
-                )
-            except Exception as e:
-                logger.debug(f"[{self.persona.name}] Memory read failed: {e}")
-
-        # 3. THINK — ask the LLM for a list of decisions
-        history_strings = [
-            f"[{log.timestamp.strftime('%H:%M')}] {log.action_type}: {log.details}"
-            for log in self.action_history[-6:]
-        ]
-
-        all_active = snapshot.proposals_out_there + snapshot.proposals_on_the_air
-        unsupported = [
-            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id'][:8]}"
-            for p in all_active
-            if p["id"] not in self.supported_proposals
-        ]
-        already_supported = [
-            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id'][:8]}"
-            for p in all_active
-            if p["id"] in self.supported_proposals
-        ]
-
-        consecutive_do_nothings = 0
-        for log in reversed(self.action_history):
-            if log.action_type == "do_nothing":
-                consecutive_do_nothings += 1
-            else:
-                break
-
-        total_active = len(snapshot.proposals_out_there) + len(snapshot.proposals_on_the_air)
-
-        # Include recent viewer interviews so agent can adjust behaviour
-        interview_ctx = ""
-        if self.interview_history:
-            recent_interviews = self.interview_history[-3:]  # last 3
-            interview_ctx = "\n## Recent Viewer Interviews (a viewer asked you these questions — consider their requests)\n"
-            for q, a in recent_interviews:
-                interview_ctx += f"  Viewer asked: \"{q[:120]}\"\n  You answered: \"{a[:120]}\"\n\n"
-
-        # Surface the last few API failures so the LLM can adjust.
-        # Take the most-recent N failures (not just the very last
-        # turn's) — a 8b model often needs to see the same error
-        # twice before it stops repeating it. Cap at 5 for token
-        # budget. De-dupe by `action_type:detail` so a bot stuck
-        # in a loop doesn't blow the buffer with identical lines.
-        recent_failures: list[str] = []
-        seen_keys: set[str] = set()
-        for log in reversed(self.action_history):
-            if log.success:
-                continue
-            key = f"{log.action_type}:{log.details}"
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            recent_failures.append(f"{log.action_type}: {log.details}")
-            if len(recent_failures) >= 5:
-                break
-        recent_failures.reverse()  # oldest-first reads more naturally
 
         # Support votes come first when a judge is configured, so the LLM
         # can be shown them and its comments can explain them. If the judge
@@ -273,29 +224,34 @@ class Agent:
                         + "; ".join(f"{v.proposal['id'][:8]} ({v.reason})" for v in declined)
                     )
 
-        decisions = await self.engine.decide(
-            persona_name=self.persona.name,
-            persona_role=self.persona.role,
-            persona_background=self.persona.background,
-            persona_decision_style=self.persona.decision_style,
-            persona_communication_style=self.persona.communication_style,
-            persona_trait_summary=self.persona.trait_summary(),
-            community_summary=community_summary,
-            action_history=history_strings,
-            unsupported_proposals=unsupported,
-            already_supported_proposals=already_supported,
-            already_commented=list(self.commented_proposals),
-            consecutive_do_nothings=consecutive_do_nothings,
-            initiative=self.persona.traits.initiative,
-            total_active_proposals=total_active,
-            interview_context=interview_ctx,
-            memory_context=memory_context,
-            recent_failures=recent_failures,
-            support_votes=votes.prompt_lines() if votes is not None else None,
-        )
-        llm_decisions = decisions
         if votes is not None:
-            decisions = self._merge_support_votes(decisions, votes)
+            triggers, objections = self._writing_triggers(
+                snapshot, votes, since=self._last_turn_at.get(self.community_id),
+            )
+            skip_llm = self.vote_only_turns and not triggers
+            if not skip_llm:
+                self._objections_offered.setdefault(self.community_id, set()).update(objections)
+            cost = f"TypeSafe {votes.asked} asked, {votes.cached} cached, {votes.input_tokens} tokens"
+            if skip_llm:
+                logger.info(f"[{self.persona.name}] turn: vote-only | {cost}")
+            elif triggers:
+                logger.info(f"[{self.persona.name}] turn: LLM ({', '.join(triggers)}) | {cost}")
+            else:
+                logger.info(f"[{self.persona.name}] turn: LLM (gate off; would be vote-only) | {cost}")
+        else:
+            skip_llm = False
+        self._last_turn_at[self.community_id] = turn_started
+
+        if skip_llm:
+            self.vote_only_turn_count += 1
+            self._turns_since_llm[self.community_id] = self._turns_since_llm.get(self.community_id, 0) + 1
+            llm_decisions: list[AgentAction] = []
+            decisions = votes.actions()
+        else:
+            self.llm_turns += 1
+            self._turns_since_llm[self.community_id] = 0
+            llm_decisions = await self._llm_decisions(snapshot, votes)
+            decisions = self._merge_support_votes(llm_decisions, votes) if votes is not None else llm_decisions
 
         # 3. ACT — execute each decision, applying guards per action.
         #
@@ -375,6 +331,169 @@ class Agent:
                 logger.debug(f"[{self.persona.name}] Memory write failed: {e}")
 
         return logs
+
+    async def _llm_decisions(self, snapshot: CommunitySnapshot, votes: SupportVotes | None) -> list[AgentAction]:
+        """Build the prompt and ask the LLM for this turn's decisions."""
+        community_summary = snapshot.summarize(
+            my_user_id=self.user_id,
+            users_cache=self.users_cache,
+            supported_proposals=self.supported_proposals,
+        )
+
+        # 2. READ MEMORY — fetch persistent memory context for LLM prompt
+        memory_context = ""
+        if self.memory_formatter and self.user_id:
+            try:
+                # Update the formatter's users_cache reference
+                self.memory_formatter.users_cache = self.users_cache
+                memory_context = await self.memory_formatter.build_memory_context(
+                    self.user_id,
+                    current_round=self.current_round,
+                    current_intention=self.current_intention,
+                )
+            except Exception as e:
+                logger.debug(f"[{self.persona.name}] Memory read failed: {e}")
+
+        # 3. THINK — ask the LLM for a list of decisions
+        history_strings = [
+            f"[{log.timestamp.strftime('%H:%M')}] {log.action_type}: {log.details}"
+            for log in self.action_history[-6:]
+        ]
+
+        all_active = snapshot.proposals_out_there + snapshot.proposals_on_the_air
+        unsupported = [
+            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id'][:8]}"
+            for p in all_active
+            if p["id"] not in self.supported_proposals
+        ]
+        already_supported = [
+            f"[{p['proposal_type']}] \"{p['proposal_text'][:60]}\" id={p['id'][:8]}"
+            for p in all_active
+            if p["id"] in self.supported_proposals
+        ]
+
+        consecutive_do_nothings = 0
+        for log in reversed(self.action_history):
+            if log.action_type == "do_nothing":
+                consecutive_do_nothings += 1
+            else:
+                break
+
+        total_active = len(snapshot.proposals_out_there) + len(snapshot.proposals_on_the_air)
+
+        # Include recent viewer interviews so agent can adjust behaviour
+        interview_ctx = ""
+        if self.interview_history:
+            recent_interviews = self.interview_history[-3:]  # last 3
+            interview_ctx = "\n## Recent Viewer Interviews (a viewer asked you these questions — consider their requests)\n"
+            for q, a in recent_interviews:
+                interview_ctx += f"  Viewer asked: \"{q[:120]}\"\n  You answered: \"{a[:120]}\"\n\n"
+
+        # Surface the last few API failures so the LLM can adjust.
+        # Take the most-recent N failures (not just the very last
+        # turn's) — a 8b model often needs to see the same error
+        # twice before it stops repeating it. Cap at 5 for token
+        # budget. De-dupe by `action_type:detail` so a bot stuck
+        # in a loop doesn't blow the buffer with identical lines.
+        recent_failures: list[str] = []
+        seen_keys: set[str] = set()
+        for log in reversed(self.action_history):
+            if log.success:
+                continue
+            key = f"{log.action_type}:{log.details}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            recent_failures.append(f"{log.action_type}: {log.details}")
+            if len(recent_failures) >= 5:
+                break
+        recent_failures.reverse()  # oldest-first reads more naturally
+
+        return await self.engine.decide(
+            persona_name=self.persona.name,
+            persona_role=self.persona.role,
+            persona_background=self.persona.background,
+            persona_decision_style=self.persona.decision_style,
+            persona_communication_style=self.persona.communication_style,
+            persona_trait_summary=self.persona.trait_summary(),
+            community_summary=community_summary,
+            action_history=history_strings,
+            unsupported_proposals=unsupported,
+            already_supported_proposals=already_supported,
+            already_commented=list(self.commented_proposals),
+            consecutive_do_nothings=consecutive_do_nothings,
+            initiative=self.persona.traits.initiative,
+            total_active_proposals=total_active,
+            interview_context=interview_ctx,
+            memory_context=memory_context,
+            recent_failures=recent_failures,
+            support_votes=votes.prompt_lines() if votes is not None else None,
+        )
+
+    # Declines worth voicing in a comment: the proposal is bad, not merely
+    # lukewarm for this member (#218: objections only spread through
+    # comments). Membership is left out; turning an applicant down rarely
+    # needs a speech.
+    _OBJECTION_REASONS = frozenset({
+        "Too vague to commit to", "Worse than the text it replaces",
+        "Would damage the community", "Works against what I want",
+    })
+
+    def _llm_cadence(self) -> int:
+        """Turns between LLM calls when nothing else prompts one: proactive
+        members propose every couple of turns, reactive ones less often."""
+        initiative = self.persona.traits.initiative
+        return 2 if initiative >= 0.7 else 3 if initiative >= 0.4 else 4
+
+    def _writing_triggers(
+        self, snapshot: CommunitySnapshot, votes: SupportVotes, since: datetime | None,
+    ) -> tuple[list[str], set[str]]:
+        """Why the LLM should write this turn; no triggers means a vote-only turn.
+
+        On live runs an agent's own history did not predict an empty LLM turn
+        (after an empty turn, the next one wrote 91% of the time), so this asks
+        whether there is anything to write ABOUT, and offers each opportunity
+        once. Returns the triggers and the objections this turn would offer.
+        """
+        cid = self.community_id
+        open_props = snapshot.proposals_out_there + snapshot.proposals_on_the_air
+        triggers: list[str] = []
+        if snapshot.unclaimed_empty_artifacts():
+            triggers.append("work")
+        if any(
+            (since is None or _after(p.get("created_at"), since))
+            and p.get("user_id") != self.user_id and p.get("proposal_type") != "Membership"
+            and p["id"] not in self.commented_proposals
+            for p in open_props
+        ):
+            triggers.append("new proposals")
+        mentioned = re.compile(rf"\b{re.escape(self.persona.name)}\b", re.IGNORECASE)
+        if since is not None and (
+            any(
+                c.get("user_id") != self.user_id and _after(c.get("created_at"), since)
+                for p in open_props if p.get("user_id") == self.user_id
+                for c in snapshot.proposal_comments.get(p["id"], [])
+            )
+            or any(
+                m.get("user_id") != self.user_id and mentioned.search(m.get("comment_text") or "")
+                for m in snapshot.chat_messages
+            )
+        ):
+            triggers.append("replies")
+        offered = self._objections_offered.get(cid, set())
+        objections = {
+            v.proposal["id"] for v in votes.proposals
+            if not v.support and v.reason in self._OBJECTION_REASONS
+            and v.proposal.get("proposal_type") != "Membership"
+            and v.proposal["id"] not in self.commented_proposals
+            and v.proposal["id"] not in offered
+        }
+        if objections:
+            triggers.append("objection")
+        cadence = self._llm_cadence()
+        if self._turns_since_llm.get(cid, cadence) >= cadence:
+            triggers.append("due")
+        return triggers, objections
 
     def _merge_support_votes(self, decisions: list[AgentAction], votes: SupportVotes) -> list[AgentAction]:
         """Combine the judge's votes with the LLM's other actions.

@@ -79,6 +79,10 @@ Examples:
                         default=os.environ.get("KBZ_SUPPORT_JUDGE", "auto"),
                         help="Who decides support votes: typesafe, llm, or auto = "
                              "TypeSafe when configured (default; env KBZ_SUPPORT_JUDGE)")
+    parser.add_argument("--vote-only-turns", action="store_true",
+                        default=os.environ.get("KBZ_VOTE_ONLY_TURNS", "").lower() in ("1", "true", "yes"),
+                        help="With TypeSafe votes, skip the LLM on turns with nothing to write "
+                             "about (env KBZ_VOTE_ONLY_TURNS=1)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
 
     # Ollama-specific options
@@ -118,6 +122,7 @@ Examples:
         ollama_num_predict=args.ollama_max_tokens,
         max_retries=args.retries,
         support_judge=support_judge,
+        vote_only_turns=args.vote_only_turns,
     )
 
     try:
