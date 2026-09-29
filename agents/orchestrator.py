@@ -16,6 +16,7 @@ from agents.api_client import KBZClient
 from agents.decision_engine import DecisionEngine
 from agents.memory import MemoryStore
 from agents.persona import Persona, load_all_personas, generate_persona
+from agents.support_judge import SupportJudge
 from agents.tkg_client import TKGClient
 from kbz.services.event_bus import event_bus
 
@@ -78,8 +79,13 @@ class Orchestrator:
         ollama_num_predict: int = 2048,
         max_retries: int = 3,
         ollama_think: bool = False,
+        # Decides every agent's support votes when set (TypeSafe); None
+        # leaves them to the LLM. Owned by the caller, which may share one
+        # judge across orchestrators and the BotRunner.
+        support_judge: SupportJudge | None = None,
     ):
         self.community_name = community_name
+        self.support_judge = support_judge
         self.mission = mission
         self.api_url = api_url
         self.client = KBZClient(api_url)
@@ -173,6 +179,7 @@ class Orchestrator:
                 engine=self.engine,
                 memory_store=self.memory_store,
                 tkg_client=self.tkg_client,
+                support_judge=self.support_judge,
             )
             await agent.register()
             self.agents.append(agent)
@@ -958,6 +965,7 @@ class Orchestrator:
                 user_id=uid,
                 memory_store=self.memory_store,
                 tkg_client=self.tkg_client,
+                support_judge=self.support_judge,
             )
             agent.community_id = self.community_id
             agent.users_cache[uid] = name
@@ -1013,6 +1021,7 @@ class Orchestrator:
                     user_id=newcomer["id"],
                     memory_store=self.memory_store,
                     tkg_client=self.tkg_client,
+                    support_judge=self.support_judge,
                 )
                 agent.community_id = self.community_id
                 # Ensure the agent recognizes itself in community snapshots
@@ -1237,6 +1246,8 @@ class Orchestrator:
                 "preset": self._current_llm_preset(),
                 **self.engine.stats,
             },
+            # Who casts support votes: TypeSafe stats, or null for the LLM.
+            "support_judge": self.support_judge.stats if self.support_judge else None,
             "recent_events": [
                 {
                     "agent": e.agent_name,

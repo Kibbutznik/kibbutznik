@@ -41,6 +41,7 @@ from agents.api_client import KBZClient
 from agents.decision_engine import DecisionEngine
 from agents.memory import MemoryStore
 from agents.persona import Persona, Traits
+from agents.support_judge import SupportJudge
 from agents.tkg_client import TKGClient
 from kbz.models.bot_profile import BotProfile
 from kbz.models.user import User
@@ -113,9 +114,11 @@ class BotRunner:
         engine: DecisionEngine,
         api_base_url: str = "http://localhost:8000",
         poll_interval_seconds: float = 30.0,
+        support_judge: SupportJudge | None = None,
     ):
         self._sf = session_factory
         self._engine = engine
+        self._support_judge = support_judge
         self._api_base_url = api_base_url
         self._poll_interval = poll_interval_seconds
         self._task: asyncio.Task | None = None
@@ -217,6 +220,7 @@ class BotRunner:
                 user_name=user.user_name,
                 memory_store=self._memory,
                 tkg_client=self._tkg,
+                support_judge=self._support_judge,
             )
             agent.community_id = str(profile.community_id)
             logs = await agent.think_and_act()
