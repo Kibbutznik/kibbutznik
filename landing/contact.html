@@ -3,13 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet">
 <title>Get in touch — Kibbutznik</title>
 <meta name="description" content="Leave us a message — feedback, a bug you hit, or how you'd like to use Kibbutznik.">
-<meta name="theme-color" content="#fdf8f0">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<meta name="theme-color" content="#0A0A0A">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Kibbutznik">
@@ -18,87 +16,60 @@
 <meta property="og:url" content="https://kibbutznik.org/contact.html">
 <meta property="og:image" content="https://kibbutznik.org/og-image.png">
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 <style>
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  :root {
-    --bg:#fdf8f0; --bg-alt:#f4ead8; --card:#ffffff;
-    --ink:#2a2520; --ink-soft:#5a5249; --ink-muted:#8a8076;
-    --pulse:#e94560; --pulse-soft:#fdebee; --pulse-hover:#d9304a;
-    --sage:#6fa885; --line:#e8dec9;
-  }
-  html { -webkit-font-smoothing: antialiased; }
-  body {
-    background: var(--bg); color: var(--ink);
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column;
-  }
-  a { color: var(--pulse); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-
-  nav.topbar {
-    display: flex; align-items: center; gap: 10px;
-    padding: 16px 24px; border-bottom: 1px solid var(--line);
-  }
-  nav.topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); }
-  nav.topbar .brand img { width: 28px; height: 28px; }
-
-  main { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 48px 24px; }
-  .card {
-    width: 100%; max-width: 560px; background: var(--card);
-    border: 1px solid var(--line); border-radius: 20px; padding: 36px 32px;
-    box-shadow: 0 8px 30px rgba(42,37,32,.05);
-  }
-  .eyebrow { color: var(--pulse); font-weight: 700; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
-  h1 { font-size: clamp(1.6rem, 4vw, 2.1rem); letter-spacing: -.01em; margin-bottom: 10px; }
-  .lead { color: var(--ink-soft); margin-bottom: 28px; }
-
-  label { display: block; font-weight: 600; font-size: .9rem; margin: 0 0 6px; }
-  .field { margin-bottom: 18px; }
-  .hint { color: var(--ink-muted); font-weight: 400; font-size: .82rem; }
-  input[type=text], input[type=email], textarea {
-    width: 100%; font: inherit; color: var(--ink);
-    padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
-    background: #fffdf9; transition: border-color .15s, box-shadow .15s;
-  }
-  input:focus, textarea:focus { outline: none; border-color: var(--pulse); box-shadow: 0 0 0 3px var(--pulse-soft); }
-  textarea { resize: vertical; min-height: 140px; }
-
-  /* Honeypot — hidden from humans, catnip for bots. */
+  main { padding-block: clamp(28px, 5vw, 64px) clamp(56px, 8vw, 96px); }
+  .formpage { width: min(600px, 100% - 2 * var(--hud-inset) - 24px); margin-inline: auto; }
+  .formpage h1 { font-size: clamp(34px, 5vw, 48px); margin-top: 16px; }
+  .formpage .lead { margin: 14px 0 30px; }
+  .formpage button.btn { width: 100%; justify-content: center; margin-top: 6px; }
   .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-
-  button {
-    font: inherit; font-weight: 600; cursor: pointer;
-    background: var(--pulse); color: #fff; border: none;
-    padding: 13px 22px; border-radius: 12px; width: 100%;
-    transition: background .15s, opacity .15s;
-  }
-  button:hover { background: var(--pulse-hover); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-
-  .note { margin-top: 14px; font-size: .9rem; }
-  .note.success { color: var(--sage); }
-  .note.error { color: var(--pulse); }
-
-  .done {
-    text-align: center; padding: 12px 0;
-  }
-  .done h2 { font-size: 1.3rem; margin-bottom: 8px; }
-  .done p { color: var(--ink-soft); }
-  .hidden { display: none; }
-
-  footer { padding: 24px; text-align: center; color: var(--ink-muted); font-size: .85rem; border-top: 1px solid var(--line); }
-  footer a { color: var(--ink-soft); }
+  .done { text-align: center; padding: 12px 0; }
+  .done h2 { font-size: 28px; }
+  .done p { margin: 10px auto 0; }
 </style>
 </head>
 <body>
-<nav class="topbar">
-  <a href="/welcome.html" class="brand"><img src="logo.svg" alt="">Kibbutznik</a>
-</nav>
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="/" aria-label="Kibbutznik — home">
+      <b>KBZ</b><span class="sep">//</span><span>Contact</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/#who">Who it's for</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/">Home</a>
+    <a href="/#how">How it works</a>
+    <a href="/guide.html">The guide</a>
+    <a href="/ecosystem.html">Ecosystem</a>
+    <a href="/the-pulse.html">The pulse — essay</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/contact.html" aria-current="page">Get in touch</a>
+    <a href="/app/">Open the app</a>
+  </div>
+</header>
+
+<div class="hud" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
+</div>
+
 
 <main>
-  <div class="card">
+  <div class="formpage panel">
     <div id="form-wrap">
-      <div class="eyebrow">Get in touch</div>
+      <span class="label"><span class="n">Contact</span> · get in touch</span>
       <h1>Leave us a message</h1>
       <p class="lead">Feedback, a bug you hit, or how you'd like to use Kibbutznik — it all lands with us. We read everything.</p>
 
@@ -120,7 +91,7 @@
           <label for="website">Website</label>
           <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
         </div>
-        <button type="submit" id="submit-btn">Send message</button>
+        <button type="submit" id="submit-btn" class="btn btn-pulse">Send message</button>
         <div id="note" class="note"></div>
       </form>
     </div>
@@ -134,8 +105,33 @@
 </main>
 
 <footer>
-  <a href="/welcome.html">Home</a> · <a href="/guide.html">Guide</a> · <a href="/kbz/viewer/">Live</a> · <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
+  </div>
 </footer>
+
+<script>
+  (function () {
+    var t = document.getElementById("menuToggle"), m = document.getElementById("mobileMenu");
+    if (!t || !m) return;
+    t.addEventListener("click", function () {
+      var open = m.classList.toggle("open");
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.textContent = open ? "Close" : "Menu";
+    });
+  })();
+</script>
+
 
 <script>
   // Contact endpoint is behind nginx at /kbz on prod.

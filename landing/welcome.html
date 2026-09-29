@@ -3,11 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet">
 <title>Kibbutznik — a pulse-based direct democratic engine</title>
 <meta name="description" content="A simple way for groups of people to make decisions together — and stand by what they choose. Open, fair, and built around a heartbeat that everyone shares.">
-<meta name="theme-color" content="#fdf8f0">
+<meta name="theme-color" content="#0A0A0A">
 <link rel="canonical" href="https://kibbutznik.org/">
 
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -21,6 +19,10 @@
 <meta property="og:description" content="Pulse, not politics. Members, not managers. Self-governing communities that propose, support, and decide by a shared heartbeat — no admins, no tokens.">
 <meta property="og:url" content="https://kibbutznik.org/">
 <meta property="og:image" content="https://kibbutznik.org/og-image.png">
+<meta property="og:video" content="https://kibbutznik.org/assets/media/kibbutznik-pulse.mp4">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="1920">
+<meta property="og:video:height" content="1080">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@kibbutznik_ops">
 <meta name="twitter:title" content="Kibbutznik — a pulse-based direct democratic engine">
@@ -41,6 +43,23 @@
   "sameAs": ["https://github.com/Kibbutznik/kibbutznik"]
 }
 </script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  "name": "Kibbutznik in sixty seconds",
+  "description": "How a pulse-based direct democratic engine works: members propose, argue, and decide together on a shared heartbeat. Nothing moves until the pulse — then everything does, at once.",
+  "thumbnailUrl": "https://kibbutznik.org/assets/media/kibbutznik-pulse-poster.jpg",
+  "contentUrl": "https://kibbutznik.org/assets/media/kibbutznik-pulse.mp4",
+  "uploadDate": "2026-09-29",
+  "duration": "PT1M"
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 
 <script async src="https://plausible.io/js/pa-YUj2NGAFEeDownEFrcPPq.js"></script>
 <script>
@@ -49,1131 +68,677 @@
 </script>
 
 <style>
-  /* ── Reset ───────────────────────────────────────────── */
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
-  /* ── Warm, social-friendly palette ───────────────────── */
-  :root {
-    --bg:        #fdf8f0;       /* warm cream */
-    --bg-alt:    #f4ead8;       /* slightly darker cream for alternating sections */
-    --card:      #ffffff;
-    --ink:       #2a2520;       /* near-black, slightly warm */
-    --ink-soft:  #5a5249;
-    --ink-muted: #8a8076;
-    --pulse:     #e94560;       /* the kibbutznik red pulse — kept across themes */
-    --pulse-soft:#fdebee;
-    --sage:      #6fa885;       /* deliberation / agreement */
-    --sage-soft: #e3f0e8;
-    --gold:      #d9a441;       /* accent / AI presence */
-    --line:      #e8dec9;
-  }
-
-  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; background: var(--bg); }
-  body {
-    /* Transparent so the fixed .site-bg pulse layer (z-index:-1, a child
-       of body) shows through above the html cream canvas but behind all
-       content. Cream lives on <html> now. */
-    background: transparent;
-    color: var(--ink);
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.6;
-    overflow-x: hidden;
-  }
-
-  a { color: var(--pulse); text-decoration: none; transition: color .15s ease; }
-  a:hover { color: var(--ink); }
-
-  /* ── Living pulse-ORGANISM background ────────────────────
-     One circulatory machine, not a constellation. A root core beats on a
-     master period T=6s; its wave travels OUTWARD along vessels to action
-     cores, which fire when the wave arrives (T/2=3s, phase-locked by a
-     negative animation-delay == vessel travel time); one action feeds a
-     nested sub-action (T/3=2s). Shared members ride the root↔action
-     vessels, wired to both cores, so they visibly feel both beats. Faint,
-     fixed, pointer-events:none — text stays crisp. Designed to let a
-     viewer read the STRUCTURE of a kibbutz at a glance. */
-  .site-bg {
-    position: fixed; inset: 0; z-index: -1;
-    pointer-events: none; overflow: hidden;
-    opacity: 0.5;            /* overall faintness — tune to taste */
-  }
-  .site-bg svg { width: 100%; height: 100%; display: block; }
-
-  /* vessels: faint conduits root<->action (the "one machine" wiring) */
-  .site-bg .vessel {
-    fill: none; stroke: var(--ink-muted); stroke-width: 1.2;
-    opacity: 0.16; vector-effect: non-scaling-stroke;
-  }
-  .site-bg .vessel.sub { opacity: 0.12; }
-  /* tie-lines: shared member -> its two cores (belongs to both) */
-  .site-bg .tie {
-    stroke: var(--ink-muted); stroke-width: 0.8;
-    opacity: 0.10; vector-effect: non-scaling-stroke;
-  }
-
-  /* expanding rings — scale via transform so the stroke stays hairline */
-  .site-bg .wave {
-    fill: none; stroke: var(--pulse); stroke-width: 1.4;
-    vector-effect: non-scaling-stroke;
-    transform-box: fill-box; transform-origin: center;
-    animation: bg-wave 6s linear infinite;          /* root: master T=6s */
-  }
-  .site-bg .wave.a { animation: bg-wave 3s linear infinite; stroke-width: 1.2; } /* actions T/2 */
-  .site-bg .wave.s { animation: bg-wave 2s linear infinite; stroke-width: 1.1; } /* sub T/3 */
-  @keyframes bg-wave {
-    0%   { transform: scale(0.10); opacity: 0.45; }
-    70%  { opacity: 0.10; }
-    100% { transform: scale(1);    opacity: 0; }
-  }
-
-  /* cores: the beating hearts */
-  .site-bg .core {
-    fill: var(--pulse); transform-box: fill-box; transform-origin: center;
-  }
-  .site-bg .core.root     { animation: bg-core 6s ease-in-out infinite; opacity: 0.7; }
-  .site-bg .core.action   { animation: bg-core 3s ease-in-out infinite; opacity: 0.6; }
-  .site-bg .core.sub-core { animation: bg-core 2s ease-in-out infinite; opacity: 0.55; }
-  @keyframes bg-core {
-    0%, 100% { transform: scale(1);    opacity: 0.55; }
-    12%      { transform: scale(1.55); opacity: 0.9; }
-  }
-
-  /* traveling pulse dots: the wave visibly flowing outward along vessels */
-  .site-bg .flow {
-    fill: var(--pulse); opacity: 0; offset-rotate: 0deg;
-    animation: bg-flow 6s linear infinite;
-  }
-  .site-bg .flow.sub { animation-duration: 3s; }
-  @keyframes bg-flow {
-    0%   { offset-distance: 0%;   opacity: 0; }
-    8%   { opacity: 0.85; }
-    85%  { opacity: 0.85; }
-    100% { offset-distance: 100%; opacity: 0; }
-  }
-
-  /* member nodes: humans (sage) + AI (gold) */
-  .site-bg .member {
-    fill: var(--sage); opacity: 0.4;
-    transform-box: fill-box; transform-origin: center;
-  }
-  .site-bg .member.ai { fill: var(--gold); }
-  /* reactive members: brighten + swell as the wavefront passes through
-     them. Each member sits just inside its hub's wave-ring (~0.9·R), so
-     the wave reaches it at ~88% of that wave's life; the per-member
-     animation period + delay (set inline) lock the flash to the SPECIFIC
-     wave crossing it, so successive waves light the ring in sequence. */
-  .site-bg .member.hit { animation: bg-hit 6s linear infinite; }
-  @keyframes bg-hit {
-    0%   { opacity: 0.32; transform: scale(1); }
-    78%  { opacity: 0.32; transform: scale(1); }
-    88%  { opacity: 0.95; transform: scale(2); }
-    96%  { opacity: 0.5;  transform: scale(1.2); }
-    100% { opacity: 0.32; transform: scale(1); }
-  }
-  /* shared members ride a vessel and answer both beats */
-  .site-bg .member.shared {
-    opacity: 0.6;
-    animation: bg-shared 3s ease-in-out infinite; animation-delay: -1.5s;
-  }
-  @keyframes bg-shared {
-    0%, 100% { transform: scale(1);   opacity: 0.5; }
-    50%      { transform: scale(1.45); opacity: 0.9; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .site-bg .wave { animation: none; opacity: 0.12; transform: scale(0.82); }
-    .site-bg .core { animation: none; opacity: 0.6; }
-    .site-bg .flow { animation: none; opacity: 0.5; offset-distance: 50%; }
-    .site-bg .member.hit,
-    .site-bg .member.shared { animation: none; opacity: 0.55; transform: none; }
-  }
-
-  /* ── Layout helpers ──────────────────────────────────── */
-  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
-  .container-narrow { max-width: 760px; margin: 0 auto; padding: 0 24px; }
-
-  /* ── Top nav ─────────────────────────────────────────── */
-  nav.topbar {
-    padding: 24px 0;
-    position: sticky;
-    top: 0;
-    background: rgba(253, 248, 240, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    z-index: 50;
-    border-bottom: 1px solid transparent;
-    transition: border-color .2s ease;
-  }
-  nav.topbar.scrolled { border-bottom-color: var(--line); }
-  nav.topbar .container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  /* ── Hero: the film's brand moment, rendered live ─────────── */
+  .hero { padding-top: clamp(40px, 7vw, 92px); padding-bottom: clamp(48px, 7vw, 96px); text-align: center; }
+  .wordmark {
+    font-size: clamp(66px, 13.5vw, 184px);
     font-weight: 700;
-    font-size: 1.05rem;
+    letter-spacing: -0.018em;
+    line-height: .92;
     color: var(--ink);
-    letter-spacing: -0.01em;
   }
-  .brand { font-size: 1.18rem; }
-  .brand img { width: 44px; height: 44px; }
-  nav.topbar .links { display: flex; gap: 22px; align-items: center; }
-  nav.topbar .links a {
-    color: var(--ink-soft);
-    font-weight: 500;
-    font-size: 0.95rem;
-    white-space: nowrap;       /* keep multi-word labels on one line */
-  }
-  nav.topbar .links a.btn { white-space: nowrap; }
-  nav.topbar .links a:hover { color: var(--pulse); }
-  /* Below 1100px: drop the in-page anchor links (How it works, Who it's
-     for) — they're optional jump-to-section links and aren't useful on
-     mobile anyway. Keep the meaningful page-changers (Guide, Ecosystem,
-     Psychedelic, See it live, Open the app). */
-  @media (max-width: 1100px) {
-    nav.topbar .links a[href^="#"] { display: none; }
-  }
-  @media (max-width: 760px) {
-    nav.topbar .links { gap: 14px; }
-    nav.topbar .links a:not(.btn) { font-size: 0.9rem; }
-    .btn-psych { display: none; }    /* compact: drop the secondary opt-in pill */
-  }
-  @media (max-width: 540px) {
-    nav.topbar .links a:not(.btn) { display: none; }
-    nav.topbar .links .menu-toggle { display: inline-flex; }
-  }
-  /* CSS-only hamburger — uses <details> in the topbar. Hidden on
-   * desktop; revealed only when the inline nav has collapsed. */
-  nav.topbar .menu-toggle {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 38px; height: 38px;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: var(--bg);
-    cursor: pointer;
-    font-size: 1.25rem;
-    line-height: 1;
-  }
-  nav.topbar .menu-toggle:hover { background: var(--bg-alt); border-color: var(--ink-muted); }
-  .mobile-menu {
-    display: none;
-    background: var(--bg);
-    border-bottom: 1px solid var(--line);
-    padding: 12px 20px 16px;
-  }
-  .mobile-menu.open { display: block; }
-  .mobile-menu a {
-    display: block;
-    padding: 10px 0;
-    color: var(--ink);
-    border-bottom: 1px solid var(--line);
-    font-size: 1rem;
-  }
-  .mobile-menu a:last-child { border-bottom: none; }
-  .mobile-menu a:hover { color: var(--pulse); }
-
-  /* ── Mobile content tuning ───────────────────────────────────
-     The hero / sections / cards / CTA / footer all get a touch of
-     padding + sizing love at narrow widths. Without these the page
-     looked passable but cards felt cramped and the footer columns
-     stacked awkwardly. */
-  @media (max-width: 640px) {
-    .container { padding: 0 16px; }
-    .container-narrow { padding: 0 16px; }
-    section { padding: 56px 0; }
-    section.hero { padding: 56px 0 72px; }
-    .hero-cta { gap: 10px; }
-    .feature { padding: 26px 22px; border-radius: 20px; }
-    .audience { padding: 18px 20px; border-radius: 16px; }
-    .cta-strip { padding: 44px 24px; border-radius: 22px; }
-    footer { padding: 36px 0 28px; font-size: 0.85rem; }
-    footer .container { flex-direction: column; align-items: flex-start; gap: 14px; }
-    footer .socials { flex-wrap: wrap; gap: 14px; }
-    /* Long words in hero / sections shouldn't push the page wide. */
-    .hero-title, .hero-sub, .section-title, .section-lead { overflow-wrap: break-word; hyphens: auto; }
-  }
-
-  /* ── Psychedelic-edition pill — opt-in path to the old technical
-        landing for the dev-curious. Subtle gradient hints at where
-        the link goes (the original page has a deep purple/cyan
-        psych theme). Stays soft enough not to compete with the
-        primary "Open the app" CTA. ───────────────────────────── */
-  .btn-psych {
-    background: linear-gradient(110deg, #6b3fa0 0%, #c233a6 45%, #2dd4bf 100%);
-    background-size: 220% 220%;
-    color: white;
-    border: none;
-    box-shadow: 0 4px 12px rgba(107, 63, 160, 0.18);
-    animation: psychShift 7s ease-in-out infinite;
-    font-size: 0.88rem;
-    padding: 10px 18px;
-  }
-  .btn-psych:hover {
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 8px 18px rgba(194, 51, 166, 0.30);
-    animation-duration: 2.5s;
-  }
-  @keyframes psychShift {
-    0%, 100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-  }
-
-  /* ── Buttons ─────────────────────────────────────────── */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 22px;
-    border-radius: 100px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    transition: transform .12s ease, box-shadow .15s ease, background .15s;
-    border: 1px solid transparent;
-    cursor: pointer;
-  }
-  .btn-primary {
-    /* #d9304a (not the decorative --pulse #e94560) so white button text
-       clears WCAG AA: 4.7:1 vs 3.83:1. --pulse stays for all decorative
-       use (rings, the pulse background, accents). */
-    background: #d9304a;
-    color: white;
-    box-shadow: 0 6px 16px rgba(233, 69, 96, .18);
-  }
-  .btn-primary:hover {
-    background: #c8293e;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(233, 69, 96, .25);
-  }
-  .btn-soft {
-    background: white;
-    color: var(--ink);
-    border-color: var(--line);
-  }
-  .btn-soft:hover {
-    background: var(--card);
-    border-color: var(--ink-muted);
-    color: var(--ink);
-    transform: translateY(-1px);
-  }
-
-  /* ── Hero ────────────────────────────────────────────── */
-  section.hero {
-    padding: 80px 0 100px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  section.hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(circle at 20% 30%, rgba(111, 168, 133, 0.08) 0%, transparent 40%),
-      radial-gradient(circle at 80% 60%, rgba(233, 69, 96, 0.06) 0%, transparent 45%);
-    pointer-events: none;
-  }
-  .hero-eyebrow {
-    display: inline-block;
-    padding: 6px 14px;
-    background: var(--pulse-soft);
-    color: var(--pulse);
-    border-radius: 100px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    margin-bottom: 28px;
-    letter-spacing: 0.02em;
-  }
-  .hero-title {
-    font-size: clamp(2.2rem, 6vw, 3.8rem);
-    font-weight: 800;
-    line-height: 1.08;
-    letter-spacing: -0.025em;
-    color: var(--ink);
-    max-width: 880px;
-    margin: 0 auto 24px;
-  }
-  .hero-title em {
-    color: var(--pulse);
-    font-style: normal;
-    position: relative;
-    /* Was `white-space: nowrap`; on a 375px viewport the em was 351px wide
-     * inside a 343px container and the trailing "." spilled onto its own
-     * line as a floating dot. Letting the em wrap with the heading keeps
-     * the punctuation attached and prevents horizontal overflow. */
-  }
-  .hero-sub {
-    font-size: clamp(1.05rem, 2vw, 1.25rem);
-    color: var(--ink-soft);
-    max-width: 640px;
-    margin: 0 auto 40px;
-    line-height: 1.55;
-  }
-  .hero-cta {
-    display: flex;
-    gap: 14px;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  /* (hero .pulse-illustration styles removed — superseded by the
-     living .site-bg pulse-organism background.) */
-
-  /* ── Highlight reel ──────────────────────────────────── */
-  .highlight-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 16px;
-    margin-top: 40px;
-  }
-  .highlight-card {
-    background: white;
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    padding: 22px 24px;
-    text-decoration: none;
-    color: var(--ink);
-    transition: transform .15s ease, box-shadow .2s ease, border-color .15s;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    position: relative;
-  }
-  .highlight-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 28px rgba(0,0,0,0.06);
-    border-color: var(--ink-muted);
-    color: var(--ink);
-    text-decoration: none;
-  }
-  .highlight-type {
-    display: inline-block;
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: var(--sage);
-    background: var(--sage-soft);
-    padding: 3px 10px;
-    border-radius: 100px;
-    width: fit-content;
-    letter-spacing: 0.02em;
-  }
-  .highlight-type.statement { color: var(--pulse); background: var(--pulse-soft); }
-  .highlight-type.artifact  { color: var(--gold); background: var(--gold-soft); }
-  .highlight-type.action    { color: var(--sage); background: var(--sage-soft); }
-  .highlight-type.governance{ color: #6b3fa0; background: rgba(107, 63, 160, 0.10); }
-  .highlight-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--ink);
-    line-height: 1.4;
-  }
-  .highlight-meta {
-    font-size: 0.82rem;
-    color: var(--ink-muted);
-    margin-top: auto;
-    padding-top: 4px;
-  }
-  .highlight-meta strong { color: var(--ink-soft); font-weight: 600; }
-  .highlight-empty {
-    grid-column: 1 / -1;
-    padding: 32px;
-    text-align: center;
-    color: var(--ink-muted);
-    font-size: 0.95rem;
-    background: white;
-    border-radius: 18px;
-    border: 1px dashed var(--line);
-  }
-  .highlight-skeleton {
-    height: 120px;
-    background: linear-gradient(110deg, var(--bg-alt) 0%, #fff 50%, var(--bg-alt) 100%);
-    background-size: 200% 100%;
-    border-radius: 18px;
-    animation: shimmer 2s linear infinite;
-    border: 1px solid var(--line);
-  }
-  @keyframes shimmer {
-    from { background-position: -100% 0; }
-    to   { background-position:  100% 0; }
-  }
-
-  /* ── Generic section ────────────────────────────────── */
-  section { padding: 80px 0; }
-  section.alt { background: var(--bg-alt); }
-  .section-eyebrow {
-    text-align: center;
-    color: var(--pulse);
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    margin-bottom: 16px;
-  }
-  .section-title {
-    font-size: clamp(1.8rem, 4vw, 2.4rem);
-    font-weight: 700;
-    line-height: 1.15;
-    letter-spacing: -0.02em;
-    text-align: center;
-    color: var(--ink);
-    margin-bottom: 18px;
-  }
-  .section-lead {
-    font-size: 1.15rem;
-    color: var(--ink-soft);
-    text-align: center;
-    max-width: 640px;
-    margin: 0 auto 56px;
-    line-height: 1.55;
-  }
-
-  /* ── Feature cards (How it works) ───────────────────── */
-  .features {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 24px;
-  }
-  .feature {
-    background: white;
-    border: 1px solid var(--line);
-    border-radius: 24px;
-    padding: 32px 28px;
-    transition: transform .2s ease, box-shadow .25s ease, border-color .15s;
-  }
-  .feature:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.05);
-    border-color: var(--ink-muted);
-  }
-  .feature-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border-radius: 16px;
-    margin-bottom: 20px;
-    font-size: 1.6rem;
-  }
-  .feature-icon.heart { background: var(--pulse-soft); }
-  .feature-icon.book  { background: var(--sage-soft); }
-  .feature-icon.tools { background: #fdf3e0; }
-  .feature-title {
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--ink);
-    margin-bottom: 10px;
-    letter-spacing: -0.01em;
-  }
-  .feature-text {
-    font-size: 0.98rem;
-    color: var(--ink-soft);
-    line-height: 1.6;
-  }
-
-  /* ── Three-pillar comparison block ──────────────────── */
-  .pillars {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 18px;
-    margin-top: 8px;
-  }
-  @media (max-width: 820px) {
-    .pillars { grid-template-columns: 1fr; }
-  }
-  .pillar {
-    position: relative;
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    padding: 28px 22px 22px;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-  }
-  .pillar:hover {
-    transform: translateY(-3px);
-    border-color: var(--pulse);
-    box-shadow: 0 12px 28px rgba(233, 69, 96, 0.08);
-  }
-  .pillar-num {
-    position: absolute;
-    top: -18px;
-    left: 22px;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+  /* The i's are drawn dotless (U+0131) and re-dotted with the pulse. */
+  .wm .i { position: relative; display: inline-block; }
+  .wm .i::after {
+    content: "";
+    position: absolute; left: 50%; top: .075em;
+    width: .178em; height: .178em; border-radius: 50%;
     background: var(--pulse);
-    color: white;
-    font-weight: 700;
-    font-size: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 10px rgba(233, 69, 96, 0.3);
-  }
-  .pillar-title {
-    font-size: 1.08rem;
-    font-weight: 700;
-    color: var(--ink);
-    margin: 6px 0 12px;
-    letter-spacing: -0.01em;
-    line-height: 1.3;
-  }
-  .pillar-text {
-    font-size: 0.94rem;
-    color: var(--ink-soft);
-    line-height: 1.6;
-    margin: 0;
+    transform: translateX(-50%);
+    animation: beat 2.4s ease-in-out 1.7s infinite;
   }
 
-  /* ── "Who's it for" pill grid ───────────────────────── */
-  .audience-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 16px;
-    margin-top: 16px;
+  .ecg-band {
+    width: 100vw; margin-left: calc(50% - 50vw);
+    margin-top: clamp(-4px, -1vw, -14px);
   }
-  .audience {
-    background: white;
-    border-radius: 20px;
-    padding: 22px 24px;
-    border: 1px solid var(--line);
-  }
-  .audience-name {
-    font-weight: 700;
-    color: var(--ink);
-    font-size: 1.02rem;
-    margin-bottom: 4px;
-  }
-  .audience-desc {
-    color: var(--ink-soft);
-    font-size: 0.92rem;
-    line-height: 1.5;
-  }
+  .ecg { width: 100%; height: clamp(58px, 8vw, 112px); }
+  .ecg path { stroke-dasharray: 1; animation: draw 1.6s cubic-bezier(.3,.1,.2,1) .1s backwards; }
+  .ecg .beat { animation-delay: 1.7s; }
+  @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 
-  /* ── Big CTA strip ──────────────────────────────────── */
-  .cta-strip {
-    background: var(--ink);
-    color: white;
-    border-radius: 28px;
-    padding: 60px 40px;
-    text-align: center;
+  .tagline {
+    display: inline-flex; align-items: center;
+    margin-top: clamp(4px, 1vw, 12px);
+    /* 38 monospace chars + the cursor must fit a 320px column. */
+    font-family: var(--mono); font-size: clamp(12px, 3.3vw, 20px);
+    color: var(--ink-2); letter-spacing: .01em;
+  }
+  .tagline .t { display: inline-block; overflow: hidden; white-space: nowrap; width: 38ch; animation: type 1.5s steps(38, end) 1s backwards; }
+  @keyframes type { from { width: 0; } }
+  .cursor { display: inline-block; width: .62em; height: 1.15em; margin-left: .18em; background: var(--pulse); animation: blink 1.05s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .hero .lead { margin: clamp(26px, 4vw, 40px) auto 0; }
+  .cta-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 30px; }
+
+  .hero-live { display: none; margin-top: 26px; font-family: var(--mono); font-size: 12.5px; color: var(--dim); }
+  .hero-live b { color: var(--ink-2); font-weight: 500; }
+  .hero-live .p b { color: var(--pulse); }
+  @media (max-width: 760px) { .hero-live { display: block; } }
+
+  /* ── The film ─────────────────────────────────────────────── */
+  .film { margin-top: clamp(52px, 8vw, 96px); text-align: left; }
+  .film-bar { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+  .film-bar .label b { color: var(--ink); font-weight: 700; }
+  .film-frame {
     position: relative;
+    aspect-ratio: 16 / 9;
+    border: 1.5px solid var(--faint);
+    border-radius: 16px;
     overflow: hidden;
+    background: #000;
   }
-  .cta-strip::before {
-    content: '';
-    position: absolute;
-    top: -100px;
-    right: -100px;
-    width: 320px;
-    height: 320px;
-    background: radial-gradient(circle, rgba(233, 69, 96, 0.4) 0%, transparent 70%);
-    pointer-events: none;
+  .film-frame.portrait { aspect-ratio: 9 / 16; max-height: 82svh; margin-inline: auto; }
+  .film-frame video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .film-play {
+    position: absolute; inset: 0;
+    display: grid; place-items: center; align-content: center; gap: 16px;
+    background: linear-gradient(to top, rgba(7,7,7,.55), rgba(7,7,7,0) 45%);
+    border: 0; cursor: pointer; color: var(--ink);
   }
-  .cta-strip h2 {
-    font-size: clamp(1.7rem, 4vw, 2.2rem);
-    font-weight: 700;
-    margin-bottom: 16px;
-    letter-spacing: -0.02em;
-    position: relative;
+  .play-dot {
+    width: clamp(64px, 8vw, 92px); height: clamp(64px, 8vw, 92px); border-radius: 50%;
+    background: var(--pulse);
+    display: grid; place-items: center;
+    box-shadow: 0 0 0 0 rgba(200,255,68,.45);
+    animation: ring 2.4s ease-out infinite;
+    transition: transform .2s ease;
   }
-  .cta-strip p {
-    color: rgba(255, 255, 255, 0.78);
-    margin-bottom: 32px;
-    font-size: 1.08rem;
-    position: relative;
+  .play-dot::before {
+    content: ""; margin-left: 12%;
+    border-style: solid; border-width: .72em 0 .72em 1.18em;
+    border-color: transparent transparent transparent var(--pulse-ink);
+    font-size: clamp(14px, 1.7vw, 19px);
   }
-  .cta-strip .btn-soft {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    border-color: rgba(255, 255, 255, 0.2);
+  .film-play:hover .play-dot { transform: scale(1.06); }
+  .play-label { font-family: var(--mono); font-size: 12.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(200,255,68,.42); } 70%, 100% { box-shadow: 0 0 0 26px rgba(200,255,68,0); } }
+  .film-frame.playing .film-play { display: none; }
+  .film figcaption { margin-top: 12px; }
+
+  /* ── 02 · Decided (live highlights as the film's cards) ──── */
+  .decided-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .decided-grid a.card { text-decoration: none; color: inherit; display: grid; align-content: start; transition: border-color .15s ease, transform .15s ease; }
+  .decided-grid a.card:hover { border-color: var(--ink-2); transform: translateY(-2px); }
+  .decided-grid a.card.live:hover { border-color: var(--pulse); }
+  .decided-grid .card h3 { font-size: 20px; font-weight: 600; }
+  .card-foot { margin-top: 16px; font-family: var(--mono); font-size: 12px; color: var(--dim); letter-spacing: .04em; }
+  .card-foot b { color: var(--ink-2); font-weight: 500; }
+  .skeleton { min-height: 150px; border-style: dashed; }
+  .skeleton::after { content: "loading…"; font-family: var(--mono); font-size: 12px; color: #3A3A38; }
+  .decided-empty { grid-column: 1 / -1; font-family: var(--mono); font-size: 14px; color: var(--dim); }
+
+  /* ── 03 · How it works ────────────────────────────────────── */
+  .lifecycle {
+    display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 14px;
+    margin-bottom: clamp(36px, 5vw, 56px);
+    font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
   }
-  .cta-strip .btn-soft:hover {
-    background: rgba(255, 255, 255, 0.18);
-    color: white;
+  .lifecycle span { padding-bottom: 12px; border-bottom: 1.5px solid var(--faint); color: var(--dim); text-align: center; }
+  .lifecycle span.on { color: var(--pulse); border-bottom-color: var(--pulse); }
+  .lifecycle i { color: var(--dim); font-style: normal; }
+  @media (max-width: 620px) { .lifecycle { font-size: 10.5px; letter-spacing: .1em; gap: 6px; } }
+
+  .ideas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 960px) { .ideas { grid-template-columns: 1fr; } }
+  .idea { display: grid; grid-template-rows: auto auto 1fr; gap: 12px; }
+  .idea p { font-size: 17px; }
+  .figure {
+    border: 1.5px solid var(--faint); border-radius: 14px;
+    min-height: 168px; padding: 18px;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
   }
 
-  /* ── Footer ─────────────────────────────────────────── */
-  footer {
-    padding: 60px 0 40px;
-    border-top: 1px solid var(--line);
-    color: var(--ink-muted);
-    font-size: 0.9rem;
+  .gauge { width: 132px; height: 132px; }
+  .gauge .track { fill: none; stroke: var(--faint); stroke-width: 5; }
+  .gauge .arc   { fill: none; stroke: var(--pulse); stroke-width: 5; stroke-linecap: round; }
+  .gauge .line  { fill: none; stroke: var(--pulse); stroke-width: 2; stroke-linejoin: round; }
+  .gauge text   { fill: var(--ink); font-family: var(--mono); font-size: 13px; font-weight: 700; text-anchor: middle; }
+
+  .rules { width: 100%; display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; font-size: 13.5px; }
+  .rules h4 { font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-bottom: 10px; }
+  .rules ul { list-style: none; display: grid; gap: 7px; }
+  .rules li { color: var(--ink); line-height: 1.3; }
+  .rules li.new { color: var(--pulse-ink); background: var(--pulse); border-radius: 999px; padding: 3px 10px; margin-left: -10px; font-weight: 600; }
+  .rules .s { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-right: 6px; }
+  .rules li.new .s { color: var(--pulse-ink); }
+  .rules .var { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .rules .var b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .nest { width: 100%; max-width: 260px; height: auto; }
+  .nest circle.ring { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+  .nest circle.ring.act { stroke: var(--pulse); stroke-dasharray: 4 5; }
+  .nest circle.m { fill: var(--ink); }
+  .nest circle.core { fill: var(--pulse); }
+  .nest line { stroke: var(--faint); stroke-width: 1.5; }
+  .nest text { fill: var(--dim); font-family: var(--mono); font-size: 10px; text-anchor: middle; }
+
+  /* ── 04 · Not a forum, not a DAO ──────────────────────────── */
+  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 960px) { .pillars { grid-template-columns: 1fr; } }
+  .pillar { display: grid; gap: 12px; align-content: start; border-top: 1.5px solid var(--faint); padding-top: 22px; }
+  .pillar p { font-size: 17px; }
+  .pillar .readout {
+    font-family: var(--mono); font-size: clamp(38px, 4.4vw, 54px); font-weight: 700;
+    color: var(--pulse); letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums;
   }
-  footer .container {
-    display: flex;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 20px;
-  }
-  footer a { color: var(--ink-soft); }
-  footer a:hover { color: var(--pulse); }
-  footer .socials { display: flex; gap: 18px; }
+  .pillar .readout small { font-size: .32em; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; margin-right: .6em; font-weight: 500; }
+  .pillar.admins .readout { color: var(--ink); }
+
+  /* ── 05 · For everyone (the film's use-case cards) ────────── */
+  .cases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 960px) { .cases { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .cases { grid-template-columns: 1fr; } }
+  .case { display: grid; gap: 8px; align-content: start; }
+  .case .label { color: var(--pulse); }
+  .case h3 { font-size: clamp(26px, 2.6vw, 32px); font-weight: 700; letter-spacing: -.015em; text-transform: lowercase; }
+  .case p { font-size: 16px; }
+  .case.all { grid-column: 1 / -1; border-color: #3A3A38; }
+  .case.all h3 { text-transform: none; }
+
+  /* ── 06 · Two ways in ─────────────────────────────────────── */
+  .finale { text-align: center; }
+  .finale p { margin-inline: auto; }
+  .finale .members { margin-bottom: clamp(40px, 6vw, 64px); }
+  .finale h2 { font-size: clamp(38px, 5.6vw, 64px); }
+  .finale .signoff { margin-top: 18px; font-family: var(--mono); font-size: clamp(14px, 1.6vw, 17px); color: var(--ink-2); }
+  .finale .cta-row { margin-top: 34px; }
 </style>
 </head>
 <body>
 
-<!-- ── Living pulse-organism: one kibbutz, nested heartbeats ──
-     Root core → vessels carry the pulse outward → actions fire on arrival
-     → one action feeds a nested sub-action. Shared members ride the
-     vessels, wired to two cores. Faint, fixed, behind all content. -->
-<div class="site-bg" aria-hidden="true">
-  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-    <!-- vessels (behind everything): root(720,450) → each action -->
-    <path class="vessel" d="M720,450 L420,300"/>
-    <path class="vessel" d="M720,450 L1040,360"/>
-    <path class="vessel" d="M720,450 L640,720"/>
-    <path class="vessel sub" d="M420,300 L220,430"/>
-
-    <!-- tie-lines: each shared member wired to BOTH cores it sits between -->
-    <line class="tie" x1="570" y1="375" x2="720" y2="450"/>
-    <line class="tie" x1="570" y1="375" x2="420" y2="300"/>
-    <line class="tie" x1="880" y1="405" x2="720" y2="450"/>
-    <line class="tie" x1="880" y1="405" x2="1040" y2="360"/>
-
-    <!-- traveling pulse dots: the wave flowing outward along each vessel -->
-    <circle class="flow" r="3.5" style="offset-path:path('M720,450 L420,300'); animation-delay:0s"/>
-    <circle class="flow" r="3.5" style="offset-path:path('M720,450 L1040,360'); animation-delay:0s"/>
-    <circle class="flow" r="3.5" style="offset-path:path('M720,450 L640,720'); animation-delay:0s"/>
-    <circle class="flow sub" r="3" style="offset-path:path('M420,300 L220,430'); animation-delay:1.5s"/>
-
-    <!-- ROOT hub — master heartbeat T=6s. 8 members ring the wave at
-         ~0.9·R (108); each is locked to one of the 3 staggered waves
-         (-2/-4/-6s) so the ring lights up in sequence as each wave
-         washes over it (a rotating ripple every ~2s). -->
-    <g transform="translate(720,450)">
-      <circle class="wave" r="120" style="animation-delay:-6.0s"/>
-      <circle class="wave" r="120" style="animation-delay:-4.0s"/>
-      <circle class="wave" r="120" style="animation-delay:-2.0s"/>
-      <circle class="member hit"    cx="108"  cy="0"    r="5.5" style="animation-delay:-2.0s"/>
-      <circle class="member hit ai" cx="76"   cy="76"   r="5.5" style="animation-delay:-4.0s"/>
-      <circle class="member hit"    cx="0"    cy="108"  r="5.5" style="animation-delay:-6.0s"/>
-      <circle class="member hit"    cx="-76"  cy="76"   r="5.5" style="animation-delay:-2.0s"/>
-      <circle class="member hit ai" cx="-108" cy="0"    r="5.5" style="animation-delay:-4.0s"/>
-      <circle class="member hit"    cx="-76"  cy="-76"  r="5.5" style="animation-delay:-6.0s"/>
-      <circle class="member hit ai" cx="0"    cy="-108" r="5.5" style="animation-delay:-2.0s"/>
-      <circle class="member hit"    cx="76"   cy="-76"  r="5.5" style="animation-delay:-4.0s"/>
-      <circle class="core root" r="11"/>
-    </g>
-
-    <!-- ACTION A (T/2=3s), fires when root wave arrives (travel 1.5s).
-         Members ring at ~66, locked to the action's two waves. -->
-    <g transform="translate(420,300)">
-      <circle class="wave a" r="75" style="animation-delay:-1.5s"/>
-      <circle class="wave a" r="75" style="animation-delay:-3.0s"/>
-      <circle class="member hit"    cx="66"  cy="0"   r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
-      <circle class="member hit ai" cx="20"  cy="63"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
-      <circle class="member hit"    cx="-53" cy="39"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
-      <circle class="member hit"    cx="-53" cy="-39" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
-      <circle class="member hit ai" cx="20"  cy="-63" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
-      <circle class="core action" r="8" style="animation-delay:-1.5s"/>
-    </g>
-
-    <!-- ACTION B (T/2=3s) -->
-    <g transform="translate(1040,360)">
-      <circle class="wave a" r="70" style="animation-delay:-1.5s"/>
-      <circle class="wave a" r="70" style="animation-delay:-3.0s"/>
-      <circle class="member hit"    cx="62"  cy="0"   r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
-      <circle class="member hit"    cx="19"  cy="59"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
-      <circle class="member hit ai" cx="-50" cy="36"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
-      <circle class="member hit"    cx="-50" cy="-36" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-3.0s"/>
-      <circle class="member hit ai" cx="19"  cy="-59" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.5s"/>
-      <circle class="core action" r="8" style="animation-delay:-1.5s"/>
-    </g>
-
-    <!-- ACTION C (T/2=3s), shorter vessel → arrives sooner (1.3s) -->
-    <g transform="translate(640,720)">
-      <circle class="wave a" r="65" style="animation-delay:-1.3s"/>
-      <circle class="wave a" r="65" style="animation-delay:-2.8s"/>
-      <circle class="member hit"    cx="58"  cy="0"   r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.3s"/>
-      <circle class="member hit ai" cx="18"  cy="55"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-2.8s"/>
-      <circle class="member hit"    cx="-47" cy="34"  r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.3s"/>
-      <circle class="member hit"    cx="-47" cy="-34" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-2.8s"/>
-      <circle class="member hit ai" cx="18"  cy="-55" r="4.5" style="animation:bg-hit 3s linear infinite;animation-delay:-1.3s"/>
-      <circle class="core action" r="7.5" style="animation-delay:-1.3s"/>
-    </g>
-
-    <!-- SUB-ACTION (T/3=2s) nested under Action A; cascade delay 2.7s -->
-    <g transform="translate(220,430)">
-      <circle class="wave s" r="48" style="animation-delay:-2.7s"/>
-      <circle class="wave s" r="48" style="animation-delay:-1.7s"/>
-      <circle class="member hit"    cx="42"  cy="0"   r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-2.7s"/>
-      <circle class="member hit ai" cx="0"   cy="42"  r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-1.7s"/>
-      <circle class="member hit"    cx="-42" cy="0"   r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-2.7s"/>
-      <circle class="member hit"    cx="0"   cy="-42" r="4" style="animation:bg-hit 2s linear infinite;animation-delay:-1.7s"/>
-      <circle class="core sub-core" r="6" style="animation-delay:-2.7s"/>
-    </g>
-
-    <!-- shared members: sit ON the vessels, feel both beats -->
-    <circle class="member shared" cx="570" cy="375" r="5"/>
-    <circle class="member shared ai" cx="880" cy="405" r="5"/>
-  </svg>
-</div>
-
-<!-- ── Top nav ────────────────────────────────────────── -->
-<nav class="topbar" id="topbar">
-  <div class="container">
-    <a href="/welcome.html" class="brand">
-      <img src="logo.svg" alt="">
-      Kibbutznik
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="#top" aria-label="Kibbutznik — back to top">
+      <b>KBZ</b><span class="sep">//</span><span id="chapter-label">01 Pulse</span>
     </a>
-    <div class="links">
+    <nav class="nav" aria-label="Primary">
       <a href="#how">How it works</a>
       <a href="#who">Who it's for</a>
-      <a href="/guide.html">The Guide</a>
-      <a href="/ecosystem.html">Ecosystem</a>
-      <a href="/kbz/viewer/">See it live</a>
-      <a href="/app/" class="btn btn-primary">Open the app</a>
-      <button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"
-              onclick="(function(b){var m=document.getElementById('mobileMenu');var open=m.classList.toggle('open');b.setAttribute('aria-expanded',open?'true':'false');b.textContent=open?'✕':'☰';})(this)">☰</button>
-    </div>
-  </div>
-</nav>
-<div class="mobile-menu" id="mobileMenu" role="navigation" aria-label="Mobile navigation">
-  <a href="#how">How it works</a>
-  <a href="#who">Who it's for</a>
-  <a href="/guide.html">The Guide</a>
-  <a href="/ecosystem.html">Ecosystem</a>
-  <a href="/kbz/viewer/">See it live</a>
-  <a href="/the-pulse.html">The pulse (essay)</a>
-      <a href="/contact.html">Get in touch</a>
-  <a href="/index.html">Psychedelic edition</a>
-  <a href="https://github.com/Kibbutznik/kibbutznik" target="_blank" rel="noopener">GitHub →</a>
-</div>
-
-<!-- ── Hero ───────────────────────────────────────────── -->
-<section class="hero">
-  <div class="container">
-    <div class="hero-eyebrow">Pulse, not politics · Members, not managers</div>
-    <h1 class="hero-title">
-      A <em>pulse-based</em> direct<br/>democratic engine.
-    </h1>
-    <p class="hero-sub">
-      Kibbutznik turns a group chat into a community that actually decides things.
-      Members propose, argue, support what they like, and stand by what they choose
-      — held together by a heartbeat that says when a decision is ready.
-    </p>
-    <p class="hero-tagline" style="font-size:1rem;color:var(--ink-muted);max-width:560px;margin:-18px auto 36px;font-style:italic;">
-      Not a forum. Not a vote bot. A small group with a backbone, running itself one heartbeat at a time.
-    </p>
-    <div class="hero-cta">
-      <a href="/app/" class="btn btn-primary">
-        Open the app
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-      </a>
-      <a href="/guide.html" class="btn btn-soft">Read the friendly guide</a>
-      <a href="/kbz/viewer/" class="btn btn-soft">See a community in action →</a>
-    </div>
-    <!-- (hero pulse-illustration removed — the living .site-bg organism
-         now carries the pulse motif across the whole page.) -->
-  </div>
-</section>
-
-<!-- ── Highlight reel: live decisions from real communities ─── -->
-<section class="highlights" id="highlights" aria-labelledby="highlights-title">
-  <div class="container">
-    <div class="section-eyebrow">Just decided</div>
-    <h2 id="highlights-title" class="section-title">Live from the AI kibbutz, right now.</h2>
-    <p class="section-lead">
-      The most recent things the running simulation has decided together — proposals that cleared a pulse. Click any to watch the kibbutz live.
-    </p>
-    <div id="highlight-list" class="highlight-grid">
-      <div class="highlight-skeleton"></div>
-      <div class="highlight-skeleton"></div>
-      <div class="highlight-skeleton"></div>
-    </div>
-  </div>
-</section>
-
-<!-- ── How it works ───────────────────────────────────── -->
-<section id="how" class="alt">
-  <div class="container">
-    <div class="section-eyebrow">How it works</div>
-    <h2 class="section-title">Three small ideas. One shared heartbeat.</h2>
-    <p class="section-lead">
-      Simple enough to explain over coffee. Strong enough to keep a hundred people honest.
-    </p>
-
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon heart">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e94560" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
-        </div>
-        <div class="feature-title">A shared pulse</div>
-        <div class="feature-text">
-          Decisions don't happen on a whim. They wait for the community's pulse —
-          a moment, every so often, when the group agrees "we're ready, let's
-          decide." Anyone can call the pulse. Nothing moves until enough of you
-          say it's time.
-        </div>
-      </div>
-
-      <div class="feature">
-        <div class="feature-icon book">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6fa885" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-        </div>
-        <div class="feature-title">Democratic governance</div>
-        <div class="feature-text">
-          The rulebook is two things together: <strong>statements</strong>
-          (plain sentences anyone can point to — "members respond within
-          one round") and <strong>variables</strong> (the tunable
-          thresholds — how much support a proposal needs, how long it
-          can sit). Change either one with a proposal. The rules never
-          live in someone's head — they live where everyone can see them,
-          and every member has a vote in shaping them.
-        </div>
-      </div>
-
-      <div class="feature">
-        <div class="feature-icon tools">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#d9a441" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"></circle><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path><circle cx="17" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path></svg>
-        </div>
-        <div class="feature-title">Working groups that stick</div>
-        <div class="feature-text">
-          Big projects need small teams. Spin up a working group — anyone can
-          join — and let it write, revise, and wrap up its piece of the work.
-          When it's done, the result comes back to the community for a thumbs-up.
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Who it's for ───────────────────────────────────── -->
-<section id="who">
-  <div class="container">
-    <div class="section-eyebrow">Built for the people in the room</div>
-    <h2 class="section-title">Who's it for?</h2>
-    <p class="section-lead">
-      Anywhere a group of humans needs to actually decide things together —
-      not just chat about deciding things together.
-    </p>
-
-    <div class="audience-grid">
-      <div class="audience">
-        <div class="audience-name">Co-ops &amp; collectives</div>
-        <div class="audience-desc">Coordinate decisions without committees, vote-counting, or that one person doing the spreadsheet.</div>
-      </div>
-      <div class="audience">
-        <div class="audience-name">Online communities</div>
-        <div class="audience-desc">Move beyond mods and karma. Let your members shape the rules they live by.</div>
-      </div>
-      <div class="audience">
-        <div class="audience-name">Friend groups &amp; chosen families</div>
-        <div class="audience-desc">For when a group chat just isn't enough. Decide trips, budgets, traditions — together.</div>
-      </div>
-      <div class="audience">
-        <div class="audience-name">Schools &amp; classrooms</div>
-        <div class="audience-desc">Teach democracy by doing it. A safe place to practice making real choices together.</div>
-      </div>
-      <div class="audience">
-        <div class="audience-name">Researchers &amp; sociologists</div>
-        <div class="audience-desc">Run simulated communities populated by AI agents. Watch how groups settle, split, or adapt.</div>
-      </div>
-      <div class="audience">
-        <div class="audience-name">Anyone who's tired of meetings</div>
-        <div class="audience-desc">If you've ever sat through a 90-minute call about whether to have another call, this one's for you.</div>
-      </div>
-      <div class="audience" style="grid-column: 1 / -1; background: linear-gradient(135deg, var(--pulse-soft) 0%, var(--sage-soft) 100%); border-color: transparent;">
-        <div class="audience-name">…and eventually, the whole of humanity.</div>
-        <div class="audience-desc">Wherever a few people need to make something together — a building, a town, a treaty. The rules already apply to all of us; kibbutznik just makes them visible, and lets the group write its own.</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── What's different — three revolutionary mechanics ──────── -->
-<section class="alt">
-  <div class="container-narrow">
-    <div class="section-eyebrow" style="text-align:center;">Why we built another one</div>
-    <h2 class="section-title" style="text-align:center;">Not a forum. Not a DAO.</h2>
-    <p style="font-size:1.05rem; color: var(--ink-soft); line-height:1.65; margin-bottom: 2rem; text-align:center; max-width: 620px; margin-left:auto; margin-right:auto;">
-      Group chats have no decision moment. Forums collect opinions but never
-      resolve them. Voting apps and DAOs count ballots but have no shared time.
-      Kibbutznik brings three mechanics none of them have.
-    </p>
-
-    <div class="pillars">
-      <div class="pillar">
-        <div class="pillar-num">1</div>
-        <h3 class="pillar-title">The pulse</h3>
-        <p class="pillar-text">
-          A periodic heartbeat where the community says "we're ready, let's decide
-          what we've been building up to." Between pulses, you propose and you
-          support. At a pulse, anything with enough support becomes rule. No more
-          proposals drifting forever — every cycle has a deciding moment.
-        </p>
-      </div>
-
-      <div class="pillar">
-        <div class="pillar-num">2</div>
-        <h3 class="pillar-title">Hierarchical communities (Actions)</h3>
-        <p class="pillar-text">
-          Big work needs small teams. Any community can spin off an
-          <strong>action</strong> — a nested sub-community with its own pulse,
-          members, and rulebook. The action does its piece (drafts an artifact,
-          runs a project, ships a thing) and commits results back to the parent.
-          Whole movements can be modeled as one community of actions of actions.
-        </p>
-      </div>
-
-      <div class="pillar">
-        <div class="pillar-num">3</div>
-        <h3 class="pillar-title">No administration. Everything is proposable.</h3>
-        <p class="pillar-text">
-          No admin tier. No moderator role. No founder veto. Every rule, every
-          threshold, every member's status — anything — can be changed through
-          the same proposal flow. Even the support threshold itself is a variable
-          the community can vote to change. The rulebook is open prose
-          (<strong>statements</strong>) and open numbers (<strong>variables</strong>),
-          both editable through the same gate.
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Big CTA ─────────────────────────────────────────── -->
-<section>
-  <div class="container">
-    <div class="cta-strip">
-      <h2>Two ways in.</h2>
-      <p>Start your own kibbutz, or drop into a live simulation already in progress.</p>
-      <div class="hero-cta" style="justify-content:center;">
-        <a href="/app/" class="btn btn-primary">Open the app →</a>
-        <a href="/kbz/viewer/" class="btn btn-soft">Watch a live community</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Footer ─────────────────────────────────────────── -->
-<footer>
-  <div class="container">
-    <div>
-      © Kibbutznik · open source · made by people who believe small groups can run themselves
-    </div>
-    <div class="socials">
-      <a href="/app/">App</a>
       <a href="/guide.html">Guide</a>
       <a href="/ecosystem.html">Ecosystem</a>
       <a href="/kbz/viewer/">Live</a>
-      <a href="/contact.html">Get in touch</a>
-      <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
-      <a href="/index.html" style="opacity:0.7;">Psychedelic edition ✦</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#how">How it works</a>
+    <a href="#who">Who it's for</a>
+    <a href="/guide.html">The guide</a>
+    <a href="/ecosystem.html">Ecosystem</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/the-pulse.html">The pulse — essay</a>
+    <a href="/contact.html">Get in touch</a>
+    <a href="/app/">Open the app</a>
+    <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+  </div>
+</header>
+
+<div class="hud full" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
+  <div class="hud-console" id="console">
+    <div>&gt; pulse.init()</div>
+    <div>&gt; engine online · 120 bpm</div>
+  </div>
+  <div class="hud-status">
+    <span class="p">pulses <b data-live="pulses">—</b></span><span class="sep">·</span>members <b data-live="members">—</b><span class="sep">·</span>admins <b>00</b><span class="sep">·</span>rules <b data-live="rules">—</b>
+  </div>
+</div>
+
+<main id="top">
+
+  <!-- ── 01 · Pulse ─────────────────────────────────────────── -->
+  <section class="hero" data-chapter="01 Pulse" data-log="engine online · 120 bpm">
+    <div class="wide">
+      <h1 class="wordmark">
+        <span class="sr-only">Kibbutznik — a pulse-based direct democratic engine</span>
+        <span class="wm" aria-hidden="true">k<span class="i">ı</span>bbutzn<span class="i">ı</span>k</span>
+      </h1>
     </div>
+
+    <div class="ecg-band" aria-hidden="true">
+      <svg class="ecg" viewBox="0 0 1200 100" preserveAspectRatio="xMidYMid slice">
+        <path pathLength="1" d="M0,50 L275,50 L283,45 L291,50 L294,50 L298,55 L302,20 L306,74 L310,50 L318,50 L326,44 L334,50 L572,50 L581,44 L590,50 L594,50 L597,57 L602,4 L607,92 L612,50 L622,50 L632,41 L642,50 L875,50 L883,45 L891,50 L894,50 L898,55 L902,20 L906,74 L910,50 L918,50 L926,44 L934,50 L1200,50"/>
+        <circle class="beat" cx="600" cy="50" r="7"/>
+      </svg>
+    </div>
+
+    <div class="wide">
+      <p class="tagline" aria-hidden="true"><span class="t">a pulse-based direct democratic engine</span><span class="cursor"></span></p>
+
+      <p class="lead">
+        Kibbutznik turns a group chat into a community that actually decides things.
+        Members propose, argue, support what they like, and stand by what they choose
+        — held together by a heartbeat that says when a decision is ready.
+      </p>
+
+      <div class="cta-row">
+        <a href="/app/" class="btn btn-pulse">Open the app →</a>
+        <a href="#film" class="btn">Watch the film · 60 s</a>
+        <a href="/kbz/viewer/" class="btn">See a live community</a>
+      </div>
+
+      <p class="hero-live">
+        <span data-live="communities">3</span> communities · members <b data-live="members">—</b> ·
+        <span class="p">pulses <b data-live="pulses">—</b></span> · admins <b>00</b>
+      </p>
+
+      <figure class="film" id="film">
+        <div class="film-bar">
+          <span class="label"><b>KBZ</b> // The film</span>
+          <span class="label">60 s · sound on</span>
+        </div>
+        <div class="film-frame" id="filmFrame">
+          <video id="filmVideo" preload="none" playsinline
+                 poster="/assets/media/kibbutznik-pulse-poster.jpg">
+            <source src="/assets/media/kibbutznik-pulse.mp4" type="video/mp4">
+          </video>
+          <button class="film-play" id="filmPlay" type="button" aria-label="Play the sixty-second explainer, with sound">
+            <span class="play-dot" aria-hidden="true"></span>
+            <span class="play-label">Play · 60 s</span>
+          </button>
+        </div>
+        <figcaption class="label">How a pulse turns an argument into a rule — in one minute.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ── 02 · Decided ───────────────────────────────────────── -->
+  <section id="decided" data-chapter="02 Decided" data-log="highlights.load()">
+    <div class="wide">
+      <div class="section-head">
+        <span class="label"><span class="n">02</span> · Just decided</span>
+        <h2>Live from the kibbutzim, right now.</h2>
+        <p class="lead">The latest things our running communities decided together — proposals that cleared a pulse. Open any one to watch it happen.</p>
+      </div>
+      <div class="decided-grid" id="highlight-list">
+        <div class="card skeleton"></div>
+        <div class="card skeleton"></div>
+        <div class="card skeleton"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 03 · How it works ──────────────────────────────────── -->
+  <section id="how" data-chapter="03 How it works" data-log="rules.statements += §1">
+    <div class="wide">
+      <div class="section-head">
+        <span class="label"><span class="n">03</span> · How it works</span>
+        <h2>Three small ideas. One shared heartbeat.</h2>
+        <p class="lead">Simple enough to explain over coffee. Strong enough to keep a hundred people honest.</p>
+      </div>
+
+      <div class="lifecycle" aria-label="A proposal's life: out there, then on the air, then decided">
+        <span>Out there</span><i>›</i><span class="on">On the air</span><i>›</i><span>Decided</span>
+      </div>
+
+      <div class="ideas">
+        <div class="idea">
+          <div class="figure" aria-hidden="true">
+            <svg class="gauge" viewBox="0 0 132 132">
+              <circle class="track" cx="66" cy="66" r="54"/>
+              <circle class="arc" cx="66" cy="66" r="54" pathLength="100" stroke-dasharray="75 100" transform="rotate(-90 66 66)"/>
+              <path class="line" d="M34,62 L50,62 L54,57 L58,62 L61,62 L64,48 L68,74 L71,62 L80,62 L84,58 L88,62 L98,62"/>
+              <text x="66" y="92">3/4</text>
+            </svg>
+          </div>
+          <h3>A shared pulse</h3>
+          <p>
+            Decisions don't happen on a whim. They wait for the community's pulse —
+            a moment when the group agrees "we're ready, let's decide." Anyone can
+            call the pulse. Nothing moves until enough of you say it's time.
+          </p>
+        </div>
+
+        <div class="idea">
+          <div class="figure" aria-hidden="true">
+            <div class="rules">
+              <div>
+                <h4>Statements</h4>
+                <ul>
+                  <li class="new"><span class="s">§1</span>Saturdays = garden day</li>
+                  <li><span class="s">§2</span>Reply within one pulse</li>
+                  <li><span class="s">§3</span>Newcomers get a buddy</li>
+                </ul>
+              </div>
+              <div>
+                <h4>Variables</h4>
+                <ul>
+                  <li class="var">pass_threshold <b>40%</b></li>
+                  <li class="var">promote_at <b>25%</b></li>
+                  <li class="var">pulse_trigger <b>50%</b></li>
+                  <li class="var">max_age <b>2</b></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <h3>Democratic governance</h3>
+          <p>
+            The rulebook is two things together: <strong>statements</strong> — plain
+            sentences anyone can point to — and <strong>variables</strong>, the tunable
+            thresholds. Change either with a proposal. The rules never live in someone's
+            head; they live where everyone can see them.
+          </p>
+        </div>
+
+        <div class="idea">
+          <div class="figure" aria-hidden="true">
+            <svg class="nest" viewBox="0 0 260 150">
+              <circle class="ring" cx="92" cy="74" r="62"/>
+              <circle class="core" cx="92" cy="74" r="6"/>
+              <circle class="m" cx="62" cy="44" r="6"/><circle class="m" cx="118" cy="40" r="6"/>
+              <circle class="m" cx="130" cy="92" r="6"/><circle class="m" cx="58" cy="100" r="6"/>
+              <circle class="m" cx="92" cy="118" r="6"/>
+              <line x1="154" y1="74" x2="188" y2="74"/>
+              <circle class="ring act" cx="214" cy="74" r="28"/>
+              <circle class="core" cx="214" cy="74" r="4"/>
+              <circle class="m" cx="202" cy="62" r="4.5"/><circle class="m" cx="228" cy="66" r="4.5"/>
+              <circle class="m" cx="212" cy="90" r="4.5"/>
+              <text x="92" y="148">/kibbutz</text>
+              <text x="214" y="118">/harvest</text>
+            </svg>
+          </div>
+          <h3>Working groups that stick</h3>
+          <p>
+            Big projects need small teams. Spin up a working group — anyone can join —
+            and let it write, revise, and wrap up its piece of the work. When it's done,
+            the result comes back to the community for a vote.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 04 · Not a DAO ─────────────────────────────────────── -->
+  <section id="different" data-chapter="04 Not a DAO" data-log="admins = 0">
+    <div class="wide">
+      <div class="section-head">
+        <span class="label"><span class="n">04</span> · Why we built another one</span>
+        <h2>Not a forum. Not a DAO.</h2>
+        <p class="lead">
+          Group chats have no decision moment. Forums collect opinions but never resolve
+          them. Voting apps and DAOs count ballots but have no shared time. Kibbutznik
+          brings three mechanics none of them have.
+        </p>
+      </div>
+
+      <div class="pillars">
+        <div class="pillar">
+          <div class="readout"><small>pulse</small>#01</div>
+          <h3>The pulse</h3>
+          <p>
+            A heartbeat where the community says "we're ready, let's decide what we've been
+            building up to." Between pulses you propose and support. At a pulse, anything
+            with enough support becomes rule — all at once, on the beat. No proposal drifts
+            forever: every cycle has a deciding moment.
+          </p>
+        </div>
+        <div class="pillar">
+          <div class="readout"><small>depth</small>∞</div>
+          <h3>Hierarchical communities</h3>
+          <p>
+            Any community can spin off an <strong>action</strong> — a nested sub-community
+            with its own pulse, members and rulebook. It does its piece, then commits the
+            result back up to its parent for a vote. Actions can have actions, so a whole
+            movement can be one community of actions of actions.
+          </p>
+        </div>
+        <div class="pillar admins">
+          <div class="readout"><small>admins</small>00</div>
+          <h3>No administration. Everything is proposable.</h3>
+          <p>
+            No admin tier, no moderator, no founder veto. Every rule, every threshold, every
+            member's status can change through the same proposal. Even the support threshold
+            is a variable the community can vote to change — the rules about rules included.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 05 · For everyone ──────────────────────────────────── -->
+  <section id="who" data-chapter="05 For everyone" data-log="use_cases.load()">
+    <div class="wide">
+      <div class="section-head">
+        <span class="label"><span class="n">05</span> · Built for the people in the room</span>
+        <h2>Who's it for?</h2>
+        <p class="lead">Anywhere a group needs to actually decide things together — not just chat about deciding things together.</p>
+      </div>
+
+      <div class="cases">
+        <div class="case card">
+          <span class="label">Use case 01</span>
+          <h3>co-ops &amp; collectives</h3>
+          <p>Coordinate decisions without committees, vote-counting, or that one person doing the spreadsheet.</p>
+        </div>
+        <div class="case card">
+          <span class="label">Use case 02</span>
+          <h3>online communities</h3>
+          <p>Move beyond mods and karma. Let your members shape the rules they live by.</p>
+        </div>
+        <div class="case card">
+          <span class="label">Use case 03</span>
+          <h3>friends</h3>
+          <p>For when a group chat just isn't enough. Decide trips, budgets and traditions — together.</p>
+        </div>
+        <div class="case card">
+          <span class="label">Use case 04</span>
+          <h3>schools &amp; classrooms</h3>
+          <p>Teach democracy by doing it. A safe place to practise making real choices together.</p>
+        </div>
+        <div class="case card">
+          <span class="label">Use case 05</span>
+          <h3>researchers</h3>
+          <p>Run simulated communities populated by AI agents, and watch how groups settle, split or adapt.</p>
+        </div>
+        <div class="case card">
+          <span class="label">Use case 06</span>
+          <h3>anyone tired of meetings</h3>
+          <p>If you've sat through a 90-minute call about whether to have another call, this one's for you.</p>
+        </div>
+        <div class="case card all">
+          <span class="label">Use case ∞</span>
+          <h3>…and eventually, the whole of humanity.</h3>
+          <p>Wherever a few people need to make something together — a building, a town, a treaty. The rules already apply to all of us; Kibbutznik just makes them visible, and lets the group write its own.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 06 · Kibbutznik ────────────────────────────────────── -->
+  <section id="in" class="finale" data-chapter="06 Kibbutznik" data-log="open kibbutznik.org">
+    <div class="wide">
+      <div class="members" aria-hidden="true">
+        <span class="member" style="--i:0"></span>
+        <span class="member" style="--i:1"></span>
+        <span class="member bot" style="--i:2"><b></b></span>
+        <span class="member" style="--i:3"></span>
+        <span class="member lit" style="--i:4"></span>
+        <span class="member" style="--i:5"></span>
+        <span class="member bot" style="--i:6"><b></b></span>
+        <span class="member" style="--i:7"></span>
+      </div>
+      <h2>Two ways in.</h2>
+      <p class="lead" style="margin-top:16px">Start your own kibbutz, or drop into a live community already in progress.</p>
+      <p class="signoff">decide together. one pulse at a time.</p>
+      <div class="cta-row">
+        <a href="/app/" class="btn btn-pulse">Open the app →</a>
+        <a href="/kbz/viewer/" class="btn">Watch a live community</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
   </div>
 </footer>
 
 <script>
-  // Subtle: add border to the topbar once user starts scrolling
-  // ── Highlight reel: fetch /kbz/highlights and render. ────────
-  // Failure-mode is "show a friendly empty state", never a stack
-  // trace. Cached server-side for 30s so multiple visits don't hit
-  // the DB hard.
-  (function loadHighlights(){
-    const list = document.getElementById('highlight-list');
-    if (!list) return;
-    const TYPE_BUCKETS = {
-      AddStatement:    'statement',
-      ReplaceStatement:'statement',
-      RemoveStatement: 'statement',
-      EditArtifact:    'artifact',
-      CreateArtifact:  'artifact',
-      CommitArtifact:  'artifact',
-      DelegateArtifact:'artifact',
-      AddAction:       'action',
-      ChangeVariable:  'governance',
-      Funding:         'governance',
-      Payment:         'governance',
-      Dividend:        'governance',
-    };
-    const TYPE_LABEL = {
-      AddStatement:    'New rule',
-      ReplaceStatement:'Rule rewritten',
-      RemoveStatement: 'Rule retired',
-      EditArtifact:    'Artifact updated',
-      CreateArtifact:  'New artifact',
-      CommitArtifact:  'Artifact shipped',
-      DelegateArtifact:'Work handed off',
-      AddAction:       'Working group formed',
-      ChangeVariable:  'Variable tuned',
-      Funding:         'Funding moved',
-      Payment:         'Payment cleared',
-      Dividend:        'Dividend paid',
-    };
-    function timeAgo(iso){
-      if(!iso) return '';
-      const d = new Date(iso);
-      const s = (Date.now() - d.getTime()) / 1000;
-      if (s < 60)    return 'just now';
-      if (s < 3600)  return Math.floor(s/60) + ' min ago';
-      if (s < 86400) return Math.floor(s/3600) + ' hr ago';
-      return Math.floor(s/86400) + ' day' + (s>=172800?'s':'') + ' ago';
-    }
-    // Hard timeout — without this, a hung fetch leaves the three shimmer
-    // skeletons pulsing indefinitely under "A look inside the kibbutzim,
-    // right now." Bad first impression on launch day if the API is slow.
-    const TIMEOUT_MS = 3500;
-    let settled = false;
-    const fallbackEmpty = () => {
-      if (settled) return;
-      settled = true;
-      list.innerHTML = '<div class="highlight-empty">Loading takes a moment — meanwhile, <a href="/kbz/viewer/">watch the AI kibbutz live</a>.</div>';
-    };
-    const timer = setTimeout(fallbackEmpty, TIMEOUT_MS);
+(function () {
+  "use strict";
 
-    fetch('/kbz/highlights?limit=6')
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(data => {
-        if (settled) return;
-        clearTimeout(timer);
-        settled = true;
-        const items = (data && data.highlights) || [];
-        if (!items.length) {
-          list.innerHTML = '<div class="highlight-empty">No public decisions yet — check back soon, or <a href="/kbz/viewer/">watch the simulation live</a>.</div>';
-          return;
-        }
-        list.innerHTML = items.map(h => {
-          const bucket = TYPE_BUCKETS[h.type] || '';
-          const label = TYPE_LABEL[h.type] || h.type;
-          const author = h.author_name ? ' · by ' + h.author_name : '';
-          const link = h.link || '/kbz/viewer/';
-          const safeTitle = (h.title || '').replace(/[<>&]/g, c =>
-            ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
-          const safeComm  = (h.community_name || '').replace(/[<>&]/g, c =>
-            ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
-          return `<a class="highlight-card" href="${link}">
-            <span class="highlight-type ${bucket}">${label}</span>
-            <div class="highlight-title">${safeTitle}</div>
-            <div class="highlight-meta"><strong>${safeComm}</strong>${author} · ${timeAgo(h.decided_at)}</div>
-          </a>`;
-        }).join('');
-      })
-      .catch(() => {
-        if (settled) return;
-        clearTimeout(timer);
-        settled = true;
-        list.innerHTML = '<div class="highlight-empty">Highlights are warming up — meanwhile, <a href="/kbz/viewer/">watch the AI kibbutz live</a>.</div>';
+  /* ── Mobile menu ───────────────────────────────────────── */
+  var toggle = document.getElementById("menuToggle");
+  var menu = document.getElementById("mobileMenu");
+  if (toggle && menu) {
+    toggle.addEventListener("click", function () {
+      var open = menu.classList.toggle("open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.textContent = open ? "Close" : "Menu";
+    });
+    menu.addEventListener("click", function (e) {
+      if (e.target.tagName === "A") { menu.classList.remove("open"); toggle.setAttribute("aria-expanded", "false"); toggle.textContent = "Menu"; }
+    });
+  }
+
+  /* ── The film: pick the cut for the screen, play on demand ─
+     preload="none" means nothing downloads until someone asks for it;
+     the poster is the only cost of the page. Phones in portrait get
+     the vertical recut rather than a letterboxed landscape film. */
+  var frame = document.getElementById("filmFrame");
+  var video = document.getElementById("filmVideo");
+  var play  = document.getElementById("filmPlay");
+  var portrait = window.matchMedia("(max-width: 640px) and (orientation: portrait)");
+  var started = false;
+
+  function pickCut() {
+    if (started || !video) return;
+    var v = portrait.matches;
+    var base = "/assets/media/kibbutznik-pulse" + (v ? "-vertical" : "");
+    frame.classList.toggle("portrait", v);
+    video.poster = base + "-poster.jpg";
+    var src = video.querySelector("source");
+    if (src.getAttribute("src") !== base + ".mp4") { src.setAttribute("src", base + ".mp4"); video.load(); }
+  }
+  pickCut();
+  if (portrait.addEventListener) portrait.addEventListener("change", pickCut);
+
+  if (play && video) {
+    play.addEventListener("click", function () {
+      started = true;
+      frame.classList.add("playing");
+      video.controls = true;
+      var p = video.play();
+      if (p && p.catch) p.catch(function () { /* autoplay policy: controls remain */ });
+      if (window.plausible) window.plausible("Film play", { props: { cut: portrait.matches ? "vertical" : "landscape" } });
+    });
+  }
+
+  /* ── Console + chapter: the film's HUD, driven by scroll ─── */
+  var consoleEl = document.getElementById("console");
+  var chapterEl = document.getElementById("chapter-label");
+  var logged = {};
+  function log(line) {
+    if (!consoleEl || !line) return;
+    var d = document.createElement("div");
+    d.textContent = "> " + line;
+    consoleEl.appendChild(d);
+    while (consoleEl.children.length > 2) consoleEl.removeChild(consoleEl.firstChild);
+  }
+  var sections = document.querySelectorAll("section[data-chapter]");
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        var s = e.target;
+        if (chapterEl) chapterEl.textContent = s.getAttribute("data-chapter");
+        var id = s.getAttribute("data-chapter");
+        if (!logged[id] && s !== sections[0]) { logged[id] = true; log(s.getAttribute("data-log")); }
       });
-  })();
+    }, { rootMargin: "-45% 0px -50% 0px" });
+    sections.forEach(function (s) { io.observe(s); });
+  }
 
-  const topbar = document.getElementById('topbar');
-  let lastY = 0;
-  window.addEventListener('scroll', () => {
-    const y = window.scrollY;
-    if (y > 8 && lastY <= 8) topbar.classList.add('scrolled');
-    else if (y <= 8 && lastY > 8) topbar.classList.remove('scrolled');
-    lastY = y;
-  }, { passive: true });
+  /* ── Live numbers for the HUD: the film's status bar, real ─
+     members / pulses / rules summed across the running communities;
+     admins is always 00, which is the point. Fails quiet: leaves "—". */
+  function pad(n, w) { return String(n).padStart(w, "0"); }
+  function setLive(key, text) {
+    document.querySelectorAll('[data-live="' + key + '"]').forEach(function (el) { el.textContent = text; });
+  }
+  function getJSON(url, ms) {
+    var ctl = "AbortController" in window ? new AbortController() : null;
+    var t = ctl ? setTimeout(function () { ctl.abort(); }, ms || 5000) : null;
+    return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function (r) {
+      if (t) clearTimeout(t);
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+  }
+  getJSON("/kbz/simulation/communities").then(function (d) {
+    var cs = (d && d.communities) || [];
+    if (!cs.length) return;
+    setLive("communities", String(cs.length));
+    setLive("members", pad(cs.reduce(function (a, c) { return a + (c.members || 0); }, 0), 2));
+    var ids = cs.map(function (c) { return c.community_id; }).filter(Boolean);
+    return Promise.all(ids.map(function (id) {
+      return Promise.all([
+        getJSON("/kbz/communities/" + id + "/pulses").then(function (x) { return x.length || 0; }).catch(function () { return 0; }),
+        getJSON("/kbz/communities/" + id + "/statements").then(function (x) { return x.length || 0; }).catch(function () { return 0; })
+      ]);
+    })).then(function (rows) {
+      var pulses = 0, rules = 0;
+      rows.forEach(function (r) { pulses += r[0]; rules += r[1]; });
+      setLive("pulses", pad(pulses, 3));
+      setLive("rules", pad(rules, 2));
+      log("engine online · " + cs.length + " communities");
+    });
+  }).catch(function () {});
+
+  /* ── 02 · Just decided — real decisions, as the film's cards ─ */
+  var list = document.getElementById("highlight-list");
+  var LABEL = {
+    AddStatement: "New rule", ReplaceStatement: "Rule rewritten", RemoveStatement: "Rule retired",
+    EditArtifact: "Artifact updated", CreateArtifact: "New artifact", CommitArtifact: "Artifact shipped",
+    DelegateArtifact: "Work handed off", AddAction: "Working group", ChangeVariable: "Variable tuned",
+    Funding: "Funding moved", Payment: "Payment cleared", Dividend: "Dividend paid", Membership: "New member"
+  };
+  function esc(s) { return String(s || "").replace(/[<>&"]/g, function (c) { return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]; }); }
+  function ago(iso) {
+    if (!iso) return "";
+    var s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " hr ago";
+    var d = Math.floor(s / 86400); return d + " day" + (d > 1 ? "s" : "") + " ago";
+  }
+  function empty(msg) { if (list) list.innerHTML = '<p class="decided-empty">' + msg + ' <a href="/kbz/viewer/">Watch a community live →</a></p>'; }
+
+  if (list) {
+    getJSON("/kbz/highlights?limit=6", 4000).then(function (d) {
+      var items = (d && d.highlights) || [];
+      if (!items.length) return empty("Nothing decided in public yet.");
+      list.innerHTML = items.map(function (h, i) {
+        var fresh = h.decided_at && (Date.now() - new Date(h.decided_at).getTime()) < 86400000;
+        return '<a class="card' + (fresh ? " live" : "") + '" href="' + esc(h.link || "/kbz/viewer/") + '">' +
+          '<div class="card-meta"><span><span class="id">#' + pad(i + 1, 2) + '</span></span>' +
+          '<span>' + esc(LABEL[h.type] || h.type) + '</span></div>' +
+          '<h3>' + esc(h.title) + '</h3>' +
+          '<div class="card-foot"><b>' + esc(h.community_name) + '</b>' +
+          (h.author_name ? ' · ' + esc(h.author_name) : '') + ' · ' + ago(h.decided_at) + '</div>' +
+          '</a>';
+      }).join("");
+      log("highlights.load() · " + items.length + " decided");
+    }).catch(function () { empty("Highlights are warming up."); });
+  }
+})();
 </script>
 </body>
 </html>

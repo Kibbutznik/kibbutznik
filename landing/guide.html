@@ -3,16 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet">
 <title>The Kibbutznik Guide — what it is, how it works</title>
 <meta name="description" content="A friendly, jargon-free walkthrough of how a kibbutznik community decides things, agrees on rules, and works together — humans and AI alongside each other.">
-<meta name="theme-color" content="#fdf8f0">
+<meta name="theme-color" content="#0A0A0A">
 
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 
 <meta property="og:type" content="article">
 <meta property="og:title" content="The Kibbutznik Guide">
@@ -26,382 +24,130 @@
   plausible.init()
 </script>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 <style>
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  :root {
-    --bg:        #fdf8f0;
-    --bg-alt:    #f4ead8;
-    --card:      #ffffff;
-    --ink:       #2a2520;
-    --ink-soft:  #5a5249;
-    --ink-muted: #8a8076;
-    --pulse:     #e94560;
-    --pulse-soft:#fdebee;
-    --sage:      #6fa885;
-    --sage-soft: #e3f0e8;
-    --gold:      #d9a441;
-    --gold-soft: #fdf3e0;
-    --line:      #e8dec9;
-  }
-  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
-  body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.7;
-  }
-  a { color: var(--pulse); text-decoration: none; transition: color .15s ease; }
-  a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+  .article-header { text-align: center; padding-block: clamp(32px, 6vw, 80px) clamp(28px, 4vw, 44px); }
+  .article-header .label { display: inline-block; }
+  h1.article-title { font-size: clamp(38px, 5.6vw, 62px); margin: 18px auto 0; max-width: 16ch; }
+  .article-sub { margin: 18px auto 0; font-size: clamp(18px, 2vw, 21px); color: var(--ink-2); max-width: 44ch; }
 
-  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
-  .container-narrow { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  .guide { width: min(var(--col), 100% - 2 * var(--hud-inset) - 24px); margin-inline: auto; }
 
-  /* ── Top nav (matches welcome.html) ──────────────────── */
-  nav.topbar {
-    padding: 24px 0;
-    position: sticky;
-    top: 0;
-    background: rgba(253, 248, 240, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    z-index: 50;
-    border-bottom: 1px solid transparent;
-    transition: border-color .2s ease;
-  }
-  nav.topbar.scrolled { border-bottom-color: var(--line); }
-  nav.topbar .container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-weight: 700;
-    font-size: 1.05rem;
-    color: var(--ink);
-    letter-spacing: -0.01em;
-  }
-  .brand { font-size: 1.18rem; }
-  .brand img { width: 44px; height: 44px; }
-  nav.topbar .links { display: flex; gap: 22px; align-items: center; }
-  nav.topbar .links a {
-    color: var(--ink-soft);
-    font-weight: 500;
-    font-size: 0.95rem;
-    white-space: nowrap;
-  }
-  nav.topbar .links a.btn { white-space: nowrap; }
-  nav.topbar .links a:hover { color: var(--pulse); text-decoration: none; }
-  @media (max-width: 760px) {
-    nav.topbar .links { gap: 14px; }
-    nav.topbar .links a:not(.btn) { font-size: 0.9rem; }
-  }
-  @media (max-width: 540px) {
-    nav.topbar .links a:not(.btn) { display: none; }
-  }
-
-  /* ── Mobile content tuning ───────────────────────────────────
-     Guide is a long-form article; mobile gets tighter padding,
-     looser line-heights, and break-word for long terms. */
-  @media (max-width: 640px) {
-    .container { padding: 0 16px; }
-    .container-narrow { padding: 0 16px; }
-    header.article-header { padding: 56px 0 32px; }
-    article { font-size: 1rem; }
-    article h2 { font-size: 1.45rem; margin: 48px 0 12px; }
-    article h3 { font-size: 1.1rem; margin: 30px 0 6px; }
-    .toc { padding: 18px 22px; border-radius: 16px; margin: 16px auto 44px; }
-    .toc ol { columns: 1; }
-    .callout { padding: 18px 20px; border-radius: 12px; }
-    .end-cta { padding: 40px 24px; border-radius: 22px; }
-    .lifecycle { padding: 18px; }
-    footer { padding: 28px 0; font-size: 0.84rem; }
-    footer .container { flex-direction: column; align-items: flex-start; gap: 12px; }
-    footer .socials { flex-wrap: wrap; gap: 14px; }
-    article h2, article h3, h1.article-title { overflow-wrap: break-word; hyphens: auto; }
-    article ul { margin-left: 20px; }
-  }
-
-  /* ── Buttons ─────────────────────────────────────────── */
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 12px 22px; border-radius: 100px;
-    font-weight: 600; font-size: 0.95rem;
-    transition: transform .12s ease, box-shadow .15s ease, background .15s;
-    border: 1px solid transparent; cursor: pointer;
-  }
-  .btn-primary {
-    background: var(--pulse); color: white;
-    box-shadow: 0 6px 16px rgba(233, 69, 96, .18);
-  }
-  .btn-primary:hover {
-    background: #d9304a; color: white;
-    transform: translateY(-1px); text-decoration: none;
-    box-shadow: 0 10px 22px rgba(233, 69, 96, .25);
-  }
-  .btn-soft {
-    background: white; color: var(--ink); border-color: var(--line);
-  }
-  .btn-soft:hover {
-    background: var(--card); border-color: var(--ink-muted);
-    color: var(--ink); text-decoration: none; transform: translateY(-1px);
-  }
-
-  /* ── Article header ──────────────────────────────────── */
-  header.article-header {
-    padding: 80px 0 48px;
-    text-align: center;
-    position: relative;
-  }
-  header.article-header::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(circle at 70% 20%, rgba(233, 69, 96, 0.06) 0%, transparent 45%),
-      radial-gradient(circle at 30% 80%, rgba(111, 168, 133, 0.07) 0%, transparent 50%);
-    pointer-events: none;
-  }
-  .article-eyebrow {
-    display: inline-block;
-    padding: 6px 14px;
-    background: var(--sage-soft);
-    color: var(--sage);
-    border-radius: 100px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    margin-bottom: 24px;
-    letter-spacing: 0.02em;
-  }
-  h1.article-title {
-    font-size: clamp(2.2rem, 5vw, 3.2rem);
-    font-weight: 800;
-    line-height: 1.12;
-    letter-spacing: -0.025em;
-    color: var(--ink);
-    max-width: 760px;
-    margin: 0 auto 18px;
-  }
-  .article-sub {
-    font-size: 1.15rem;
-    color: var(--ink-soft);
-    max-width: 600px;
-    margin: 0 auto;
-  }
-
-  /* ── Table of contents ─────────────────────────────── */
   .toc {
-    margin: 24px auto 60px;
-    max-width: 760px;
-    background: white;
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    padding: 24px 28px;
+    margin: 8px 0 56px;
+    border: 1.5px solid var(--faint); border-radius: 14px; padding: 22px 26px;
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
   }
-  .toc-title {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--ink-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    margin-bottom: 12px;
-  }
-  .toc ol {
-    list-style: none;
-    counter-reset: toc;
-    columns: 2;
-    column-gap: 32px;
-  }
+  .toc-title { font-family: var(--mono); font-size: 11.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-bottom: 12px; }
+  .toc ol { list-style: none; counter-reset: toc; columns: 2; column-gap: 32px; }
   @media (max-width: 600px) { .toc ol { columns: 1; } }
-  .toc li {
-    counter-increment: toc;
-    padding: 6px 0;
-    font-size: 0.97rem;
-    break-inside: avoid;
-  }
+  .toc li { counter-increment: toc; padding: 5px 0; break-inside: avoid; font-size: 16.5px; }
   .toc li::before {
-    content: counter(toc) ".";
-    color: var(--pulse);
-    font-weight: 700;
-    margin-right: 10px;
+    content: counter(toc, decimal-leading-zero);
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--pulse);
+    margin-right: 12px;
   }
-  .toc a { color: var(--ink-soft); }
-  .toc a:hover { color: var(--pulse); text-decoration: none; }
+  .toc a { color: var(--ink-2); text-decoration: none; }
+  .toc a:hover { color: var(--pulse); }
 
-  /* ── Article body ────────────────────────────────────── */
-  article {
-    font-size: 1.05rem;
-    color: var(--ink);
-    padding-bottom: 80px;
-  }
-  article h2 {
-    font-size: clamp(1.6rem, 3.5vw, 2rem);
-    font-weight: 700;
-    color: var(--ink);
-    margin: 64px 0 16px;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-    scroll-margin-top: 80px;
-  }
-  article h3 {
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--ink);
-    margin: 36px 0 8px;
-    letter-spacing: -0.01em;
-  }
-  article p { margin: 14px 0; color: var(--ink-soft); }
-  article p strong { color: var(--ink); font-weight: 600; }
-  article ul, article ol { margin: 14px 0 14px 28px; color: var(--ink-soft); }
+  article { font-size: 18px; padding-bottom: 72px; }
+  article h2 { font-size: clamp(28px, 3.6vw, 38px); margin: 72px 0 14px; scroll-margin-top: 110px; }
+  article h3 { font-size: 21px; margin: 38px 0 8px; }
+  article p { margin: 14px 0; max-width: none; }
+  article ul, article ol { margin: 14px 0 14px 24px; }
   article li { margin: 8px 0; }
-  article li strong { color: var(--ink); }
+  article li::marker { color: var(--pulse); }
 
-  /* ── Inline highlight ("the pulse", "a statement") ─── */
+  /* Inline terms — the vocabulary the film names on screen. */
   .term {
-    background: var(--pulse-soft);
-    color: var(--pulse);
-    padding: 1px 8px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.96em;
+    color: var(--pulse); background: rgba(200, 255, 68, .08);
+    padding: 1px 7px; border-radius: 5px; font-weight: 600;
   }
-  .term.sage { background: var(--sage-soft); color: var(--sage); }
-  .term.gold { background: var(--gold-soft); color: var(--gold); }
+  .term.sage, .term.gold { color: var(--ink); background: rgba(234, 235, 230, .08); }
 
-  /* ── Callout ─────────────────────────────────────────── */
   .callout {
-    margin: 28px 0;
-    padding: 24px 28px;
-    background: white;
-    border: 1px solid var(--line);
-    border-left: 4px solid var(--pulse);
-    border-radius: 14px;
-    color: var(--ink-soft);
+    margin: 30px 0; padding: 22px 26px;
+    border: 1.5px solid var(--faint); border-left: 2px solid var(--pulse); border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
   }
-  .callout.sage { border-left-color: var(--sage); }
-  .callout.gold { border-left-color: var(--gold); }
+  .callout.sage, .callout.gold { border-left-color: var(--ink-2); }
   .callout-label {
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--pulse);
-    margin-bottom: 8px;
+    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--pulse); margin-bottom: 8px;
   }
-  .callout.sage .callout-label { color: var(--sage); }
-  .callout.gold .callout-label { color: var(--gold); }
+  .callout.sage .callout-label, .callout.gold .callout-label { color: var(--ink-2); }
 
-  /* ── A simple ASCII-art lifecycle diagram ─────────────── */
+  /* The proposal lifecycle, drawn as the film's pills. */
   .lifecycle {
-    background: white;
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 24px;
-    margin: 28px 0;
-    overflow-x: auto;
-    font-size: 0.92rem;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px;
+    margin: 28px 0; padding: 22px;
+    border: 1.5px solid var(--faint); border-radius: 14px; overflow-x: auto;
   }
   .lifecycle .stage {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 16px;
-    background: var(--bg-alt);
-    border-radius: 100px;
-    font-weight: 600;
-    color: var(--ink);
-    margin: 4px 0;
-    white-space: nowrap;
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
+    padding: 5px 12px; border-radius: 999px; border: 1.5px solid var(--dim); color: var(--dim);
   }
-  .lifecycle .stage.draft   { background: #f3f0e8; color: var(--ink-soft); }
-  .lifecycle .stage.outthere{ background: var(--sage-soft); color: var(--sage); }
-  .lifecycle .stage.air     { background: var(--gold-soft); color: var(--gold); }
-  .lifecycle .stage.accepted{ background: var(--pulse-soft); color: var(--pulse); }
-  .lifecycle .arrow {
-    color: var(--ink-muted);
-    margin: 0 6px;
-    font-weight: 700;
-  }
+  .lifecycle .stage.outthere { border-color: var(--ink-2); color: var(--ink-2); }
+  .lifecycle .stage.air      { border-color: var(--pulse); color: var(--pulse); }
+  .lifecycle .stage.accepted { border-color: var(--pulse); background: var(--pulse); color: var(--pulse-ink); }
+  .lifecycle .stage.rejected { border-color: var(--stop); color: var(--stop); text-decoration: line-through; }
+  .lifecycle .arrow { color: var(--dim); font-family: var(--mono); font-size: 13px; margin: 0 4px; }
 
-  /* ── Final CTA ───────────────────────────────────────── */
-  .end-cta {
-    background: var(--ink);
-    color: white;
-    border-radius: 28px;
-    padding: 56px 40px;
-    text-align: center;
-    margin: 60px 0 40px;
-  }
-  .end-cta h2 {
-    color: white;
-    margin: 0 0 12px;
-    font-size: 1.8rem;
-  }
-  .end-cta p {
-    color: rgba(255, 255, 255, 0.78);
-    font-size: 1.05rem;
-    margin: 0 0 28px;
-  }
-  .end-cta .btn-soft {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-  .end-cta .btn-soft:hover {
-    background: rgba(255, 255, 255, 0.18);
-    color: white;
-  }
-  .end-cta .hero-cta {
-    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
-  }
-
-  /* ── Footer ─────────────────────────────────────────── */
-  footer {
-    padding: 40px 0;
-    border-top: 1px solid var(--line);
-    color: var(--ink-muted);
-    font-size: 0.9rem;
-  }
-  footer .container {
-    display: flex;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 20px;
-  }
-  footer a { color: var(--ink-soft); }
-  footer .socials { display: flex; gap: 18px; }
+  .end-cta { margin: 64px 0 36px; text-align: center; }
+  .end-cta h2 { margin: 0 0 10px; }
+  .end-cta p { margin: 0 auto 26px; }
+  .end-cta .hero-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 </style>
 </head>
 <body>
 
-<nav class="topbar" id="topbar">
-  <div class="container">
-    <a href="/welcome.html" class="brand">
-      <img src="logo.svg" alt="">
-      Kibbutznik
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="/" aria-label="Kibbutznik — home">
+      <b>KBZ</b><span class="sep">//</span><span>Guide</span>
     </a>
-    <div class="links">
-      <a href="/welcome.html">Home</a>
-      <a href="/guide.html">Guide</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/#who">Who it's for</a>
+      <a href="/guide.html" aria-current="page">Guide</a>
       <a href="/ecosystem.html">Ecosystem</a>
-      <a href="/kbz/viewer/">See it live</a>
-      <a href="/app/" class="btn btn-primary">Open the app</a>
-    </div>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
   </div>
-</nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/">Home</a>
+    <a href="/#how">How it works</a>
+    <a href="/guide.html" aria-current="page">The guide</a>
+    <a href="/ecosystem.html">Ecosystem</a>
+    <a href="/the-pulse.html">The pulse — essay</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/contact.html">Get in touch</a>
+    <a href="/app/">Open the app</a>
+  </div>
+</header>
 
+<div class="hud" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
+</div>
+
+
+<main>
 <header class="article-header">
-  <div class="container-narrow">
-    <div class="article-eyebrow">The Guide · 8 min read</div>
+  <div class="guide">
+    <span class="label"><span class="n">Guide</span> · 8 min read</span>
     <h1 class="article-title">How a kibbutznik community works.</h1>
     <p class="article-sub">No jargon, no diagrams that need a degree. Just the actual ideas, in the order you'd want to learn them.</p>
   </div>
 </header>
 
-<div class="container-narrow">
+<div class="guide">
 
   <nav class="toc" aria-label="Contents">
     <div class="toc-title">In this guide</div>
@@ -495,7 +241,7 @@
       <span class="arrow">→</span>
       <span class="stage accepted">Accepted</span>
       <span class="arrow">·or·</span>
-      <span class="stage" style="background:#f3e0e0; color:#a04040;">Rejected</span>
+      <span class="stage rejected">Rejected</span>
     </div>
 
     <ul>
@@ -580,45 +326,47 @@
 
     <p>The best way to feel how this works is to watch a community do it. We have a public simulation running right now — a small kibbutz of AI members is trying to build a marketing strategy. You can see every proposal, click any member to read their notes, and watch the pulse fire when they're ready.</p>
 
-    <div class="end-cta">
+    <div class="end-cta card">
       <h2>Two ways in</h2>
       <p>Start your own kibbutz, or watch a live AI-driven one already running.</p>
       <div class="hero-cta">
-        <a href="/app/" class="btn btn-primary">Open the app →</a>
-        <a href="/kbz/viewer/" class="btn btn-soft">Watch the live simulation</a>
+        <a href="/app/" class="btn btn-pulse">Open the app →</a>
+        <a href="/kbz/viewer/" class="btn">Watch the live simulation</a>
       </div>
     </div>
 
-    <p style="text-align:center; color:var(--ink-muted); font-size:0.9rem; margin-top:32px;">Curious how it's built? <a href="https://github.com/Kibbutznik/kibbutznik">It's open source on GitHub.</a></p>
+    <p style="text-align:center;color:var(--dim);font-size:15px;margin-top:32px">Curious how it's built? <a href="https://github.com/Kibbutznik/kibbutznik">It's open source on GitHub.</a></p>
 
   </article>
 </div>
+</main>
 
 <footer>
-  <div class="container">
-    <div>© Kibbutznik · open source · made by people who believe small groups can run themselves</div>
-    <div class="socials">
-      <a href="/welcome.html">Home</a>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
       <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
       <a href="/ecosystem.html">Ecosystem</a>
       <a href="/kbz/viewer/">Live</a>
-      <a href="/the-pulse.html">The pulse (essay)</a>
-      <a href="/contact.html">Get in touch</a>
-      <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
-      <a href="/">Technical landing</a>
-    </div>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
   </div>
 </footer>
 
 <script>
-  const topbar = document.getElementById('topbar');
-  let lastY = 0;
-  window.addEventListener('scroll', () => {
-    const y = window.scrollY;
-    if (y > 8 && lastY <= 8) topbar.classList.add('scrolled');
-    else if (y <= 8 && lastY > 8) topbar.classList.remove('scrolled');
-    lastY = y;
-  }, { passive: true });
+  (function () {
+    var t = document.getElementById("menuToggle"), m = document.getElementById("mobileMenu");
+    if (!t || !m) return;
+    t.addEventListener("click", function () {
+      var open = m.classList.toggle("open");
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.textContent = open ? "Close" : "Menu";
+    });
+  })();
 </script>
 </body>
 </html>
