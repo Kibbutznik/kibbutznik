@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Not found — Kibbutznik</title>
 <meta name="description" content="That page isn't here. But the rest of Kibbutznik is.">
-<meta name="theme-color" content="#fdf8f0">
+<meta name="theme-color" content="#0A0A0A">
 
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -16,119 +16,114 @@
 <meta property="og:description" content="That page isn't here. But the rest of Kibbutznik is.">
 <meta property="og:image" content="/og-image.png">
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 <style>
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  :root {
-    --bg: #fdf8f0; --bg-alt: #f4ead8;
-    --ink: #2a2520; --ink-soft: #5a5249; --ink-muted: #8a8076;
-    --pulse: #e94560; --pulse-soft: #fdebee;
-    --sage: #6fa885; --sage-soft: #e3f0e8;
-    --line: #e8dec9;
+  main { min-height: calc(100svh - 140px); display: grid; align-content: center; padding-block: 24px 64px; }
+  .err { text-align: center; }
+  .err-band { width: 100vw; margin-left: calc(50% - 50vw); }
+  .err-band .ecg { height: clamp(58px, 8vw, 104px); }
+  .ecg.flat path { stroke: #3A3A38; }
+  .ecg.flat .beat { fill: #3A3A38; animation: none; }
+  .ecg.arrhythmia path { stroke: var(--stop); }
+  .ecg.arrhythmia .beat { fill: var(--stop); }
+  .code {
+    font-family: var(--mono); font-weight: 700; color: var(--ink);
+    font-size: clamp(64px, 11vw, 132px); letter-spacing: -.03em; line-height: 1;
+    margin-top: clamp(8px, 2vw, 20px);
   }
-  html { -webkit-font-smoothing: antialiased; }
-  body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.6;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-  }
-  .card {
-    background: white;
-    border: 1px solid var(--line);
-    border-radius: 24px;
-    padding: 56px 48px;
-    max-width: 540px;
-    text-align: center;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.04);
-  }
-  .glyph {
-    font-size: 4.5rem;
-    margin-bottom: 18px;
-    line-height: 1;
-  }
-  h1 {
-    font-size: clamp(1.8rem, 4vw, 2.2rem);
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    margin-bottom: 14px;
-  }
-  h1 em { color: var(--pulse); font-style: normal; }
-  p { color: var(--ink-soft); margin-bottom: 24px; font-size: 1.05rem; }
-  .actions {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-top: 28px;
-  }
-  a.btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 22px;
-    border-radius: 100px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    text-decoration: none;
-    transition: transform .12s ease, box-shadow .15s ease, background .15s;
-    white-space: nowrap;
-  }
-  a.btn-primary {
-    background: var(--pulse);
-    color: white;
-    box-shadow: 0 6px 16px rgba(233, 69, 96, .18);
-  }
-  a.btn-primary:hover {
-    background: #d9304a;
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(233, 69, 96, .25);
-  }
-  a.btn-soft {
-    background: white;
-    color: var(--ink);
-    border: 1px solid var(--line);
-  }
-  a.btn-soft:hover {
-    background: var(--bg-alt);
-    transform: translateY(-1px);
-  }
-  .quick-links {
-    margin-top: 36px;
-    padding-top: 24px;
-    border-top: 1px solid var(--line);
-    font-size: 0.88rem;
-    color: var(--ink-muted);
-  }
-  .quick-links a { color: var(--ink-soft); margin: 0 8px; }
-  .quick-links a:hover { color: var(--pulse); }
-  @media (max-width: 480px) {
-    .card { padding: 40px 28px; border-radius: 20px; }
-    .glyph { font-size: 3.5rem; }
-  }
+  .code small { display: block; font-size: 12px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin-top: 10px; }
+  .err h1 { margin-top: 26px; font-size: clamp(30px, 4.4vw, 46px); }
+  .err h1 em { font-style: normal; color: var(--pulse); }
+  .err.broken h1 em { color: var(--stop); }
+  .err p { margin: 14px auto 0; }
+  .err .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 30px; }
+  .err .quick { margin-top: 22px; font-family: var(--mono); font-size: 12.5px; color: var(--dim); }
+  .err .quick a { color: var(--dim); }
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="glyph">🌾</div>
-  <h1>That page is <em>somewhere else</em>.</h1>
-  <p>
-    The link might be stale, or the kibbutz you're looking for is private.
-    Here's the way back.
-  </p>
-  <div class="actions">
-    <a href="/welcome.html" class="btn btn-primary">Home →</a>
-    <a href="/kbz/viewer/" class="btn btn-soft">See a live kibbutz</a>
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="/" aria-label="Kibbutznik — home">
+      <b>KBZ</b><span class="sep">//</span><span>404 · Not found</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/#who">Who it's for</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
   </div>
-  <div class="quick-links">
-    <a href="/guide.html">The Guide</a> ·
-    <a href="/ecosystem.html">Ecosystem</a> ·
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/">Home</a>
+    <a href="/#how">How it works</a>
+    <a href="/guide.html">The guide</a>
+    <a href="/ecosystem.html">Ecosystem</a>
+    <a href="/the-pulse.html">The pulse — essay</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/contact.html">Get in touch</a>
     <a href="/app/">Open the app</a>
   </div>
+</header>
+
+<div class="hud" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
 </div>
+
+<main>
+  <div class="err">
+    <div class="err-band" aria-hidden="true">
+      <svg class="ecg flat" viewBox="0 0 1200 100" preserveAspectRatio="xMidYMid slice">
+        <path d="M0,50 L1200,50"/><circle class="beat" cx="600" cy="50" r="6"/>
+      </svg>
+    </div>
+    <div class="col">
+      <div class="code">404<small>no pulse at this address</small></div>
+      <h1>That page has <em>no pulse</em>.</h1>
+      <p>The link might be stale, or the kibbutz you're looking for is private. Here's the way back.</p>
+      <div class="actions">
+        <a href="/" class="btn btn-pulse">Home →</a>
+        <a href="/kbz/viewer/" class="btn">See a live kibbutz</a>
+      </div>
+      <p class="quick"><a href="/guide.html">The guide</a> · <a href="/ecosystem.html">Ecosystem</a> · <a href="/app/">Open the app</a></p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var t = document.getElementById("menuToggle"), m = document.getElementById("mobileMenu");
+    if (!t || !m) return;
+    t.addEventListener("click", function () {
+      var open = m.classList.toggle("open");
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.textContent = open ? "Close" : "Menu";
+    });
+  })();
+</script>
+
 </body>
 </html>

@@ -3,16 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet">
 <title>The Governance Ecosystem — Kibbutznik</title>
 <meta name="description" content="Meet the fifteen ideas that make a kibbutznik community work — from the heartbeat that decides things to the relationships that hold the group together. Click any of them to learn more.">
-<meta name="theme-color" content="#fdf8f0">
+<meta name="theme-color" content="#0A0A0A">
 
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="The Governance Ecosystem — Kibbutznik">
@@ -26,29 +24,33 @@
   plausible.init()
 </script>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 <style>
   /* ── Reset + warm palette (matches welcome.html / guide.html) ── */
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
-    --bg:        #fdf8f0;
-    --bg-alt:    #f4ead8;
-    --card:      #ffffff;
-    --ink:       #2a2520;
-    --ink-soft:  #5a5249;
-    --ink-muted: #8a8076;
-    --pulse:     #e94560;
-    --pulse-soft:#fdebee;
-    --sage:      #6fa885;
-    --sage-soft: #e3f0e8;
-    --gold:      #d9a441;
-    --gold-soft: #fdf3e0;
-    --line:      #e8dec9;
+    --bg:        #0A0A0A;
+    --bg-alt:    #0E0E0D;
+    --card:      #111110;
+    --ink:       #EAEBE6;
+    --ink-soft:  #A9AAA4;
+    --ink-muted: #7E7F79;
+    --pulse:     #C8FF44;
+    --pulse-soft:rgba(200, 255, 68, .10);
+    --sage:      #A9AAA4;
+    --sage-soft: rgba(234, 235, 230, .06);
+    --gold:      #EAEBE6;
+    --gold-soft: rgba(234, 235, 230, .06);
+    --line:      #2C2C2A;
   }
   html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
   body {
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--display);
     line-height: 1.6;
     overflow-x: hidden;
   }
@@ -104,31 +106,6 @@
     .entity-tooltip .tt-body { font-size: 0.95rem; }
   }
 
-  /* ── Buttons ─────────────────────────────────────────── */
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 12px 22px; border-radius: 100px;
-    font-weight: 600; font-size: 0.95rem;
-    transition: transform .12s ease, box-shadow .15s ease, background .15s;
-    border: 1px solid transparent; cursor: pointer;
-  }
-  .btn-primary {
-    background: var(--pulse); color: white;
-    box-shadow: 0 6px 16px rgba(233, 69, 96, .18);
-  }
-  .btn-primary:hover {
-    background: #d9304a; color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(233, 69, 96, .25);
-  }
-  .btn-soft {
-    background: white; color: var(--ink); border-color: var(--line);
-  }
-  .btn-soft:hover {
-    background: var(--card); border-color: var(--ink-muted);
-    color: var(--ink); transform: translateY(-1px);
-  }
-
   /* ── Article header ──────────────────────────────────── */
   header.article-header {
     padding: 64px 0 32px;
@@ -138,9 +115,7 @@
   header.article-header::before {
     content: '';
     position: absolute; inset: 0;
-    background:
-      radial-gradient(circle at 25% 30%, rgba(111, 168, 133, 0.08) 0%, transparent 50%),
-      radial-gradient(circle at 75% 70%, rgba(233, 69, 96, 0.06) 0%, transparent 50%);
+    background: none;
     pointer-events: none;
   }
   .article-eyebrow {
@@ -175,7 +150,7 @@
     color: var(--ink-muted);
   }
   .hint span {
-    background: white;
+    background: var(--card);
     border: 1px solid var(--line);
     border-radius: 6px;
     padding: 1px 8px;
@@ -211,7 +186,7 @@
     width: 130px; height: 130px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(233, 69, 96, 0.15) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(200, 255, 68, 0.15) 0%, transparent 70%);
     animation: corePulse 3.2s ease-in-out infinite;
   }
   @keyframes corePulse {
@@ -249,13 +224,13 @@
        as a card on cream) + a soft sage glow further out (so the
        whole icon feels alive). */
     filter:
-      drop-shadow(0 1px 2px rgba(42, 37, 32, 0.18))
-      drop-shadow(0 6px 14px rgba(111, 168, 133, 0.20));
+      drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18))
+      drop-shadow(0 6px 14px rgba(234, 235, 230, 0.20));
   }
   .entity-item:hover {
     filter:
-      drop-shadow(0 2px 4px rgba(42, 37, 32, 0.22))
-      drop-shadow(0 8px 22px rgba(233, 69, 96, 0.32));
+      drop-shadow(0 2px 4px rgba(0, 0, 0, 0.22))
+      drop-shadow(0 8px 22px rgba(200, 255, 68, 0.32));
     z-index: 10;
   }
   .entity-item img { width: 100%; height: 100%; pointer-events: none; }
@@ -280,7 +255,7 @@
   /* ── Tooltip / dossier (warm, social, NOT high-tech) ────── */
   .entity-tooltip-backdrop {
     position: fixed; inset: 0;
-    background: rgba(42, 37, 32, 0.55);
+    background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     z-index: 999;
     display: none;
@@ -297,7 +272,8 @@
     width: 100%;
     max-height: calc(100vh - 48px);
     overflow-y: auto;
-    background: white;
+    background: var(--card);
+    border: 1.5px solid var(--line);
     border-radius: 22px;
     padding: 32px 36px 28px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
@@ -333,7 +309,7 @@
   .entity-tooltip .tt-head img {
     width: 56px; height: 56px;
     flex-shrink: 0;
-    filter: drop-shadow(0 3px 8px rgba(111, 168, 133, 0.25));
+    filter: drop-shadow(0 3px 8px rgba(234, 235, 230, 0.25));
   }
   .entity-tooltip .tt-head-text { flex: 1; min-width: 0; }
   .entity-tooltip .tt-name {
@@ -404,8 +380,9 @@
   /* ── Final big CTA ─────────────────────────────────────── */
   section.end-cta-section { padding: 60px 0; }
   .end-cta {
-    background: var(--ink);
-    color: white;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--ink);
     border-radius: 28px;
     padding: 56px 40px;
     text-align: center;
@@ -416,7 +393,7 @@
     content: '';
     position: absolute; top: -100px; right: -100px;
     width: 320px; height: 320px;
-    background: radial-gradient(circle, rgba(111, 168, 133, 0.4) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(234, 235, 230, 0.4) 0%, transparent 70%);
     pointer-events: none;
   }
   .end-cta h2 {
@@ -433,32 +410,8 @@
     margin: 0 0 28px;
     position: relative;
   }
-  .end-cta .btn-soft {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-  .end-cta .btn-soft:hover {
-    background: rgba(255, 255, 255, 0.18);
-    color: white;
-  }
   .end-cta .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
-  /* ── Footer ─────────────────────────────────────────── */
-  footer {
-    padding: 40px 0;
-    border-top: 1px solid var(--line);
-    color: var(--ink-muted);
-    font-size: 0.9rem;
-  }
-  footer .container {
-    display: flex;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 20px;
-  }
-  footer a { color: var(--ink-soft); }
-  footer .socials { display: flex; gap: 18px; flex-wrap: wrap; }
 
   /* ── Responsive ─────────────────────────────────────── */
   @media (max-width: 768px) {
@@ -475,25 +428,42 @@
 </head>
 <body>
 
-<nav class="topbar" id="topbar">
-  <div class="container">
-    <a href="/welcome.html" class="brand">
-      <img src="logo.svg" alt="">
-      Kibbutznik
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="/" aria-label="Kibbutznik — home">
+      <b>KBZ</b><span class="sep">//</span><span>Ecosystem</span>
     </a>
-    <div class="links">
-      <a href="/welcome.html">Home</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/#who">Who it's for</a>
       <a href="/guide.html">Guide</a>
-      <a href="/ecosystem.html">Ecosystem</a>
-      <a href="/kbz/viewer/">See it live</a>
-      <a href="/app/" class="btn btn-primary">Open the app</a>
-    </div>
+      <a href="/ecosystem.html" aria-current="page">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
   </div>
-</nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/">Home</a>
+    <a href="/#how">How it works</a>
+    <a href="/guide.html">The guide</a>
+    <a href="/ecosystem.html" aria-current="page">Ecosystem</a>
+    <a href="/the-pulse.html">The pulse — essay</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/contact.html">Get in touch</a>
+    <a href="/app/">Open the app</a>
+  </div>
+</header>
+
+<div class="hud" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
+</div>
+
 
 <header class="article-header">
   <div class="container-narrow">
-    <div class="article-eyebrow">The Ecosystem</div>
+    <span class="label"><span class="n">Ecosystem</span> · interactive map</span>
     <h1 class="article-title">Fifteen ideas, one shared heartbeat.</h1>
     <p class="article-sub">
       A kibbutznik community is built from a small number of moving parts that fit together neatly.
@@ -523,8 +493,8 @@
       working at once.
     </p>
     <div class="btn-row" style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-top:28px;">
-      <a href="/guide.html" class="btn btn-primary">Read the friendly guide →</a>
-      <a href="/kbz/viewer/" class="btn btn-soft">Watch a live community</a>
+      <a href="/guide.html" class="btn btn-pulse">Read the friendly guide →</a>
+      <a href="/kbz/viewer/" class="btn">Watch a live community</a>
     </div>
   </div>
 </section>
@@ -535,8 +505,8 @@
       <h2>Ready to start your own?</h2>
       <p>You can have a working kibbutz running in under a minute.</p>
       <div class="hero-cta">
-        <a href="/app/" class="btn btn-primary">Open the app →</a>
-        <a href="/guide.html" class="btn btn-soft">Read the guide first</a>
+        <a href="/app/" class="btn btn-pulse">Open the app →</a>
+        <a href="/guide.html" class="btn">Read the guide first</a>
       </div>
     </div>
   </div>
@@ -559,17 +529,18 @@
 </div>
 
 <footer>
-  <div class="container">
-    <div>© Kibbutznik · open source · made by people who believe small groups can run themselves</div>
-    <div class="socials">
-      <a href="/welcome.html">Home</a>
-      <a href="/guide.html">Guide</a>
-      <a href="/ecosystem.html">Ecosystem</a>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
       <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
+      <a href="/ecosystem.html">Ecosystem</a>
       <a href="/kbz/viewer/">Live</a>
-      <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
-      <a href="/">Technical landing</a>
-    </div>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
   </div>
 </footer>
 
@@ -660,7 +631,7 @@ const ENTITY_EDGES = [
     bucket.forEach((e, j) => {
       const div = document.createElement('div');
       div.className = 'entity-item';
-      div.innerHTML = `<img src="avatars-cream/${e.file}" alt="${e.name}" draggable="false"><span class="entity-name">${e.name}</span>`;
+      div.innerHTML = `<img src="avatars/${e.file}" alt="${e.name}" draggable="false"><span class="entity-name">${e.name}</span>`;
       div.addEventListener('mouseenter', () => {
         label.textContent = e.name;
         desc.textContent = e.tag;
@@ -724,9 +695,9 @@ const ENTITY_EDGES = [
       const alpha = Math.max(0.10, Math.min(0.45, 1 - dist/maxD));
       const phase = (t*0.0004 + (a.charCodeAt(0)+b.charCodeAt(0))*0.03) % 1;
       const grad = ctx.createLinearGradient(A.x, A.y, B.x, B.y);
-      grad.addColorStop(Math.max(0, phase-0.15), `rgba(111,168,133,${alpha*0.30})`);
-      grad.addColorStop(phase,                    `rgba(233,69,96,${alpha})`);
-      grad.addColorStop(Math.min(1, phase+0.15),  `rgba(111,168,133,${alpha*0.30})`);
+      grad.addColorStop(Math.max(0, phase-0.15), `rgba(234,235,230,${alpha*0.30})`);
+      grad.addColorStop(phase,                    `rgba(200,255,68,${alpha})`);
+      grad.addColorStop(Math.min(1, phase+0.15),  `rgba(234,235,230,${alpha*0.30})`);
       ctx.strokeStyle = grad;
       ctx.lineWidth = 1.4;
       ctx.beginPath();
@@ -742,7 +713,7 @@ const ENTITY_EDGES = [
 function openEntityTooltip(name){
   const e = ENTITIES.find(x => x.name === name);
   if(!e) return;
-  document.getElementById('ttIcon').src = 'avatars-cream/' + e.file;
+  document.getElementById('ttIcon').src = 'avatars/' + e.file;
   document.getElementById('ttName').textContent = e.name;
   document.getElementById('ttTag').textContent = e.tag;
   document.getElementById('ttBody').innerHTML = '<p>' + e.desc + '</p>';
@@ -778,6 +749,17 @@ window.addEventListener('scroll', () => {
   else if (y <= 8 && lastY > 8) topbar.classList.remove('scrolled');
   lastY = y;
 }, { passive: true });
+</script>
+<script>
+  (function () {
+    var t = document.getElementById("menuToggle"), m = document.getElementById("mobileMenu");
+    if (!t || !m) return;
+    t.addEventListener("click", function () {
+      var open = m.classList.toggle("open");
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.textContent = open ? "Close" : "Menu";
+    });
+  })();
 </script>
 </body>
 </html>

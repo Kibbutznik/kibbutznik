@@ -5,13 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The pulse: why group-decision tools fail without a shared deciding moment — Kibbutznik</title>
 <meta name="description" content="Group chats have no decision moment. Forums collect opinion but never resolve it. Voting apps count ballots but have no shared time. An open-source alternative built around a recurring pulse — no admins, no tokens.">
-<meta name="theme-color" content="#fdf8f0">
+<meta name="theme-color" content="#0A0A0A">
 <link rel="canonical" href="https://kibbutznik.org/the-pulse.html">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet">
 
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Kibbutznik">
@@ -44,87 +42,72 @@
   plausible.init()
 </script>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 <style>
-  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
-  :root{
-    --bg:#fdf8f0; --bg-alt:#f4ead8; --card:#fff;
-    --ink:#2a2520; --ink-soft:#5a5249; --ink-muted:#8a8076;
-    --pulse:#e94560; --pulse-btn:#d9304a; --pulse-soft:#fdebee;
-    --sage:#6fa885; --line:#e8dec9;
-  }
-  html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased;background:var(--bg)}
-  body{background:var(--bg);color:var(--ink);
-    font-family:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65}
-  a{color:var(--pulse);text-decoration:none}
-  a:hover{text-decoration:underline}
-  .container{max-width:1100px;margin:0 auto;padding:0 24px}
-  .container-narrow{max-width:720px;margin:0 auto;padding:0 24px}
-
-  nav.topbar{padding:20px 0;border-bottom:1px solid var(--line);background:rgba(253,248,240,.9);
-    backdrop-filter:blur(8px);position:sticky;top:0;z-index:50}
-  nav.topbar .container{display:flex;align-items:center;justify-content:space-between;gap:16px}
-  nav.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink)}
-  nav.topbar .brand img{width:28px;height:28px}
-  nav.topbar .links{display:flex;align-items:center;gap:20px;font-size:.95rem}
-  nav.topbar .links a{color:var(--ink-soft)}
-  nav.topbar .links a:hover{color:var(--pulse);text-decoration:none}
-  .btn{display:inline-block;padding:9px 18px;border-radius:999px;font-weight:600;font-size:.95rem}
-  .btn-primary{background:var(--pulse-btn);color:#fff}
-  .btn-primary:hover{background:#c8293e;text-decoration:none}
-  @media(max-width:640px){nav.topbar .links a:not(.btn){display:none}}
-
-  article{padding:56px 0 24px}
-  .eyebrow{color:var(--pulse);font-weight:700;font-size:.78rem;letter-spacing:.1em;
-    text-transform:uppercase;margin-bottom:14px}
-  h1{font-size:clamp(1.9rem,4.5vw,2.9rem);line-height:1.15;letter-spacing:-.02em;margin-bottom:18px}
-  .standfirst{font-size:1.15rem;color:var(--ink-soft);margin-bottom:14px}
-  .byline{color:var(--ink-muted);font-size:.9rem;padding-bottom:26px;border-bottom:1px solid var(--line);margin-bottom:34px}
-  article p{margin-bottom:20px;font-size:1.06rem}
-  article h2{font-size:1.5rem;margin:44px 0 16px;letter-spacing:-.01em}
-  article ul{margin:0 0 20px 22px}
-  article li{margin-bottom:10px;font-size:1.06rem}
-  strong{font-weight:650}
-  code{background:var(--bg-alt);padding:.1rem .35rem;border-radius:5px;font-size:.92em}
-  .pull{border-left:3px solid var(--pulse);background:var(--pulse-soft);padding:16px 20px;
-    border-radius:0 12px 12px 0;margin:28px 0;font-size:1.06rem}
-  .cta{background:var(--card);border:1px solid var(--line);border-radius:18px;
-    padding:28px;margin:44px 0 8px;text-align:center}
-  .cta h3{font-size:1.25rem;margin-bottom:8px}
-  .cta p{color:var(--ink-soft);font-size:1rem;margin-bottom:18px}
-  .cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-  .btn-soft{background:var(--bg-alt);color:var(--ink)}
-  .btn-soft:hover{background:#ecdfc8;text-decoration:none}
-  footer{border-top:1px solid var(--line);margin-top:56px;padding:26px 0;
-    color:var(--ink-muted);font-size:.9rem;text-align:center}
-  footer a{color:var(--ink-soft);margin:0 8px}
+  .essay { padding-block: clamp(28px, 5vw, 64px) clamp(56px, 8vw, 96px); }
+  .essay > .label { display: block; }
+  .essay h1 { font-size: clamp(34px, 5vw, 56px); margin-top: 18px; }
+  .essay .standfirst { font-size: clamp(19px, 2.1vw, 22px); color: var(--ink); line-height: 1.5; margin-top: 20px; }
+  .essay .byline { display: block; margin-top: 18px; padding-bottom: 26px; border-bottom: 1px solid var(--faint); }
+  .essay.prose > p, .essay.prose > ul { font-size: 18.5px; }
+  .essay .byline + p { margin-top: 34px; }
+  .essay .pull { margin-block: 2em; font-size: 1.12em; line-height: 1.5; }
+  .essay .cta { margin-top: 3em; text-align: center; }
+  .essay .cta h3 { margin-top: 0; }
+  .essay .cta p { margin: 10px auto 22px; }
+  .essay .cta-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 </style>
 </head>
 <body>
 
-<nav class="topbar">
-  <div class="container">
-    <a href="/welcome.html" class="brand"><img src="logo.svg" alt="">Kibbutznik</a>
-    <div class="links">
-      <a href="/welcome.html">Home</a>
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="/" aria-label="Kibbutznik — home">
+      <b>KBZ</b><span class="sep">//</span><span>Essay</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/#who">Who it's for</a>
       <a href="/guide.html">Guide</a>
-      <a href="/kbz/viewer/">See it live</a>
-      <a href="/app/" class="btn btn-primary">Open the app</a>
-    </div>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
   </div>
-</nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/">Home</a>
+    <a href="/#how">How it works</a>
+    <a href="/guide.html">The guide</a>
+    <a href="/ecosystem.html">Ecosystem</a>
+    <a href="/the-pulse.html" aria-current="page">The pulse — essay</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/contact.html">Get in touch</a>
+    <a href="/app/">Open the app</a>
+  </div>
+</header>
 
-<article>
-  <div class="container-narrow">
-    <div class="eyebrow">Essay</div>
+<div class="hud" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
+</div>
+
+
+<main>
+<article class="essay col prose">
+    <span class="label"><span class="n">Essay</span> · the pulse</span>
     <h1>The pulse: why group-decision tools fail without a shared deciding moment</h1>
     <p class="standfirst">Every tool a group uses to “decide things together” has the same hole in the middle of it, and most of us have stopped noticing it.</p>
-    <div class="byline">Kibbutznik · open source (MIT)</div>
+    <div class="byline label">Kibbutznik · open source (MIT)</div>
 
     <p>A group chat has no decision moment at all. Things get said, someone reacts with a 👍, the conversation scrolls away, and three weeks later nobody can tell you whether “we” agreed to anything. A forum is better at preserving the conversation and worse at ending it — threads accrete opinion indefinitely and resolve only when everyone gets tired.</p>
 
     <p>Polls and voting apps <em>do</em> have a moment, but it’s a moment someone declares unilaterally: one person decides when the vote opens, what the question is, and when it closes. And token-based on-chain governance bolts a deciding moment onto a ledger, but ties your weight in it to how many tokens you hold.</p>
 
-    <div class="pull">The thing they’re all missing is a <strong>shared, recurring, non-optional moment where the group decides what it has built up to</strong> — one that nobody owns and everybody feels coming.</div>
+    <blockquote class="pull">The thing they’re all missing is a <strong>shared, recurring, non-optional moment where the group decides what it has built up to</strong> — one that nobody owns and everybody feels coming.</blockquote>
 
     <p>That’s the idea I built Kibbutznik around. We call it the pulse.</p>
 
@@ -164,27 +147,46 @@
 
     <p>I built this because I wanted to know what governance feels like when the deciding moment is shared and the rules are fully open — when there’s no admin account to fall back on and no token to buy your way in. If that question interests you, come watch a pulse fire, or run your own community and tell me where it breaks.</p>
 
-    <div class="cta">
+    <div class="cta card">
       <h3>Watch a pulse fire</h3>
       <p>A live community deciding in real time — press play and see the mechanics move.</p>
       <div class="cta-row">
-        <a href="/kbz/viewer/" class="btn btn-primary">See it live →</a>
-        <a href="/app/" class="btn btn-soft">Start your own</a>
-        <a href="https://github.com/Kibbutznik/kibbutznik" class="btn btn-soft">Source (MIT)</a>
+        <a href="/kbz/viewer/" class="btn btn-pulse">See it live →</a>
+        <a href="/app/" class="btn">Start your own</a>
+        <a href="https://github.com/Kibbutznik/kibbutznik" class="btn">Source (MIT)</a>
       </div>
     </div>
-  </div>
 </article>
+</main>
 
 <footer>
-  <div class="container">
-    <a href="/welcome.html">Home</a> ·
-    <a href="/guide.html">Guide</a> ·
-    <a href="/kbz/viewer/">Live</a> ·
-    <a href="/contact.html">Get in touch</a> ·
-    <a href="https://github.com/Kibbutznik/kibbutznik">GitHub</a>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
   </div>
 </footer>
+
+<script>
+  (function () {
+    var t = document.getElementById("menuToggle"), m = document.getElementById("mobileMenu");
+    if (!t || !m) return;
+    t.addEventListener("click", function () {
+      var open = m.classList.toggle("open");
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.textContent = open ? "Close" : "Menu";
+    });
+  })();
+</script>
+
 
 </body>
 </html>

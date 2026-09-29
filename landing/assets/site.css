@@ -1,0 +1,371 @@
+/* ─────────────────────────────────────────────────────────────
+   Kibbutznik — site stylesheet
+   ─────────────────────────────────────────────────────────────
+   Derived from the explainer films (kibbutznik-pulse.mp4). Every
+   colour below was sampled from a frame, not picked:
+
+     ground  #0A0A0A   the film's background, radial to #070707
+     ink     #EAEBE6   the wordmark and the members — a warm
+                       off-white, deliberately not #FFF
+     pulse   #C8FF44   the dot on the i, the heartbeat, anything live
+
+   The film is a dark instrument panel, so the site is too: this is
+   a deliberate single-theme design, not a missing light mode. The
+   lime is spent sparingly, the way the film spends it — on the
+   pulse and on things that are live, never as decoration.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --ground:   #0A0A0A;
+  --ground-2: #070707;
+  --panel:    #111110;
+  --ink:      #EAEBE6;
+  --ink-2:    #A9AAA4;   /* body copy — ~8:1 on ground */
+  --dim:      #7E7F79;   /* labels, HUD — ~4.9:1 on ground */
+  --faint:    #2C2C2A;   /* hairlines, idle borders */
+  --grid:     #1B1B1A;   /* the dot grid */
+  --pulse:    #C8FF44;
+  --pulse-ink:#0A0A0A;   /* text on a lime fill */
+  --warn:     #FFB44A;
+  --stop:     #FF6B5E;
+
+  --display: "Barlow", "DIN Next", "Helvetica Neue", Arial, sans-serif;
+  --mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --hud-inset: clamp(14px, 2.4vw, 46px);
+  --col: 760px;
+  --col-wide: 1120px;
+
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  background: var(--ground-2);
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-padding-top: 88px;
+}
+
+body {
+  /* The film's ground: near-black, a touch lighter in the middle. */
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 38%, var(--ground) 0%, var(--ground-2) 100%)
+    fixed;
+  background-color: var(--ground);
+  color: var(--ink-2);
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1.65;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* The faint dot grid every frame of the film sits on. */
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, var(--grid) 1.1px, transparent 1.6px);
+  background-size: 48px 48px;
+  background-position: 24px 24px;
+  -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 45%, #000 40%, transparent 100%);
+          mask-image: radial-gradient(ellipse 85% 75% at 50% 45%, #000 40%, transparent 100%);
+}
+
+main, footer, .topbar { position: relative; z-index: 1; }
+
+a { color: var(--ink); text-decoration-color: var(--faint); text-underline-offset: 3px; }
+a:hover { color: var(--pulse); text-decoration-color: var(--pulse); }
+:focus-visible { outline: 2px solid var(--pulse); outline-offset: 3px; border-radius: 4px; }
+
+img, video { max-width: 100%; display: block; }
+strong { color: var(--ink); font-weight: 600; }
+
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── Type scale ─────────────────────────────────────────── */
+h1, h2, h3, h4 { color: var(--ink); font-family: var(--display); font-weight: 700; line-height: 1.08; text-wrap: balance; }
+h1 { font-size: clamp(40px, 6vw, 68px); letter-spacing: -0.02em; }
+h2 { font-size: clamp(30px, 4.2vw, 46px); letter-spacing: -0.015em; }
+h3 { font-size: 22px; letter-spacing: -0.01em; line-height: 1.2; }
+p  { max-width: 64ch; }
+p + p { margin-top: 1em; }
+
+.mono, .label, .chapter {
+  font-family: var(--mono);
+  font-feature-settings: "zero" 1;
+}
+.label {
+  font-size: 12px; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--dim);
+}
+.label .n { color: var(--pulse); }
+.lead { font-size: clamp(19px, 2vw, 21px); color: var(--ink-2); line-height: 1.6; }
+
+/* ── Layout ─────────────────────────────────────────────── */
+.col  { width: min(var(--col), 100% - 2 * var(--hud-inset) - 24px); margin-inline: auto; }
+.wide { width: min(var(--col-wide), 100% - 2 * var(--hud-inset) - 24px); margin-inline: auto; }
+section { padding-block: clamp(72px, 11vw, 140px); }
+.section-head { display: grid; gap: 14px; margin-bottom: clamp(32px, 5vw, 52px); }
+
+/* ── Top bar (nav + chapter) ────────────────────────────── */
+/* The film sets its "KBZ // 06 THE PULSE" label just inside the
+   top-left registration mark, so the bar's padding is the HUD inset
+   plus a step in. It fades out rather than ending on a hard edge —
+   content slides under it the way scenes pass under the film's HUD. */
+:root { --hud-pad: calc(var(--hud-inset) + clamp(12px, 2.4vw, 38px)); }
+.topbar {
+  position: sticky; top: 0;
+  z-index: 20;
+  background: linear-gradient(to bottom, var(--ground-2) 0%, var(--ground-2) 62%, color-mix(in srgb, var(--ground-2) 0%, transparent) 100%);
+}
+.topbar-inner {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: calc(var(--hud-inset) + 12px) var(--hud-pad) 26px;
+}
+.chapter {
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 13px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dim); text-decoration: none; white-space: nowrap;
+}
+.chapter b { color: var(--ink); font-weight: 700; letter-spacing: .06em; }
+.chapter .sep { color: var(--faint); }
+.chapter:hover { color: var(--ink); }
+.chapter #chapter-label { transition: opacity .2s ease; }
+
+.nav { display: flex; align-items: center; gap: clamp(14px, 2vw, 28px); }
+.nav a {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--dim); text-decoration: none;
+}
+.nav a:hover, .nav a[aria-current="page"] { color: var(--ink); }
+.menu-toggle {
+  display: none; background: none; border: 1px solid var(--faint); color: var(--ink);
+  font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 8px 12px; border-radius: 999px; cursor: pointer;
+}
+.mobile-menu { display: none; }
+
+@media (max-width: 900px) {
+  .nav a:not(.btn) { display: none; }
+  .menu-toggle { display: inline-block; }
+  .mobile-menu.open {
+    display: grid; gap: 0;
+    padding: 0 var(--hud-pad) 18px;
+    background: var(--ground-2);
+    border-bottom: 1px solid var(--faint);
+  }
+  .mobile-menu a {
+    font-family: var(--mono); font-size: 14px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-2); text-decoration: none; padding: 10px 0;
+    border-top: 1px solid var(--faint);
+  }
+}
+@media (max-width: 520px) {
+  .nav .btn { display: none; }
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  padding: 13px 20px; border-radius: 999px;
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+  border: 1.5px solid var(--ink); color: var(--ink); background: transparent;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.btn:hover { color: var(--pulse); border-color: var(--pulse); }
+.btn-pulse { background: var(--pulse); border-color: var(--pulse); color: var(--pulse-ink); }
+.btn-pulse:hover { background: var(--ink); border-color: var(--ink); color: var(--pulse-ink); }
+.btn-sm { padding: 8px 14px; font-size: 11.5px; }
+.btn:active { transform: translateY(1px); }
+
+/* ── Pill (the film's ON THE AIR / OUT THERE badge) ─────── */
+.pill {
+  display: inline-block;
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 999px;
+  border: 1.5px solid var(--ink-2); color: var(--ink-2);
+  white-space: nowrap;
+}
+.pill.live { border-color: var(--pulse); color: var(--pulse); }
+.pill.fill { background: var(--pulse); border-color: var(--pulse); color: var(--pulse-ink); }
+
+/* ── Card (the film's proposal card) ────────────────────── */
+.card {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1.5px solid var(--faint);
+  border-radius: 14px;
+  padding: 20px 22px;
+}
+.card.live { border-color: var(--pulse); }
+.card-meta {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+}
+.card-meta .id { color: var(--dim); font-weight: 700; }
+.card-meta .state { display: inline-flex; align-items: center; gap: 7px; color: var(--pulse); font-weight: 700; }
+.card-meta .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.card h3 { margin-top: 10px; }
+
+/* Segmented support meter with a threshold tick. */
+.meter { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.meter-bar { position: relative; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; flex: 1; max-width: 220px; }
+.meter-bar i { height: 9px; border-radius: 2px; background: var(--faint); }
+.meter-bar i.on { background: var(--pulse); }
+.meter-bar::after {
+  content: ""; position: absolute; top: -4px; bottom: -4px;
+  left: var(--threshold, 50%); width: 1.5px; background: var(--ink);
+}
+.meter-count { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ── Members (round = human, square with antenna = bot) ── */
+.members { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: clamp(14px, 3vw, 34px); }
+.member {
+  position: relative; width: 46px; height: 40px;
+  background: var(--ink); border-radius: 50%;
+  animation: bob 3.2s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * -0.41s);
+}
+.member::before, .member::after {
+  content: ""; position: absolute; top: 40%;
+  width: 5px; height: 8px; border-radius: 3px; background: var(--ground);
+}
+.member::before { left: 33%; }
+.member::after  { right: 33%; }
+.member.bot { width: 40px; height: 38px; border-radius: 9px; }
+.member.bot b {
+  position: absolute; left: 50%; top: -13px; width: 2px; height: 11px;
+  background: var(--ink); transform: translateX(-50%);
+}
+.member.bot b::after {
+  content: ""; position: absolute; left: 50%; top: -5px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--ink); transform: translateX(-50%);
+}
+.member.lit { background: var(--pulse); }
+.member.lit.bot b, .member.lit.bot b::after { background: var(--pulse); }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+/* ── HUD: the film's viewfinder frame ───────────────────── */
+.hud { position: fixed; inset: 0; z-index: 25; pointer-events: none; }
+/* Bottom fade: page content passes UNDER the console and status bar
+   instead of colliding with them. Mirrors the top bar's fade. Painted
+   first (::before), so the HUD text sits on top of it. */
+.hud.full::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+  height: calc(var(--hud-inset) + 80px);
+  background: linear-gradient(to top, var(--ground-2) 0%, var(--ground-2) 56%, transparent 100%);
+}
+.hud-c { position: absolute; width: 26px; height: 26px; border: 0 solid #3A3A38; }
+.hud-c.tl { top: var(--hud-inset); left: var(--hud-inset); border-top-width: 1.5px; border-left-width: 1.5px; }
+.hud-c.tr { top: var(--hud-inset); right: var(--hud-inset); border-top-width: 1.5px; border-right-width: 1.5px; }
+.hud-c.bl { bottom: var(--hud-inset); left: var(--hud-inset); border-bottom-width: 1.5px; border-left-width: 1.5px; }
+.hud-c.br { bottom: var(--hud-inset); right: var(--hud-inset); border-bottom-width: 1.5px; border-right-width: 1.5px; }
+
+.hud-console, .hud-status {
+  position: absolute;
+  bottom: calc(var(--hud-inset) + 8px);
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+  font-feature-settings: "zero" 1;
+}
+.hud-console { left: var(--hud-pad); display: grid; }
+.hud-console div { color: #3A3A38; white-space: nowrap; transition: color .5s ease; }
+.hud-console div:first-child:not(:last-child) { color: #4A4B45; }
+.hud-console div:last-child { color: var(--ink); }
+.hud-status { right: var(--hud-pad); color: var(--dim); white-space: nowrap; }
+.hud-status b { color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+.hud-status .p b { color: var(--pulse); }
+.hud-status .sep { color: #3A3A38; margin: 0 .55em; }
+
+@media (max-width: 1200px) { .hud-console { display: none; } }
+@media (max-width: 760px) {
+  .hud-status, .hud-c.bl, .hud-c.br, .hud.full::before { display: none; }
+  body { font-size: 17px; }
+}
+
+/* ── ECG: the heartbeat line ─────────────────────────────── */
+.ecg { display: block; width: 100%; height: auto; overflow: visible; }
+.ecg path { fill: none; stroke: var(--pulse); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.ecg .beat { fill: var(--pulse); transform-box: fill-box; transform-origin: center; animation: beat 2.4s ease-in-out infinite; }
+@keyframes beat {
+  0%, 60%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
+  8%            { transform: scale(1.5); filter: drop-shadow(0 0 10px var(--pulse)); }
+  18%           { transform: scale(1.1); }
+  26%           { transform: scale(1.35); filter: drop-shadow(0 0 7px var(--pulse)); }
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--faint);
+  padding: 44px var(--hud-pad) calc(var(--hud-inset) + 64px);
+  font-family: var(--mono); font-size: 12.5px; color: var(--dim);
+}
+.footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 22px; align-items: baseline; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.footer-links a { color: var(--dim); text-decoration: none; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
+.footer-links a:hover { color: var(--pulse); }
+
+/* ── Prose (long-form pages: guide, the-pulse, ecosystem) ── */
+.prose { color: var(--ink-2); }
+.prose > * + * { margin-top: 1.1em; }
+.prose h2 { margin-top: 2.2em; }
+.prose h3 { margin-top: 1.8em; }
+.prose ul, .prose ol { padding-left: 1.3em; }
+.prose li + li { margin-top: .45em; }
+.prose li::marker { color: var(--pulse); }
+.prose blockquote {
+  border-left: 2px solid var(--pulse); padding: 4px 0 4px 20px;
+  color: var(--ink); font-size: 1.08em;
+}
+.prose code {
+  font-family: var(--mono); font-size: .86em; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--faint); border-radius: 4px; padding: 1px 6px;
+}
+.prose hr { border: 0; border-top: 1px solid var(--faint); margin-block: 2.4em; }
+.prose table { width: 100%; border-collapse: collapse; font-size: 16px; }
+.prose th, .prose td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--faint); }
+.prose th { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+
+/* ── Forms (contact, admin sendmail) ─────────────────────── */
+.panel {
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  border: 1.5px solid var(--faint); border-radius: 16px;
+  padding: clamp(24px, 4vw, 40px);
+}
+.field { display: grid; gap: 8px; margin-bottom: 18px; }
+.field label {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+}
+.field .hint { text-transform: none; letter-spacing: 0; color: #5F605A; }
+input[type=text], input[type=email], input[type=password], textarea {
+  width: 100%; font: inherit; font-size: 17px; color: var(--ink);
+  background: var(--ground-2); border: 1.5px solid var(--faint); border-radius: 10px;
+  padding: 12px 14px; transition: border-color .15s ease;
+}
+input::placeholder, textarea::placeholder { color: #5F605A; }
+input:focus, textarea:focus { outline: none; border-color: var(--pulse); }
+textarea { resize: vertical; min-height: 150px; line-height: 1.55; }
+button.btn { font-family: var(--mono); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+.note { margin-top: 14px; font-family: var(--mono); font-size: 13px; color: var(--ink-2); min-height: 1.4em; }
+.note.success, .note.ok { color: var(--pulse); }
+.note.error, .note.err { color: var(--stop); }
+.hidden { display: none !important; }
+
+/* ── Motion discipline ───────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

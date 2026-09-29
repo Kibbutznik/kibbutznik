@@ -5,50 +5,56 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Send mail — Kibbutznik (admin)</title>
 <meta name="robots" content="noindex, nofollow">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="preconnect" href="https://fonts.bunny.net">
-<link href="https://fonts.bunny.net/css?family=inter:400,500,600,700" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css?v=1">
 <style>
-  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
-  :root{--bg:#fdf8f0;--card:#fff;--ink:#2a2520;--ink-soft:#5a5249;--ink-muted:#8a8076;
-        --pulse:#d9304a;--pulse-hover:#c8293e;--sage:#6fa885;--line:#e8dec9;}
-  html,body{background:var(--bg);color:var(--ink);
-    font-family:'Inter',system-ui,-apple-system,sans-serif;line-height:1.6;min-height:100vh}
-  body{display:flex;flex-direction:column}
-  a{color:var(--pulse);text-decoration:none}
-  nav{display:flex;align-items:center;gap:10px;padding:16px 24px;border-bottom:1px solid var(--line)}
-  nav .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink)}
-  nav .brand img{width:28px;height:28px}
-  main{flex:1;display:flex;justify-content:center;padding:40px 24px}
-  .card{width:100%;max-width:600px;background:var(--card);border:1px solid var(--line);
-    border-radius:18px;padding:32px}
-  .eyebrow{color:var(--pulse);font-weight:700;font-size:.78rem;letter-spacing:.08em;
-    text-transform:uppercase;margin-bottom:6px}
-  h1{font-size:1.6rem;margin-bottom:6px}
-  .from-line{color:var(--ink-muted);font-size:.9rem;margin-bottom:24px}
-  label{display:block;font-weight:600;font-size:.9rem;margin:0 0 6px}
-  .field{margin-bottom:18px}
-  input[type=text],input[type=email],textarea{width:100%;font:inherit;color:var(--ink);
-    padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:#fffdf9}
-  input:focus,textarea:focus{outline:none;border-color:var(--pulse);
-    box-shadow:0 0 0 3px #fdebee}
-  textarea{resize:vertical;min-height:180px}
-  button{font:inherit;font-weight:600;cursor:pointer;background:var(--pulse);color:#fff;
-    border:none;padding:12px 22px;border-radius:10px;width:100%}
-  button:hover{background:var(--pulse-hover)}
-  button:disabled{opacity:.55;cursor:not-allowed}
-  .note{margin-top:14px;font-size:.92rem}
-  .note.ok{color:var(--sage)} .note.err{color:var(--pulse)}
-  .gate{text-align:center;color:var(--ink-soft);padding:18px 0}
-  .gate a{font-weight:600}
-  .hidden{display:none}
+  main { padding-block: clamp(28px, 5vw, 64px) clamp(56px, 8vw, 96px); }
+  .formpage { width: min(640px, 100% - 2 * var(--hud-inset) - 24px); margin-inline: auto; }
+  .formpage h1 { font-size: clamp(32px, 4.6vw, 44px); margin-top: 16px; }
+  .from-line { margin: 12px 0 26px; font-family: var(--mono); font-size: 13px; color: var(--dim); }
+  .gate { border: 1.5px solid var(--faint); border-radius: 12px; padding: 16px 18px; color: var(--ink-2); }
+  .formpage button.btn { width: 100%; justify-content: center; margin-top: 6px; }
 </style>
 </head>
 <body>
-<nav><a href="/welcome.html" class="brand"><img src="logo.svg" alt="">Kibbutznik</a></nav>
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="chapter" href="/" aria-label="Kibbutznik — home">
+      <b>KBZ</b><span class="sep">//</span><span>Admin · sendmail</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/#who">Who it's for</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/app/" class="btn btn-pulse btn-sm">Open the app</a>
+      <button class="menu-toggle" type="button" aria-controls="mobileMenu" aria-expanded="false" id="menuToggle">Menu</button>
+    </nav>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/">Home</a>
+    <a href="/#how">How it works</a>
+    <a href="/guide.html">The guide</a>
+    <a href="/ecosystem.html">Ecosystem</a>
+    <a href="/the-pulse.html">The pulse — essay</a>
+    <a href="/kbz/viewer/">Watch it live</a>
+    <a href="/contact.html">Get in touch</a>
+    <a href="/app/">Open the app</a>
+  </div>
+</header>
+
+<div class="hud" aria-hidden="true">
+  <span class="hud-c tl"></span><span class="hud-c tr"></span>
+  <span class="hud-c bl"></span><span class="hud-c br"></span>
+</div>
+
 <main>
-  <div class="card">
-    <div class="eyebrow">Admin</div>
+  <div class="formpage panel">
+    <span class="label"><span class="n">Admin</span> · outbound email</span>
     <h1>Send an email</h1>
     <div class="from-line" id="from-line">Checking access…</div>
 
@@ -67,18 +73,46 @@
         <input type="text" id="subject" maxlength="300" required>
       </div>
       <div class="field">
-        <label for="reply_to">Reply-to <span style="color:var(--ink-muted);font-weight:400">— optional</span></label>
+        <label for="reply_to">Reply-to <span class="hint">— optional</span></label>
         <input type="email" id="reply_to" placeholder="leave blank to use the From address">
       </div>
       <div class="field">
         <label for="body">Message</label>
         <textarea id="body" maxlength="20000" required></textarea>
       </div>
-      <button type="submit" id="send-btn">Send email</button>
+      <button type="submit" id="send-btn" class="btn btn-pulse">Send email</button>
       <div id="note" class="note"></div>
     </form>
   </div>
 </main>
+
+<footer>
+  <div class="footer-inner">
+    <span><b style="color:var(--ink)">KBZ</b> // open source · made by people who believe small groups can run themselves</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/app/">App</a>
+      <a href="/guide.html">Guide</a>
+      <a href="/the-pulse.html">The pulse</a>
+      <a href="/ecosystem.html">Ecosystem</a>
+      <a href="/kbz/viewer/">Live</a>
+      <a href="/contact.html">Contact</a>
+      <a href="https://github.com/Kibbutznik/kibbutznik" rel="noopener">GitHub</a>
+      <a href="/index.html">Psychedelic edition</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var t = document.getElementById("menuToggle"), m = document.getElementById("mobileMenu");
+    if (!t || !m) return;
+    t.addEventListener("click", function () {
+      var open = m.classList.toggle("open");
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.textContent = open ? "Close" : "Menu";
+    });
+  })();
+</script>
 
 <script>
   // API base: behind nginx the backend lives under /kbz.
