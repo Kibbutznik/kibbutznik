@@ -44,6 +44,8 @@
 <body>
   <noscript>Kibbutznik needs JavaScript. Please enable it.</noscript>
   <div id="root"></div>
-  <script type="text/babel" src="./app.js"></script>
+  <!-- Versioned src: bumping ?v= forces browsers to fetch the new build
+       even if they cached app.js before cache-control:no-cache existed. -->
+  <script type="text/babel" src="./app.js?v=20260530"></script>
 </body>
 </html>
