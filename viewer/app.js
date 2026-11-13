@@ -1837,7 +1837,7 @@ const LLM_LABELS = {
     "or-mistral-small":    "🌐 OR mistral-small",
     "or-mistral-small-3.2":"🌐 OR mistral-small-3.2-24b",
     "or-cydonia-24b":      "🌐 OR cydonia-24b (creative)",
-    "or-mercury-2.5":      "🌐 Mercury 2.5",
+    "or-deepseek-v4.1-flash": "🌐 DeepSeek V4.1 Flash",
     "or-gpt-oss-20b":      "🌐 OR gpt-oss-20b",
     "or-qwen3.7-flash":    "🌐 OR qwen3.7-flash",
     "or-free-fallback":    "🌐 OR nemotron-lightning (free)",
