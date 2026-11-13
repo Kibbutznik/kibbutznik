@@ -109,6 +109,33 @@ Set a monthly spend cap of **$100** (≈ 3× projected steady-state) before
 launch. If the cap trips mid-launch, the sim degrades but the human
 product is unaffected — bots stop acting; humans keep voting.
 
+## Support votes (TypeSafe)
+
+Agents' `support_proposal` / `support_pulse` votes are decided by TypeSafe
+(`agents/support_judge.py`) rather than inside the LLM's turn.
+`KBZ_SUPPORT_JUDGE` picks who votes: `auto` (default — TypeSafe when it is
+configured, otherwise the LLM), `typesafe` (refuse to start without it), or
+`llm`. Under `auto` a missing key or SDK is not an outage: the boot log says
+`Support votes: decided by the LLM (TypeSafe unavailable — …)` and the sim
+runs as before.
+
+The deploy hook installs `pip install -e .` only, not the `[agents]` extra
+that carries `typesafe-sdk`, so turning it on is a one-time step:
+
+```bash
+ssh root@157.180.29.140 'cd /opt/kbz && .venv/bin/pip install -e ".[agents]" -q'
+ssh root@157.180.29.140 'echo TYPESAFE_API_KEY=<key> >> /etc/kbz/env && systemctl restart kbz'
+# Confirm which judge is voting
+ssh root@157.180.29.140 'journalctl -u kbz --since "5 min ago" | grep "Support votes"'
+# Back to LLM votes, no deploy needed
+ssh root@157.180.29.140 'echo KBZ_SUPPORT_JUDGE=llm >> /etc/kbz/env && systemctl restart kbz'
+```
+
+`/simulation/status` reports `support_judge` (model, calls, errors); `null`
+means the LLM is voting. A TypeSafe error costs nothing but that turn's votes
+going back to the LLM. Re-measure the voting thresholds after a Jev upgrade
+with `python -m agents.bench_support`.
+
 ## Vertical scale up / down (Hetzner)
 
 Hetzner Console → server → **Rescale** → pick plan → reboot.

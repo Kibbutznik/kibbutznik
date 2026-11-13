@@ -282,13 +282,33 @@ def build_decision_prompt(
     interview_context: str = "",
     memory_context: str = "",
     recent_failures: list[str] | None = None,
+    support_votes: list[str] | None = None,
 ) -> str:
-    """Build the full prompt for the LLM to make a decision."""
+    """Build the full prompt for the LLM to make a decision.
+
+    `support_votes` is set when agents/support_judge.py has already decided
+    this turn's support_proposal / support_pulse votes: the prompt then shows
+    the LLM those votes instead of asking it to make them.
+    """
 
     recent_history = "\n".join(action_history[-6:]) if action_history else "No actions yet."
 
     unsupported_block = ""
-    if unsupported_proposals:
+    if support_votes:
+        # The votes are settled, so the judgment queue below would only ask
+        # the LLM to re-decide them. Show the outcome instead: its job this
+        # turn is what the judge cannot write — and a comment explaining a
+        # "no" is how an objection reaches members before they vote.
+        unsupported_block = (
+            "\n## Your Votes This Turn (already decided)\n"
+            "Your support votes were weighed against your agenda in a separate\n"
+            "step and are cast for you:\n"
+            + "\n".join(f"  {line}" for line in support_votes)
+            + "\n\nIf you declined a proposal because it is actually BAD, one sharp\n"
+            "`comment` saying why lets other members see the objection before\n"
+            "they vote.\n"
+        )
+    elif unsupported_proposals:
         # This header used to read "(use support_proposal on these!)" — an
         # imperative sitting directly next to the list. It read as a to-do
         # queue and beat the far-away "default to NOT supporting" guidance
@@ -370,7 +390,14 @@ def build_decision_prompt(
     # left open long enough to deliberate ON.
     #
     # So: pulse when there is something to decide, and not otherwise.
-    if total_active_proposals == 0:
+    if support_votes:
+        pulse_guidance = (
+            "## VOTES — ALREADY CAST\n"
+            "Your `support_proposal` and `support_pulse` votes for this turn are\n"
+            "listed under \"Your Votes This Turn\". **Do NOT emit either action** —\n"
+            "any you emit are discarded."
+        )
+    elif total_active_proposals == 0:
         pulse_guidance = (
             "## PULSE STRATEGY — NOT THIS TURN\n"
             "⛔ There are **no open proposals**. A pulse decides nothing and "
@@ -499,6 +526,32 @@ def build_decision_prompt(
     if memory_context:
         memory_block = f"\n{memory_context}\n"
 
+    if support_votes:
+        # With the votes already cast, "do_nothing is FAILURE" would push the
+        # LLM into filler chat and comments just to look busy — the votes
+        # already count as taking part.
+        this_turn_block = """## THIS TURN — take the actions only you can write (1 to 4)
+
+Your votes are cast. What is left is what you write.
+
+Available actions:
+- **create_proposal** — propose something new
+- **comment** — ONE brief comment per proposal (never repeat). HARD LIMIT 50 words / 300 chars.
+- **send_chat** — informal community-wide message (max 2 per round)
+- **do_nothing** — fine when you have nothing concrete to propose, object to, or say. Use alone."""
+    else:
+        this_turn_block = """## THIS TURN — take MULTIPLE actions (1 to 5)
+
+You can create proposals, support others, comment, AND push the pulse — all in one turn.
+
+Available actions:
+- **support_pulse** — include when the board has proposals worth deciding (see PULSE STRATEGY). Without pulses, proposals sit forever; with too many, nothing is ever debated.
+- **create_proposal** — propose something new
+- **support_proposal** — back a proposal (use EXACT id from state)
+- **comment** — ONE brief comment per proposal (never repeat). HARD LIMIT 50 words / 300 chars.
+- **send_chat** — informal community-wide message (max 2 per round)
+- **do_nothing** — FAILURE. You almost certainly have something useful to do: support a proposal, support the pulse, or write an EditArtifact. Only use if you've exhausted EVERY option. Use alone, EXTREMELY RARE."""
+
     return f"""You are {persona_name}, {persona_role} in a KBZ community.
 
 {persona_trait_summary}
@@ -587,17 +640,7 @@ You joined this action because it has artifacts delegated to it that need conten
 
 {pulse_guidance}
 
-## THIS TURN — take MULTIPLE actions (1 to 5)
-
-You can create proposals, support others, comment, AND push the pulse — all in one turn.
-
-Available actions:
-- **support_pulse** — include when the board has proposals worth deciding (see PULSE STRATEGY). Without pulses, proposals sit forever; with too many, nothing is ever debated.
-- **create_proposal** — propose something new
-- **support_proposal** — back a proposal (use EXACT id from state)
-- **comment** — ONE brief comment per proposal (never repeat). HARD LIMIT 50 words / 300 chars.
-- **send_chat** — informal community-wide message (max 2 per round)
-- **do_nothing** — FAILURE. You almost certainly have something useful to do: support a proposal, support the pulse, or write an EditArtifact. Only use if you've exhausted EVERY option. Use alone, EXTREMELY RARE.
+{this_turn_block}
 
 Rules:
 - Combine actions freely in one turn.
@@ -830,6 +873,7 @@ class DecisionEngine:
         interview_context: str = "",
         memory_context: str = "",
         recent_failures: list[str] | None = None,
+        support_votes: list[str] | None = None,
     ) -> list[AgentAction]:
         # Globally pace LLM calls (no-op unless a turn interval is set).
         # Gates here so root agents, sub-community agents, and BotRunner
@@ -854,6 +898,7 @@ class DecisionEngine:
             interview_context=interview_context,
             memory_context=memory_context,
             recent_failures=recent_failures,
+            support_votes=support_votes,
         )
 
         last_error = None

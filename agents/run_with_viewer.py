@@ -203,6 +203,14 @@ Examples:
                         help="LLM model name (e.g. gemma4:26b for Ollama)")
     parser.add_argument("--community-name", default="AI Kibbutz", help="Community name")
     parser.add_argument(
+        "--support-judge", choices=["auto", "typesafe", "llm"],
+        default=os.environ.get("KBZ_SUPPORT_JUDGE", "auto"),
+        help="Who decides support_proposal / support_pulse votes: 'typesafe' "
+             "(needs TYPESAFE_API_KEY or config.ini [typesafe] api_key), 'llm' "
+             "(inside the agent's LLM turn), or 'auto' = TypeSafe when it is "
+             "configured, else the LLM (default; env KBZ_SUPPORT_JUDGE).",
+    )
+    parser.add_argument(
         "--communities", default="",
         help="Comma-separated slugs from the seeded catalog (commons, "
              "registry, oracle) or 'all'. Runs one root community per slug "
@@ -284,6 +292,14 @@ Examples:
 
     _apply_preset_env(args, sys.argv[1:], parser.error)
 
+    # One judge for every community and the BotRunner: it holds a single
+    # TypeSafe client, and every agent's votes follow the same policy.
+    from agents.support_judge import SupportJudgeUnavailable, make_support_judge
+    try:
+        support_judge = make_support_judge(args.support_judge)
+    except (SupportJudgeUnavailable, ValueError) as e:
+        parser.error(f"--support-judge {args.support_judge}: {e}")
+
     def _make_orchestrator(
         n_members: int,
         community_name: str | None = None,
@@ -309,6 +325,7 @@ Examples:
             ollama_think=args.ollama_think,
             auto_pause_every=args.auto_pause_every,
             start_paused=args.start_paused,
+            support_judge=support_judge,
         )
 
     # ── Community set ────────────────────────────────────────────────
@@ -424,6 +441,7 @@ Examples:
             session_factory=async_session,
             engine=orch.engine,
             api_base_url="http://localhost:8000",
+            support_judge=support_judge,
         )
         await bot_runner.start()
         # One loop per community. They interleave through the shared
@@ -462,6 +480,11 @@ Examples:
                 await tkg_ingestor.stop()
             except Exception:
                 log.exception("TKGIngestor shutdown failed")
+            if support_judge is not None:
+                try:
+                    await support_judge.aclose()
+                except Exception:
+                    log.exception("Support judge shutdown failed")
 
     # Build the combined app with lifespan
     from kbz.routers import (

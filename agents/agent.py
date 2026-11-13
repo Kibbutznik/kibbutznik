@@ -21,6 +21,7 @@ from agents.memory import MemoryStore
 from agents.memory_extractor import MemoryExtractor
 from agents.memory_formatter import MemoryFormatter
 from agents.persona import Persona
+from agents.support_judge import SupportJudge, SupportVotes
 from agents.tkg_client import TKGClient
 
 logger = logging.getLogger(__name__)
@@ -79,10 +80,14 @@ class Agent:
         user_name: str | None = None,
         memory_store: MemoryStore | None = None,
         tkg_client: TKGClient | None = None,
+        support_judge: SupportJudge | None = None,
     ):
         self.persona = persona
         self.client = client
         self.engine = engine
+        # When set, support_proposal / support_pulse are decided by TypeSafe
+        # (agents/support_judge.py) instead of inside the LLM's turn.
+        self.support_judge = support_judge
         self.user_id = user_id
         self.user_name = user_name or persona.name.lower()
         self.community_id: str | None = None
@@ -243,6 +248,31 @@ class Agent:
                 break
         recent_failures.reverse()  # oldest-first reads more naturally
 
+        # Support votes come first when a judge is configured, so the LLM
+        # can be shown them and its comments can explain them. If the judge
+        # fails, nothing is lost: the LLM votes this turn, as it used to.
+        votes: SupportVotes | None = None
+        if self.support_judge is not None:
+            try:
+                votes = await self.support_judge.vote(
+                    persona=self.persona,
+                    intention=self.current_intention,
+                    snapshot=snapshot,
+                    supported_proposals=self.supported_proposals,
+                    supported_pulse_ids=self.supported_pulse_ids,
+                    users_cache=self.users_cache,
+                    my_user_id=self.user_id,
+                )
+            except Exception as e:
+                logger.warning(f"[{self.persona.name}] Support judge failed, the LLM votes this turn: {e}")
+            else:
+                declined = [v for v in votes.proposals if not v.support]
+                if declined:
+                    logger.info(
+                        f"[{self.persona.name}] Declined {len(declined)}: "
+                        + "; ".join(f"{v.proposal['id'][:8]} ({v.reason})" for v in declined)
+                    )
+
         decisions = await self.engine.decide(
             persona_name=self.persona.name,
             persona_role=self.persona.role,
@@ -261,7 +291,11 @@ class Agent:
             interview_context=interview_ctx,
             memory_context=memory_context,
             recent_failures=recent_failures,
+            support_votes=votes.prompt_lines() if votes is not None else None,
         )
+        llm_decisions = decisions
+        if votes is not None:
+            decisions = self._merge_support_votes(decisions, votes)
 
         # 3. ACT — execute each decision, applying guards per action.
         #
@@ -289,7 +323,7 @@ class Agent:
         best_eager_front = "observe"
 
         for decision in decisions:
-            decision = self._apply_guards(decision, snapshot)
+            decision = self._apply_guards(decision, snapshot, redirect_to_support=votes is None)
 
             log = await self._execute_action(decision, snapshot)
             log.eagerness = decision.eagerness
@@ -322,7 +356,9 @@ class Agent:
         # Harvest `update_intention` if the LLM supplied one on any decision
         # this turn. Last one wins. Keeps the running goal across turns so
         # multi-step plans (propose → wait → support → pulse) don't reset.
-        for decision in decisions:
+        # Read the LLM's own list: merging votes can drop a do_nothing that
+        # carried the intention.
+        for decision in llm_decisions:
             new_intention = (decision.params.get("update_intention") or "").strip()
             if new_intention:
                 # Trim to a single punchy line — this goes into every future prompt.
@@ -340,8 +376,36 @@ class Agent:
 
         return logs
 
-    def _apply_guards(self, decision: AgentAction, snapshot: CommunitySnapshot) -> AgentAction:
-        """Apply pulse guard and comment guard to a single decision."""
+    def _merge_support_votes(self, decisions: list[AgentAction], votes: SupportVotes) -> list[AgentAction]:
+        """Combine the judge's votes with the LLM's other actions.
+
+        The judge owns support this turn, so any support action the LLM
+        emitted anyway is dropped, and so is a do_nothing when votes were
+        cast — the votes are the turn. The pulse waits on a turn that files
+        a new proposal: pulsing then denies everyone else a turn to back it.
+        """
+        others = [d for d in decisions if d.action_type not in ("support_proposal", "support_pulse")]
+        if len(others) < len(decisions):
+            logger.debug(
+                f"[{self.persona.name}] Dropped {len(decisions) - len(others)} LLM support "
+                f"action(s): the judge votes this turn"
+            )
+        vote_actions = votes.actions()
+        if any(d.action_type == "create_proposal" for d in others):
+            vote_actions = [a for a in vote_actions if a.action_type != "support_pulse"]
+        if vote_actions:
+            others = [d for d in others if d.action_type != "do_nothing"]
+        return vote_actions + others
+
+    def _apply_guards(
+        self, decision: AgentAction, snapshot: CommunitySnapshot, redirect_to_support: bool = True,
+    ) -> AgentAction:
+        """Apply pulse guard and comment guard to a single decision.
+
+        `redirect_to_support=False` when a judge decided this turn's votes:
+        a repeated comment is then dropped rather than turned into a support
+        vote the judge never made.
+        """
         # PULSE GUARD: no active proposals → pulse support is wasted
         if decision.action_type == "support_pulse":
             has_active = snapshot.proposals_on_the_air or snapshot.proposals_out_there
@@ -362,7 +426,7 @@ class Agent:
             if pid and pid in self.commented_proposals:
                 all_active = snapshot.proposals_out_there + snapshot.proposals_on_the_air
                 unsupported_now = [p for p in all_active if p["id"] not in self.supported_proposals]
-                if unsupported_now:
+                if unsupported_now and redirect_to_support:
                     target = unsupported_now[0]
                     logger.debug(
                         f"[{self.persona.name}] Comment guard: already commented on {pid[:8]}, "
@@ -591,9 +655,11 @@ class Agent:
                     )
                     if existing and existing.get("user_id") != self.user_id:
                         # Auto-support the existing edit so this turn
-                        # isn't wasted, then return.
+                        # isn't wasted, then return. Not with a judge: it
+                        # already voted on that edit this turn, and this
+                        # would be a vote it never made.
                         existing_id = existing["id"]
-                        if existing_id not in self.supported_proposals:
+                        if existing_id not in self.supported_proposals and self.support_judge is None:
                             try:
                                 await self.client.support_proposal(existing_id, self.user_id)
                                 self.supported_proposals.add(existing_id)
@@ -780,7 +846,8 @@ class Agent:
                     )
                     if existing and existing.get("user_id") != self.user_id:
                         existing_id = existing["id"]
-                        if existing_id not in self.supported_proposals:
+                        # Same as EditArtifact above: a judge casts the votes.
+                        if existing_id not in self.supported_proposals and self.support_judge is None:
                             try:
                                 await self.client.support_proposal(existing_id, self.user_id)
                                 self.supported_proposals.add(existing_id)
