@@ -579,7 +579,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
 
             {/* ── Target Artifact full content (Delegate / Remove) ── */}
             {!isEdit && ["DelegateArtifact","RemoveArtifact"].includes(proposal.proposal_type) && oldArtifact && (
-                <div className="detail-section" style={{ border: "1px solid rgba(78,204,163,0.3)", borderRadius: 8, padding: "0.8rem" }}>
+                <div className="detail-section" style={{ border: "1px solid rgba(200, 255, 68,0.3)", borderRadius: 8, padding: "0.8rem" }}>
                     <div className="detail-section-title">
                         {oldArtifact.is_plan ? "📋 " : ""}Artifact: {oldArtifact.title || "(untitled)"}
                         {oldArtifact.is_plan && <span style={{ fontSize: "0.7rem", color: "var(--gold)", marginLeft: 8 }}>(Plan)</span>}
@@ -593,7 +593,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
 
             {/* ── EditArtifact Diff View ─────────────────── */}
             {isEdit && (
-                <div className="detail-section" style={{ border: "1px solid rgba(78,204,163,0.3)", borderRadius: 8, padding: "0.8rem" }}>
+                <div className="detail-section" style={{ border: "1px solid rgba(200, 255, 68,0.3)", borderRadius: 8, padding: "0.8rem" }}>
                     <div className="detail-section-title"
                          style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                          onClick={() => { setDiffExpanded(e => !e); setDiffReviewed(true); }}>
@@ -607,11 +607,11 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
                                 <div style={{ marginBottom: "0.8rem" }}>
                                     <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--gold)", marginBottom: 4 }}>Title</div>
                                     <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap" }}>
-                                        <span style={{ background: "rgba(233,69,96,0.15)", padding: "2px 8px", borderRadius: 4, textDecoration: "line-through", color: "#e94560" }}>
+                                        <span style={{ background: "rgba(255, 107, 94,0.15)", padding: "2px 8px", borderRadius: 4, textDecoration: "line-through", color: "#FF6B5E" }}>
                                             {oldArtifact.title}
                                         </span>
                                         <span>→</span>
-                                        <span style={{ background: "rgba(78,204,163,0.15)", padding: "2px 8px", borderRadius: 4, color: "#4ecca3" }}>
+                                        <span style={{ background: "rgba(200, 255, 68,0.15)", padding: "2px 8px", borderRadius: 4, color: "#C8FF44" }}>
                                             {proposal.val_text}
                                         </span>
                                     </div>
@@ -634,7 +634,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
                                             : "Current Version (loading…)");
                                     return (
                                         <div>
-                                            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#e94560", marginBottom: 4 }}>
+                                            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#FF6B5E", marginBottom: 4 }}>
                                                 {label}
                                             </div>
                                             <pre className="edit-diff-pre edit-diff-current">{replacedText !== null ? (replacedText || "(empty)") : "…"}</pre>
@@ -642,7 +642,7 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
                                     );
                                 })()}
                                 <div>
-                                    <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#4ecca3", marginBottom: 4 }}>
+                                    <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#C8FF44", marginBottom: 4 }}>
                                         Proposed Version ({(proposal.proposal_text || "").length} chars)
                                     </div>
                                     <pre className="edit-diff-pre edit-diff-proposed">{proposal.proposal_text || "(empty)"}</pre>
@@ -735,13 +735,13 @@ function ProposalDetail({ id, openDetail, agentsByUserId, communityId, bbUserId,
                 <div className="detail-section" style={{ textAlign: "center" }}>
                     {canSupport && (
                         <button onClick={handleSupport} disabled={supportBusy}
-                            style={{ background: "#4ecca3", color: "#111", border: "none", padding: "0.5rem 1.5rem",
+                            style={{ background: "#C8FF44", color: "#0D0D0C", border: "none", padding: "0.5rem 1.5rem",
                                      borderRadius: 6, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                             {supportBusy ? "…" : "👍 Support"}
                         </button>
                     )}
                     {alreadyGhostSupported && (
-                        <div style={{ fontSize: "0.8rem", color: "#4ecca3" }}>
+                        <div style={{ fontSize: "0.8rem", color: "#C8FF44" }}>
                             ✓ You supported this proposal
                         </div>
                     )}
@@ -1856,8 +1856,8 @@ function LastUpdated({ status }) {
         <span
             style={{
                 fontSize: "0.72rem",
-                color: flash ? "#4ecca3" : "var(--text-muted)",
-                background: flash ? "rgba(78,204,163,0.15)" : "transparent",
+                color: flash ? "#C8FF44" : "var(--text-muted)",
+                background: flash ? "rgba(200, 255, 68,0.15)" : "transparent",
                 padding: "2px 8px",
                 borderRadius: 999,
                 transition: "color 0.3s, background 0.3s",
@@ -1906,15 +1906,15 @@ function PlayOverlay({ onPlay, onBrowse, memberCount, hasData, turbo, paceSecond
                 aria-label="Start the simulation run"
                 style={{
                     width: 96, height: 96, borderRadius: "50%", border: "none",
-                    background: "#e94560", color: "#fff", cursor: "pointer",
+                    background: "#C8FF44", color: "#0A0A0A", cursor: "pointer",
                     fontSize: 40, lineHeight: "96px", paddingLeft: 7,
-                    boxShadow: "0 12px 44px rgba(233,69,96,0.55)",
+                    boxShadow: "0 12px 44px rgba(200,255,68,0.45)",
                     transition: "transform .15s ease", flexShrink: 0,
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.06)")}
                 onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
             >▶</button>
-            <div style={{ marginTop: 18, color: "#fff", fontSize: "1.2rem", fontWeight: 700 }}>
+            <div style={{ marginTop: 18, color: "#EAEBE6", fontSize: "1.2rem", fontWeight: 700 }}>
                 Press play to run the kibbutz
             </div>
             <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: "0.92rem", maxWidth: 440, lineHeight: 1.5 }}>
@@ -1956,9 +1956,12 @@ function Header({ status, openDetail, activeCommunityId, activeCommunityName, on
                     is often shared directly; a visitor needs an obvious
                     way back to the project home. */}
                 <a href="/welcome.html" className="header-home-link" title="Back to the Kibbutznik home page">←</a>
-                <img src="logo.svg" alt="Kibbutznik" className="header-logo" />
                 <div className="header-title">
-                    <span>Kibbutznik</span>
+                    {/* The film's wordmark: dotless ı's re-dotted with the pulse. */}
+                    <span className="wm">
+                        <span className="sr-only">Kibbutznik</span>
+                        <span aria-hidden="true">k<span className="i">ı</span>bbutzn<span className="i">ı</span>k</span>
+                    </span>
                     <span style={{ opacity: 0.5, margin: "0 6px" }}>·</span>
                     {community?.name ? (
                         <span
@@ -2162,17 +2165,17 @@ function HeatmapView({ data, agentsByUserId, openDetail }) {
     const labelW = 110;
 
     const colorFor = (score) => {
-        if (score === null) return "#1a1a2e";
+        if (score === null) return "#121211";
         const t = Math.max(-1, Math.min(1, score / maxAbs));
-        if (t >= 0) return `rgba(78, 204, 163, ${(t * 0.85).toFixed(2)})`;
-        return `rgba(233, 69, 96, ${(-t * 0.85).toFixed(2)})`;
+        if (t >= 0) return `rgba(200, 255, 68, ${(t * 0.85).toFixed(2)})`;
+        return `rgba(255, 107, 94, ${(-t * 0.85).toFixed(2)})`;
     };
 
     const labelOf = (uid) => agentsByUserId[uid]?.name || uid.slice(0, 6);
 
     return (
-        <div style={{ overflow: "auto", background: "#0f0f1e", borderRadius: 6, padding: 12 }}>
-            <table style={{ borderCollapse: "collapse", fontSize: "0.75rem", color: "#eee" }}>
+        <div style={{ overflow: "auto", background: "#070707", borderRadius: 6, padding: 12 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: "0.75rem", color: "#EAEBE6" }}>
                 <thead>
                     <tr>
                         <th style={{ width: labelW }}></th>
@@ -2221,7 +2224,7 @@ function HeatmapView({ data, agentsByUserId, openDetail }) {
                                             width: cellSize,
                                             height: cellSize,
                                             background: colorFor(score),
-                                            border: "1px solid #0f0f1e",
+                                            border: "1px solid #070707",
                                         }}
                                     ></td>
                                 );
@@ -2251,7 +2254,7 @@ function ScatterView({ data, agentsByUserId, openDetail }) {
     const labelOf = (uid) => agentsByUserId[uid]?.name || uid.slice(0, 6);
 
     return (
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ background: "#0f0f1e", borderRadius: 6 }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ background: "#070707", borderRadius: 6 }}>
             {coords.map((c) => {
                 const cx = sx(c.x), cy = sy(c.y);
                 return (
@@ -2260,8 +2263,8 @@ function ScatterView({ data, agentsByUserId, openDetail }) {
                         style={{ cursor: "pointer" }}
                         onClick={() => openDetail("user", c.user_id, labelOf(c.user_id))}
                     >
-                        <circle cx={cx} cy={cy} r={9} fill="#e94560" stroke="#fff" strokeWidth={1.5} />
-                        <text x={cx + 12} y={cy + 4} fill="#eee" fontSize="11">{labelOf(c.user_id)}</text>
+                        <circle cx={cx} cy={cy} r={9} fill="#EAEBE6" stroke="#0A0A0A" strokeWidth={1.5} />
+                        <text x={cx + 12} y={cy + 4} fill="#EAEBE6" fontSize="11">{labelOf(c.user_id)}</text>
                     </g>
                 );
             })}
@@ -2302,7 +2305,7 @@ function GraphView({ data, agentsByUserId, openDetail }) {
             value: Math.abs(p.score),
             title: `${p.score > 0 ? "+" : ""}${p.score.toFixed(2)} closeness`,
             width: 1 + (Math.abs(p.score) / maxAbs) * 8,
-            color: { color: p.score >= 0 ? "rgba(78, 204, 163, 0.7)" : "rgba(233, 69, 96, 0.7)" },
+            color: { color: p.score >= 0 ? "rgba(200, 255, 68, 0.7)" : "rgba(255, 107, 94, 0.7)" },
             dashes: p.score < 0,
         }));
         if (networkRef.current) networkRef.current.destroy();
@@ -2313,8 +2316,9 @@ function GraphView({ data, agentsByUserId, openDetail }) {
                 nodes: {
                     shape: "dot",
                     size: 18,
-                    font: { color: "#eee", size: 14 },
-                    color: { background: "#e94560", border: "#fff" },
+                    font: { color: "#EAEBE6", size: 14 },
+                    /* Members are drawn white, as in the film; lime is kept for the positive ties. */
+                    color: { background: "#EAEBE6", border: "#0A0A0A" },
                 },
                 edges: { smooth: false },
                 physics: { stabilization: true, barnesHut: { springLength: 140 } },
@@ -2335,7 +2339,7 @@ function GraphView({ data, agentsByUserId, openDetail }) {
         };
     }, [dataFingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    return <div ref={containerRef} style={{ height: 600, width: "100%", background: "#0f0f1e", borderRadius: 6 }}></div>;
+    return <div ref={containerRef} style={{ height: 600, width: "100%", background: "#070707", borderRadius: 6 }}></div>;
 }
 
 // ── Relationships Tab ──────────────────────────────────
@@ -2368,7 +2372,7 @@ function RelationshipsTab({ communityId, agentsByUserId, openDetail }) {
 
     if (loading) return <div className="loading-center"><span className="spinner"></span> Loading relationships...</div>;
     if (error) return (
-        <div className="card" style={{ color: "#f88" }}>
+        <div className="card" style={{ color: "#FF8F84" }}>
             <strong>Failed to load relationships:</strong> {error}
             <div style={{ marginTop: 8, fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 Common cause: 403 if you're logged in as a non-member non-observer. Try
@@ -2445,7 +2449,7 @@ function ArtifactNode({ artifact, openDetail, depth }) {
     const indent = { marginLeft: `${depth * 1.2}rem` };
     const children = artifact.delegated_to || [];
     return (
-        <div style={{ ...indent, marginBottom: "0.4rem", borderLeft: "2px solid #444", paddingLeft: "0.6rem" }}>
+        <div style={{ ...indent, marginBottom: "0.4rem", borderLeft: "2px solid #3A3A38", paddingLeft: "0.6rem" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
                 <button
                     className="link-btn"
@@ -2454,8 +2458,8 @@ function ArtifactNode({ artifact, openDetail, depth }) {
                 >
                     {open ? "▼" : "▶"}
                 </button>
-                <strong style={{ color: "#cfd" }}>{artifact.title || "(untitled)"}</strong>
-                <span style={{ fontSize: "0.7rem", color: "#888" }}>
+                <strong style={{ color: "#DDF7A8" }}>{artifact.title || "(untitled)"}</strong>
+                <span style={{ fontSize: "0.7rem", color: "#8C8D87" }}>
                     [{ARTIFACT_STATUS_LABEL[artifact.status] || artifact.status}]
                 </span>
                 {artifact.proposal_id && (
@@ -2474,7 +2478,7 @@ function ArtifactNode({ artifact, openDetail, depth }) {
                     background: "#1a1a1a",
                     padding: "0.5rem",
                     fontSize: "0.75rem",
-                    color: "#ddd",
+                    color: "#DCDDD7",
                     margin: "0.3rem 0",
                 }}>{artifact.content}</pre>
             )}
@@ -2539,15 +2543,15 @@ function CommitContainerUI({ container, bbUserId, communityId, onDone }) {
         if (!allFilled || !bbUserId) return null;
         return (
             <button onClick={() => setOrdering(true)}
-                style={{ marginTop: "0.5rem", fontSize: "0.75rem", background: "#4ecca3", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#111" }}>
+                style={{ marginTop: "0.5rem", fontSize: "0.75rem", background: "#C8FF44", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#0D0D0C" }}>
                 📦 Commit Container…
             </button>
         );
     }
 
     return (
-        <div style={{ marginTop: "0.5rem", padding: "0.5rem", border: "1px solid #4ecca3", borderRadius: 6, background: "#0e1a0e" }}>
-            <div style={{ fontWeight: 600, marginBottom: "0.4rem", color: "#4ecca3", fontSize: "0.85rem" }}>
+        <div style={{ marginTop: "0.5rem", padding: "0.5rem", border: "1px solid #C8FF44", borderRadius: 6, background: "#10140A" }}>
+            <div style={{ fontWeight: 600, marginBottom: "0.4rem", color: "#C8FF44", fontSize: "0.85rem" }}>
                 Drag to set commit order:
             </div>
             {items.map((item, i) => (
@@ -2560,24 +2564,24 @@ function CommitContainerUI({ container, bbUserId, communityId, onDone }) {
                         padding: "0.35rem 0.5rem",
                         margin: "0.2rem 0",
                         background: dragIdx === i ? "#1a3a1a" : "#141414",
-                        border: "1px solid #333",
+                        border: "1px solid #2C2C2A",
                         borderRadius: 3,
                         cursor: "grab",
                         fontSize: "0.8rem",
                         display: "flex",
                         gap: "0.5rem",
                     }}>
-                    <span style={{ color: "#888" }}>{i + 1}.</span>
+                    <span style={{ color: "#8C8D87" }}>{i + 1}.</span>
                     <span>{item.title}</span>
                 </div>
             ))}
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
                 <button onClick={handleCommit} disabled={submitting}
-                    style={{ background: "#4ecca3", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#111", fontSize: "0.75rem" }}>
+                    style={{ background: "#C8FF44", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#0D0D0C", fontSize: "0.75rem" }}>
                     {submitting ? "Committing…" : "Commit"}
                 </button>
                 <button onClick={() => setOrdering(false)}
-                    style={{ background: "#333", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#ccc", fontSize: "0.75rem" }}>
+                    style={{ background: "#2C2C2A", border: "none", padding: "0.3rem 0.8rem", borderRadius: 4, cursor: "pointer", color: "#CFD0CA", fontSize: "0.75rem" }}>
                     Cancel
                 </button>
             </div>
@@ -2593,34 +2597,34 @@ function ContainerNode({ container, openDetail, depth, bbUserId, communityId, on
         return <div style={indent}>↻ cycle to {container.title}</div>;
     }
     return (
-        <div style={{ ...indent, marginBottom: "0.6rem", border: "1px solid #333", borderRadius: 4, padding: "0.5rem", background: "#181818" }}>
+        <div style={{ ...indent, marginBottom: "0.6rem", border: "1px solid #2C2C2A", borderRadius: 4, padding: "0.5rem", background: "#121211" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
                 <button className="link-btn" onClick={() => setOpen(!open)} style={{ fontSize: "0.75rem" }}>
                     {open ? "▼" : "▶"}
                 </button>
                 <strong>📦 {container.title}</strong>
-                <span style={{ fontSize: "0.7rem", color: "#fa0" }}>
+                <span style={{ fontSize: "0.7rem", color: "#FFB44A" }}>
                     {CONTAINER_STATUS_LABEL[container.status] || container.status}
                 </span>
-                <span style={{ fontSize: "0.7rem", color: "#888" }}>
+                <span style={{ fontSize: "0.7rem", color: "#8C8D87" }}>
                     {arts.length} artifact{arts.length === 1 ? "" : "s"}
                 </span>
             </div>
             {open && (
                 <div style={{ marginTop: "0.4rem" }}>
-                    {arts.length === 0 && <div style={{ color: "#666", fontSize: "0.75rem" }}>(empty)</div>}
+                    {arts.length === 0 && <div style={{ color: "#7E7F79", fontSize: "0.75rem" }}>(empty)</div>}
                     {arts.map((a) => (
                         <ArtifactNode key={a.id} artifact={a} openDetail={openDetail} depth={depth + 1} />
                     ))}
                     {container.committed_content && container.status === 3 && (
                         <details style={{ marginTop: "0.4rem" }}>
-                            <summary style={{ fontSize: "0.75rem", color: "#9c9" }}>committed content</summary>
+                            <summary style={{ fontSize: "0.75rem", color: "#B9E86A" }}>committed content</summary>
                             <pre style={{
                                 whiteSpace: "pre-wrap",
-                                background: "#0e1a0e",
+                                background: "#10140A",
                                 padding: "0.5rem",
                                 fontSize: "0.75rem",
-                                color: "#cfc",
+                                color: "#DDF7A8",
                             }}>{container.committed_content}</pre>
                         </details>
                     )}
@@ -2708,9 +2712,9 @@ function WorkTab({ communityId, openDetail, bbUserId }) {
                 ))}
             </div>
             {loading && <div>Loading…</div>}
-            {error && <div style={{ color: "#f88" }}>Error: {error}</div>}
+            {error && <div style={{ color: "#FF8F84" }}>Error: {error}</div>}
             {!loading && !error && tree.length === 0 && (
-                <div style={{ color: "#888" }}>No artifact containers in this community.</div>
+                <div style={{ color: "#8C8D87" }}>No artifact containers in this community.</div>
             )}
             {view === "tree" && tree.map((c) => (
                 <ContainerNode key={c.id} container={c} openDetail={openDetail} depth={0}
@@ -2723,19 +2727,19 @@ function WorkTab({ communityId, openDetail, bbUserId }) {
                     background: "#0e0e0e",
                     padding: "1rem",
                     fontSize: "0.85rem",
-                    color: "#eee",
+                    color: "#EAEBE6",
                     lineHeight: 1.5,
                 }}>{manuscript || "(no content yet)"}</pre>
             )}
             {view === "open" && (
                 <div>
-                    <div style={{ marginBottom: "0.5rem", color: "#9c9" }}>
+                    <div style={{ marginBottom: "0.5rem", color: "#B9E86A" }}>
                         {openContainers.length} open container{openContainers.length === 1 ? "" : "s"}
                     </div>
                     {openContainers.map((c) => (
-                        <div key={c.id} style={{ padding: "0.4rem", borderBottom: "1px solid #222" }}>
+                        <div key={c.id} style={{ padding: "0.4rem", borderBottom: "1px solid #1A1A19" }}>
                             <strong>{c.title}</strong>{" "}
-                            <span style={{ color: "#888", fontSize: "0.75rem" }}>
+                            <span style={{ color: "#8C8D87", fontSize: "0.75rem" }}>
                                 ({(c.artifacts || []).length} artifacts)
                             </span>
                         </div>
@@ -2793,21 +2797,21 @@ function MetricsTab({ communityId, agentsByUserId, openDetail }) {
     const healthColor = (val, { good, ok }) => {
         // val is compared: if lower=better, good = low threshold, ok = higher one
         if (val === null || val === undefined) return "var(--text-muted)";
-        if (val <= good) return "#4ecca3";
-        if (val <= ok) return "#f0c040";
-        return "#e94560";
+        if (val <= good) return "#C8FF44";
+        if (val <= ok) return "#FFB44A";
+        return "#FF6B5E";
     };
     const inverseColor = (val, { good, ok }) => {
         // For metrics where HIGHER is better (throughput)
         if (val === null || val === undefined) return "var(--text-muted)";
-        if (val >= good) return "#4ecca3";
-        if (val >= ok) return "#f0c040";
-        return "#e94560";
+        if (val >= good) return "#C8FF44";
+        if (val >= ok) return "#FFB44A";
+        return "#FF6B5E";
     };
 
     if (loading && !data) return <div className="card">Loading metrics…</div>;
-    if (error) return <div className="card" style={{ color: "#f88" }}>Error: {error}</div>;
-    if (!data) return <div className="card" style={{ color: "#888" }}>No metrics yet.</div>;
+    if (error) return <div className="card" style={{ color: "#FF8F84" }}>Error: {error}</div>;
+    if (!data) return <div className="card" style={{ color: "#8C8D87" }}>No metrics yet.</div>;
 
     const cards = [
         {
@@ -2882,7 +2886,7 @@ function MetricsTab({ communityId, agentsByUserId, openDetail }) {
                     <div key={i} title={c.tooltip}
                         style={{
                             padding: "0.9rem",
-                            background: "#181818",
+                            background: "#121211",
                             border: `1px solid ${c.color}33`,
                             borderRadius: 6,
                             borderLeft: `3px solid ${c.color}`,
@@ -2916,7 +2920,7 @@ function ProposalTypeBreakdown({ rows }) {
     if (!rows || rows.length === 0) return null;
     const cell = {
         padding: "6px 10px",
-        borderBottom: "1px solid #2a2a2a",
+        borderBottom: "1px solid #1F1F1D",
         textAlign: "right",
         fontVariantNumeric: "tabular-nums",
         fontSize: "0.85rem",
@@ -2951,27 +2955,27 @@ function ProposalTypeBreakdown({ rows }) {
                         {rows.map(r => {
                             const decided = r.accepted + r.rejected;
                             const acceptShare = decided > 0 ? r.accepted / decided : 0;
-                            const acceptColor = decided === 0 ? "var(--text-muted)" : acceptShare >= 0.6 ? "#4ecca3" : acceptShare >= 0.3 ? "#f0c040" : "#e94560";
+                            const acceptColor = decided === 0 ? "var(--text-muted)" : acceptShare >= 0.6 ? "#C8FF44" : acceptShare >= 0.3 ? "#FFB44A" : "#FF6B5E";
                             return (
                                 <tr key={r.proposal_type}>
                                     <td style={{ ...cell, textAlign: "left", fontWeight: 600, color: "var(--text)" }}>{r.proposal_type}</td>
                                     <td style={cell}>{r.total}</td>
                                     <td style={cell}>{r.avg_support.toFixed(2)}</td>
                                     <td style={{ ...cell, color: r.accepted > 0 ? acceptColor : "var(--text-muted)", fontWeight: r.accepted > 0 ? 600 : 400 }}>{r.accepted || "—"}</td>
-                                    <td style={{ ...cell, color: r.rejected > 0 ? "#e94560" : "var(--text-muted)" }}>{r.rejected || "—"}</td>
-                                    <td style={{ ...cell, color: r.canceled > 0 ? "#888" : "var(--text-muted)" }}>{r.canceled || "—"}</td>
+                                    <td style={{ ...cell, color: r.rejected > 0 ? "#FF6B5E" : "var(--text-muted)" }}>{r.rejected || "—"}</td>
+                                    <td style={{ ...cell, color: r.canceled > 0 ? "#8C8D87" : "var(--text-muted)" }}>{r.canceled || "—"}</td>
                                     <td style={{ ...cell, color: r.in_flight > 0 ? "var(--text)" : "var(--text-muted)" }}>{r.in_flight || "—"}</td>
                                 </tr>
                             );
                         })}
                         {/* Totals */}
-                        <tr style={{ borderTop: "2px solid #444" }}>
+                        <tr style={{ borderTop: "2px solid #3A3A38" }}>
                             <td style={{ ...cell, textAlign: "left", fontWeight: 700, color: "var(--text-muted)" }}>TOTAL</td>
                             <td style={{ ...cell, fontWeight: 700 }}>{totals.total}</td>
                             <td style={{ ...cell, color: "var(--text-muted)" }}>—</td>
-                            <td style={{ ...cell, color: "#4ecca3", fontWeight: 700 }}>{totals.accepted || "—"}</td>
-                            <td style={{ ...cell, color: totals.rejected > 0 ? "#e94560" : "var(--text-muted)", fontWeight: 700 }}>{totals.rejected || "—"}</td>
-                            <td style={{ ...cell, color: totals.canceled > 0 ? "#888" : "var(--text-muted)", fontWeight: 700 }}>{totals.canceled || "—"}</td>
+                            <td style={{ ...cell, color: "#C8FF44", fontWeight: 700 }}>{totals.accepted || "—"}</td>
+                            <td style={{ ...cell, color: totals.rejected > 0 ? "#FF6B5E" : "var(--text-muted)", fontWeight: 700 }}>{totals.rejected || "—"}</td>
+                            <td style={{ ...cell, color: totals.canceled > 0 ? "#8C8D87" : "var(--text-muted)", fontWeight: 700 }}>{totals.canceled || "—"}</td>
                             <td style={{ ...cell, fontWeight: 700 }}>{totals.in_flight || "—"}</td>
                         </tr>
                     </tbody>
@@ -3011,7 +3015,7 @@ function AgentActionStats({ stats, agentsByUserId, openDetail }) {
     });
     const cell = {
         padding: "6px 10px",
-        borderBottom: "1px solid #2a2a2a",
+        borderBottom: "1px solid #1F1F1D",
         textAlign: "right",
         fontVariantNumeric: "tabular-nums",
         fontSize: "0.85rem",
@@ -3039,7 +3043,7 @@ function AgentActionStats({ stats, agentsByUserId, openDetail }) {
                     <tbody>
                         {stats.agents.map(agent => {
                             const okPct = (agent.success_rate * 100).toFixed(0);
-                            const okColor = agent.success_rate >= 0.8 ? "#4ecca3" : agent.success_rate >= 0.5 ? "#f0c040" : "#e94560";
+                            const okColor = agent.success_rate >= 0.8 ? "#C8FF44" : agent.success_rate >= 0.5 ? "#FFB44A" : "#FF6B5E";
                             return (
                                 <tr key={agent.name}>
                                     <td style={{ ...cell, textAlign: "left", fontWeight: 600, color: "var(--text)" }}>
@@ -3053,8 +3057,8 @@ function AgentActionStats({ stats, agentsByUserId, openDetail }) {
                                         )}
                                     </td>
                                     <td style={cell}>{agent.total}</td>
-                                    <td style={{ ...cell, color: "#4ecca3" }}>{agent.successes}</td>
-                                    <td style={{ ...cell, color: agent.failures > 0 ? "#e94560" : "var(--text-muted)" }}>{agent.failures}</td>
+                                    <td style={{ ...cell, color: "#C8FF44" }}>{agent.successes}</td>
+                                    <td style={{ ...cell, color: agent.failures > 0 ? "#FF6B5E" : "var(--text-muted)" }}>{agent.failures}</td>
                                     <td style={{ ...cell, color: okColor, fontWeight: 600 }}>{okPct}%</td>
                                     {allActions.map(a => {
                                         const n = agent.by_action[a] || 0;
@@ -3078,11 +3082,11 @@ function AgentActionStats({ stats, agentsByUserId, openDetail }) {
                             });
                             const okPct = totals.total ? ((totals.successes / totals.total) * 100).toFixed(0) : "0";
                             return (
-                                <tr style={{ borderTop: "2px solid #444" }}>
+                                <tr style={{ borderTop: "2px solid #3A3A38" }}>
                                     <td style={{ ...cell, textAlign: "left", fontWeight: 700, color: "var(--text-muted)" }}>TOTAL</td>
                                     <td style={{ ...cell, fontWeight: 700 }}>{totals.total}</td>
-                                    <td style={{ ...cell, color: "#4ecca3", fontWeight: 700 }}>{totals.successes}</td>
-                                    <td style={{ ...cell, color: totals.failures > 0 ? "#e94560" : "var(--text-muted)", fontWeight: 700 }}>{totals.failures}</td>
+                                    <td style={{ ...cell, color: "#C8FF44", fontWeight: 700 }}>{totals.successes}</td>
+                                    <td style={{ ...cell, color: totals.failures > 0 ? "#FF6B5E" : "var(--text-muted)", fontWeight: 700 }}>{totals.failures}</td>
                                     <td style={{ ...cell, fontWeight: 700 }}>{okPct}%</td>
                                     {allActions.map(a => (
                                         <td key={a} style={{ ...cell, fontWeight: 700 }}>{totals.by_action[a] || "—"}</td>
@@ -3601,8 +3605,8 @@ function ViewerIntroBanner({ memberCount }) {
                 gap: 14,
                 padding: "10px 14px",
                 marginBottom: 16,
-                background: "rgba(233,69,96,0.08)",
-                border: "1px solid rgba(233,69,96,0.25)",
+                background: "rgba(200, 255, 68,0.08)",
+                border: "1px solid rgba(200, 255, 68,0.25)",
                 borderRadius: 8,
                 fontSize: "0.92rem",
                 lineHeight: 1.45,
@@ -3681,13 +3685,13 @@ function DashboardTab({ status, events, proposals, pulses, restarting, openDetai
 // ── Eagerness Bar ──────────────────────────────────────
 function EagernessBar({ eagerness, eagerFront }) {
     const colors = {
-        propose: "#e94560",
-        pulse: "#f0c040",
-        comment: "#90caf9",
-        support: "#4ecca3",
-        observe: "#555",
+        propose: "#EAEBE6",
+        pulse: "#C8FF44",
+        comment: "#8FD3E3",
+        support: "#9AD9B8",
+        observe: "#4A4B45",
     };
-    const color = colors[eagerFront] || "#555";
+    const color = colors[eagerFront] || "#4A4B45";
     const pct = ((eagerness || 5) / 10) * 100;
     return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", minWidth: 76 }}>
@@ -3727,10 +3731,10 @@ function TraitsRadarChart({ traits, agentName }) {
                     {
                         label: agentName,
                         data: values,
-                        backgroundColor: "rgba(233, 69, 96, 0.2)",
-                        borderColor: "rgba(233, 69, 96, 0.8)",
+                        backgroundColor: "rgba(200, 255, 68, 0.2)",
+                        borderColor: "rgba(200, 255, 68, 0.8)",
                         borderWidth: 2,
-                        pointBackgroundColor: "rgba(233, 69, 96, 1)",
+                        pointBackgroundColor: "rgba(200, 255, 68, 1)",
                         pointRadius: 3,
                     },
                 ],
@@ -3744,12 +3748,12 @@ function TraitsRadarChart({ traits, agentName }) {
                         max: 100,
                         ticks: {
                             stepSize: 25,
-                            color: "#666",
+                            color: "#7E7F79",
                             backdropColor: "transparent",
                         },
                         grid: { color: "rgba(255,255,255,0.1)" },
                         angleLines: { color: "rgba(255,255,255,0.1)" },
-                        pointLabels: { color: "#ccc", font: { size: 11 } },
+                        pointLabels: { color: "#CFD0CA", font: { size: 11 } },
                     },
                 },
                 plugins: {
@@ -3936,7 +3940,7 @@ function ChatTab({ communityId, communityName, agentsByUserId, bbUserId, openDet
     return (
         <div className="chat-tab">
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, color: "#e0e0e0" }}>Community Chat</h3>
+                <h3 style={{ margin: 0, color: "#DCDDD7" }}>Community Chat</h3>
                 <span className="chat-scope-badge">📍 {scopeLabel}</span>
             </div>
 
@@ -4689,7 +4693,7 @@ function AuthHeader({ authUser, onLogin, onLogout, onInvite, communityId }) {
             position: "fixed", top: 0, right: 0, zIndex: 700,
             padding: "8px 14px", background: "rgba(15,52,96,.85)",
             borderBottomLeftRadius: 8,
-            border: "1px solid rgba(78,204,163,.25)",
+            border: "1px solid rgba(200, 255, 68,.25)",
             fontSize: "0.82rem", display: "flex", gap: "0.6rem", alignItems: "center",
         }}>
             {authUser ? (
@@ -4697,7 +4701,7 @@ function AuthHeader({ authUser, onLogin, onLogout, onInvite, communityId }) {
                     <span style={{ color: "var(--green)" }}>👤 {authUser.user_name}</span>
                     {communityId && (
                         <button className="link-btn" onClick={onInvite}
-                            style={{ fontSize: "0.78rem", padding: "2px 8px", background: "rgba(78,204,163,.12)", border: "1px solid rgba(78,204,163,.3)", borderRadius: 4 }}>
+                            style={{ fontSize: "0.78rem", padding: "2px 8px", background: "rgba(200, 255, 68,.12)", border: "1px solid rgba(200, 255, 68,.3)", borderRadius: 4 }}>
                             + Invite
                         </button>
                     )}
@@ -4707,7 +4711,7 @@ function AuthHeader({ authUser, onLogin, onLogout, onInvite, communityId }) {
                 </>
             ) : (
                 <button className="link-btn" onClick={onLogin}
-                    style={{ fontSize: "0.82rem", padding: "4px 12px", background: "rgba(233,69,96,.15)", border: "1px solid rgba(233,69,96,.4)", borderRadius: 4, color: "var(--white)" }}>
+                    style={{ fontSize: "0.82rem", padding: "4px 12px", background: "rgba(200, 255, 68,.15)", border: "1px solid rgba(200, 255, 68,.4)", borderRadius: 4, color: "var(--white)" }}>
                     Log in
                 </button>
             )}
@@ -4765,7 +4769,7 @@ function LoginModal({ open, onClose, onLoggedIn }) {
             background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
         }} onClick={onClose}>
             <div style={{
-                background: "var(--bg2, #16213e)", border: "1px solid rgba(78,204,163,.3)",
+                background: "var(--bg2, #0F0F0E)", border: "1px solid rgba(200, 255, 68,.3)",
                 borderRadius: 10, padding: "1.4rem", maxWidth: 420, width: "90%",
             }} onClick={(e) => e.stopPropagation()}>
                 <h3 style={{ marginTop: 0, color: "var(--white)" }}>Log in with a magic link</h3>
@@ -4773,7 +4777,7 @@ function LoginModal({ open, onClose, onLoggedIn }) {
                     <form onSubmit={submit}>
                         <input type="email" required placeholder="you@example.com"
                             value={email} onChange={(e) => setEmail(e.target.value)}
-                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #444", background: "#111", color: "#eee", fontSize: "0.9rem" }} />
+                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #3A3A38", background: "#0D0D0C", color: "#EAEBE6", fontSize: "0.9rem" }} />
                         <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
                             <button type="submit" disabled={sending || !email}
                                 className="cta-btn" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>
@@ -4787,7 +4791,7 @@ function LoginModal({ open, onClose, onLoggedIn }) {
                 )}
                 {link && (
                     <div>
-                        <p style={{ color: "#aaa", fontSize: "0.85rem" }}>
+                        <p style={{ color: "#A9AAA4", fontSize: "0.85rem" }}>
                             In production this would be emailed. For dev, click to log in:
                         </p>
                         <button onClick={goVerify} className="cta-btn"
@@ -4796,7 +4800,7 @@ function LoginModal({ open, onClose, onLoggedIn }) {
                         </button>
                     </div>
                 )}
-                {error && <div style={{ color: "#f88", marginTop: "0.6rem", fontSize: "0.85rem" }}>{error}</div>}
+                {error && <div style={{ color: "#FF8F84", marginTop: "0.6rem", fontSize: "0.85rem" }}>{error}</div>}
             </div>
         </div>
     );
@@ -4828,19 +4832,19 @@ function InviteModal({ open, onClose, communityId }) {
             background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
         }} onClick={onClose}>
             <div style={{
-                background: "var(--bg2, #16213e)", border: "1px solid rgba(78,204,163,.3)",
+                background: "var(--bg2, #0F0F0E)", border: "1px solid rgba(200, 255, 68,.3)",
                 borderRadius: 10, padding: "1.4rem", maxWidth: 520, width: "90%",
             }} onClick={(e) => e.stopPropagation()}>
                 <h3 style={{ marginTop: 0, color: "var(--white)" }}>Invite someone to this community</h3>
                 {inviteUrl ? (
                     <>
-                        <p style={{ fontSize: "0.85rem", color: "#aaa" }}>
+                        <p style={{ fontSize: "0.85rem", color: "#A9AAA4" }}>
                             Share this link. Anyone who opens it can claim a spot — a Membership
                             proposal will be filed, and the community votes like any other.
                         </p>
                         <input readOnly value={inviteUrl}
                             onClick={(e) => e.target.select()}
-                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #444", background: "#111", color: "#4ecca3", fontSize: "0.82rem", fontFamily: "monospace" }} />
+                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #3A3A38", background: "#0D0D0C", color: "#C8FF44", fontSize: "0.82rem", fontFamily: "monospace" }} />
                         <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
                             <button onClick={() => { navigator.clipboard?.writeText(inviteUrl); }}
                                 className="cta-btn" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>
@@ -4852,9 +4856,9 @@ function InviteModal({ open, onClose, communityId }) {
                         </div>
                     </>
                 ) : error ? (
-                    <div style={{ color: "#f88", fontSize: "0.85rem" }}>Failed: {error}</div>
+                    <div style={{ color: "#FF8F84", fontSize: "0.85rem" }}>Failed: {error}</div>
                 ) : (
-                    <div style={{ color: "#aaa" }}>Creating invite…</div>
+                    <div style={{ color: "#A9AAA4" }}>Creating invite…</div>
                 )}
             </div>
         </div>
@@ -4919,7 +4923,7 @@ function InviteClaimModal({ code, onClose, onLoggedIn }) {
             background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
         }}>
             <div style={{
-                background: "var(--bg2, #16213e)", border: "1px solid rgba(78,204,163,.3)",
+                background: "var(--bg2, #0F0F0E)", border: "1px solid rgba(200, 255, 68,.3)",
                 borderRadius: 10, padding: "1.4rem", maxWidth: 460, width: "90%",
             }}>
                 {preview && !preview.claimed && (
@@ -4928,19 +4932,19 @@ function InviteClaimModal({ code, onClose, onLoggedIn }) {
                     </h3>
                 )}
                 {preview && preview.claimed && (
-                    <div style={{ color: "#f88" }}>This invite has already been used.</div>
+                    <div style={{ color: "#FF8F84" }}>This invite has already been used.</div>
                 )}
-                {!preview && !error && <div style={{ color: "#aaa" }}>Loading invite…</div>}
-                {error && <div style={{ color: "#f88", fontSize: "0.85rem" }}>{error}</div>}
+                {!preview && !error && <div style={{ color: "#A9AAA4" }}>Loading invite…</div>}
+                {error && <div style={{ color: "#FF8F84", fontSize: "0.85rem" }}>{error}</div>}
                 {preview && !preview.claimed && !verifyLink && (
                     <form onSubmit={submit}>
-                        <p style={{ fontSize: "0.85rem", color: "#aaa" }}>
+                        <p style={{ fontSize: "0.85rem", color: "#A9AAA4" }}>
                             A Membership proposal will be filed on your behalf. Existing
                             members vote — if they approve, you're in.
                         </p>
                         <input type="email" required placeholder="you@example.com"
                             value={email} onChange={(e) => setEmail(e.target.value)}
-                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #444", background: "#111", color: "#eee", fontSize: "0.9rem" }} />
+                            style={{ width: "100%", padding: "0.5rem", borderRadius: 4, border: "1px solid #3A3A38", background: "#0D0D0C", color: "#EAEBE6", fontSize: "0.9rem" }} />
                         <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.8rem" }}>
                             <button type="submit" disabled={submitting || !email}
                                 className="cta-btn" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}>
@@ -5261,10 +5265,10 @@ function App() {
                     style={{
                         position: "fixed", right: 20, bottom: 20, zIndex: 55,
                         display: "flex", alignItems: "center", gap: 8,
-                        background: "#e94560", color: "#fff", border: "none",
+                        background: "#C8FF44", color: "#0A0A0A", border: "none",
                         borderRadius: 999, padding: "12px 20px", cursor: "pointer",
                         fontSize: "0.95rem", fontWeight: 700,
-                        boxShadow: "0 6px 22px rgba(233,69,96,0.5)",
+                        boxShadow: "0 6px 22px rgba(200,255,68,0.4)",
                     }}
                 >▶ Run the simulation</button>
             )}
