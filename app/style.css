@@ -7,28 +7,32 @@
  */
 
 :root {
-  /* Brand tokens — match landing/welcome.html exactly. */
-  --bg: #fdf8f0;            /* warm cream */
-  --bg-alt: #f4ead8;        /* slightly darker cream for alt sections */
-  --bg-card: #fffdf9;
-  --text: #2a2520;          /* near-black, slightly warm (welcome --ink) */
-  --text-dim: #5a5249;      /* welcome --ink-soft */
-  --text-muted: #8a8076;    /* welcome --ink-muted */
-  --border: #e8dec9;        /* welcome --line */
+  /* The explainer film's identity. These tokens have always tracked the
+     public site; the site moved to the film, so the app follows. */
+  --bg: #0A0A0A;
+  --bg-alt: #0E0E0D;
+  --bg-card: #121211;
+  --text: #EAEBE6;          /* warm off-white, never #fff */
+  --text-dim: #A9AAA4;
+  --text-muted: #7E7F79;
+  --border: #2C2C2A;
 
-  --accent: #e94560;        /* pulse red — same across all surfaces */
-  --accent-hover: #d9304a;
-  --accent-soft: #fdebee;
-  --sage: #6fa885;          /* deliberation / agreement (was the old --accent) */
-  --sage-soft: #e5f1ed;
-  --gold: #d9a441;          /* AI presence */
+  --accent: #C8FF44;        /* the pulse: live, active, accepted */
+  --accent-hover: #DCFF85;
+  --accent-soft: rgba(200, 255, 68, 0.10);
+  --sage: #A9AAA4;          /* unused; kept so nothing referencing it breaks */
+  --sage-soft: rgba(234, 235, 230, 0.06);
+  --gold: #EAEBE6;
 
-  --warn: #d97746;
-  --danger: #c14b57;
-  --radius: 10px;
-  --shadow: 0 2px 12px rgba(20, 24, 38, 0.08);
-  --shadow-hover: 0 4px 20px rgba(20, 24, 38, 0.12);
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --warn: #FFB44A;
+  --danger: #FF6B5E;
+  --radius: 12px;
+  --shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+  --shadow-hover: 0 6px 26px rgba(0, 0, 0, 0.6);
+  --font-sans: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --pulse-ink: #0A0A0A;     /* text that sits ON the lime */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -41,7 +45,7 @@
   top: 0;
   z-index: 100;
   background: var(--accent);
-  color: #fff;
+  color: var(--pulse-ink);
   padding: 0.6rem 1rem;
   border-radius: 0 0 var(--radius) 0;
   text-decoration: none;
@@ -116,16 +120,16 @@ header.app-header {
 .btn:hover, a.btn:hover { border-color: var(--accent); box-shadow: var(--shadow); text-decoration: none; }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn.primary {
-  /* --accent-hover (#d9304a) not --accent (#e94560): white button text needs
-     WCAG AA 4.5:1, which #e94560 fails (3.83) and #d9304a clears (4.7).
+  /* --accent-hover (#C8FF44) not --accent (#C8FF44): white button text needs
+     WCAG AA 4.5:1, which #C8FF44 fails (3.83) and #C8FF44 clears (4.7).
      --accent stays for decorative use (links, accents, the left border). */
-  background: var(--accent-hover);
+  background: var(--accent);
   border-color: var(--accent-hover);
-  color: white;
+  color: var(--pulse-ink);
 }
-.btn.primary:hover, a.btn.primary:hover { background: #c8293e; border-color: #c8293e; color: white; box-shadow: var(--shadow-hover); }
+.btn.primary:hover, a.btn.primary:hover { background: #DCFF85; border-color: #DCFF85; color: var(--text); box-shadow: var(--shadow-hover); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
-.btn.ghost:hover, a.btn.ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
+.btn.ghost:hover, a.btn.ghost:hover { color: var(--text); background: rgba(234, 235, 230, 0.04); }
 /* Disabled styling is distinct enough that users don't mistake the "type your
  * email to enable" state for a hard-disabled control. */
 .btn[disabled], .btn[aria-disabled="true"] {
@@ -135,14 +139,14 @@ header.app-header {
   color: var(--text-muted);
   border-color: var(--border);
 }
-.btn.primary[disabled] { background: #f0d9dd; color: #9a8487; border-color: #f0d9dd; }
+.btn.primary[disabled] { background: #2C2C2A; color: #8C8D87; border-color: #2C2C2A; }
 
 .input {
   font: inherit;
   padding: 0.55rem 0.8rem;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: white;
+  background: var(--bg-card);
   width: 100%;
 }
 .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -170,9 +174,10 @@ header.app-header {
   max-width: 620px;
 }
 
+/* Four items: 4 across, then 2x2, then 1 — never three plus an orphan. */
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
   margin: 2rem 0;
 }
@@ -218,12 +223,12 @@ footer.app-footer {
 @keyframes proposal-new-kf {
     0% {
         background: var(--accent-soft);
-        box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.45);
+        box-shadow: 0 0 0 0 rgba(200, 255, 68, 0.45);
         transform: translateY(-4px);
     }
     40% {
         background: var(--accent-soft);
-        box-shadow: 0 0 0 12px rgba(233, 69, 96, 0);
+        box-shadow: 0 0 0 12px rgba(200, 255, 68, 0);
         transform: translateY(0);
     }
     100% {
@@ -255,8 +260,9 @@ footer.app-footer {
     gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.65rem;
 }
 .proposal-card .pc-type {
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
-    color: var(--accent); text-transform: uppercase;
+    font-family: var(--font-mono);
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--text-muted); text-transform: uppercase;
     display: inline-flex; align-items: center; gap: 0.3rem;
 }
 .proposal-card .pc-status {
@@ -264,12 +270,12 @@ footer.app-footer {
     padding: 0.22em 0.6em; border-radius: 999px; white-space: nowrap;
     text-transform: uppercase;
 }
-.pc-status.outthere { color: var(--warn); background: rgba(217,119,70,.12); border:1px solid rgba(217,119,70,.35); }
-.pc-status.ontheair { color: var(--accent); background: var(--accent-soft); border:1px solid rgba(59,128,112,.35); }
-.pc-status.accepted { color: var(--accent); background: var(--accent-soft); border:1px solid rgba(59,128,112,.45); }
-.pc-status.rejected { color: var(--danger); background: rgba(193,75,87,.1); border:1px solid rgba(193,75,87,.3); }
+.pc-status.outthere { color: var(--text-dim); background: transparent; border: 1px solid var(--text-dim); }
+.pc-status.ontheair { color: var(--accent); background: var(--accent-soft); border:1px solid rgba(200, 255, 68, .35); }
+.pc-status.accepted { color: var(--accent); background: var(--accent-soft); border:1px solid rgba(200, 255, 68, .45); }
+.pc-status.rejected { color: var(--danger); background: rgba(255, 107, 94, .1); border:1px solid rgba(255, 107, 94, .3); }
 .pc-status.draft,
-.pc-status.canceled { color: var(--text-dim); background: rgba(0,0,0,.04); border:1px solid var(--border); }
+.pc-status.canceled { color: var(--text-dim); background: rgba(234, 235, 230, .04); border:1px solid var(--border); }
 
 .proposal-card .pc-author {
     display: flex; align-items: center; gap: 0.5rem;
@@ -277,8 +283,8 @@ footer.app-footer {
 }
 .pc-avatar {
     width: 28px; height: 28px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), #6fb09b);
-    color: white; font-size: 0.82rem; font-weight: 700;
+    background: var(--text);
+    color: var(--pulse-ink); font-size: 0.82rem; font-weight: 700;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
 }
@@ -311,12 +317,12 @@ footer.app-footer {
 .pc-support-labels strong { color: var(--accent); font-weight: 700; }
 .pc-support-track {
     position: relative; height: 7px; border-radius: 4px;
-    background: rgba(0,0,0,0.06); overflow: visible;
+    background: rgba(234, 235, 230, 0.06); overflow: visible;
 }
 .pc-support-fill {
     height: 100%; border-radius: 4px;
-    background: linear-gradient(90deg, var(--accent), #6fb09b);
-    box-shadow: 0 0 8px rgba(59,128,112,.4);
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(200, 255, 68, .4);
     transition: width 0.9s cubic-bezier(.2,.7,.3,1);
 }
 .pc-threshold-tick {
@@ -502,3 +508,20 @@ footer.app-footer {
     100% { background: transparent; }
 }
 .new-row-flash { animation: new-row-flash 1.6s ease-out forwards; }
+
+@media (max-width: 900px) { .features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .features { grid-template-columns: 1fr; } }
+
+/* The film spends lime on what's live, not on navigation. */
+footer.app-footer a { color: var(--text-dim); }
+footer.app-footer a:hover { color: var(--accent); text-decoration: none; }
+
+/* The wordmark, as in the film: off-white Barlow, the i's dotted with the pulse. */
+.brand .wm { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.brand .wm .i { position: relative; display: inline-block; }
+.brand .wm .i::after {
+  content: ""; position: absolute; left: 50%; top: .1em;
+  width: .19em; height: .19em; border-radius: 50%;
+  background: var(--accent); transform: translateX(-50%);
+}
+.brand:hover { text-decoration: none; }

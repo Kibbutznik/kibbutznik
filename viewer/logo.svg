@@ -1,13 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- OPTION 6: "Simple Pulse Star"
-       A 6-pointed star made of 3 overlapping diamonds with a pulse dot center.
-       Minimal, geometric, very clean at favicon size. -->
-  <!-- Three overlapping diamonds -->
-  <polygon points="256,70 340,256 256,442 172,256" fill="#4ecca3" opacity="0.8"/>
-  <polygon points="256,70 340,256 256,442 172,256" fill="#e94560" opacity="0.65" transform="rotate(60,256,256)"/>
-  <polygon points="256,70 340,256 256,442 172,256" fill="#f0c040" opacity="0.6" transform="rotate(-60,256,256)"/>
-  <!-- Center pulse dot with glow -->
-  <circle cx="256" cy="256" r="36" fill="#e94560" opacity="0.15"/>
-  <circle cx="256" cy="256" r="28" fill="#fff"/>
-  <circle cx="256" cy="256" r="16" fill="#e94560"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The dotted ı from the wordmark: the pulse is the dot on the i. -->
+  <rect width="64" height="64" rx="14" fill="#0A0A0A"/>
+  <rect x="26" y="26" width="12" height="28" rx="1.5" fill="#EAEBE6"/>
+  <circle cx="32" cy="15.5" r="7.5" fill="#C8FF44"/>
 </svg>

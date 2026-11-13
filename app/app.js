@@ -104,9 +104,9 @@ function ToastHost() {
         }}>
             {items.map(t => {
                 const palette = {
-                    success: { bg: "#e6f7ef", border: "#4ecca3", fg: "#0c6047" },
-                    error:   { bg: "#ffe5e9", border: "#c14b57", fg: "#7a1a24" },
-                    info:    { bg: "#eef2ff", border: "#6b7fd7", fg: "#2a3566" },
+                    success: { bg: "rgba(200, 255, 68, 0.10)", border: "#C8FF44", fg: "#C8FF44" },
+                    error:   { bg: "rgba(255, 107, 94, 0.12)", border: "#FF6B5E", fg: "#FF8F84" },
+                    info:    { bg: "rgba(143, 211, 227, 0.10)", border: "#8FD3E3", fg: "#8FD3E3" },
                 }[t.kind] || {};
                 return (
                     <div key={t.id}
@@ -117,7 +117,7 @@ function ToastHost() {
                              background: palette.bg, color: palette.fg,
                              border: `1px solid ${palette.border}`,
                              padding: "0.6rem 0.9rem", borderRadius: 8,
-                             boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+                             boxShadow: "0 4px 14px rgba(234, 235, 230, 0.08)",
                              fontSize: "0.88rem", lineHeight: 1.35,
                          }}>
                         {t.message}
@@ -256,7 +256,7 @@ function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
     return (
         <div className="card" style={{
             padding: "0.6rem 0.9rem", marginBottom: "1rem",
-            background: ready ? "rgba(78,204,163,0.1)" : "var(--bg-card)",
+            background: ready ? "rgba(200, 255, 68, 0.1)" : "var(--bg-card)",
         }}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ flex: 1 }}>
@@ -268,12 +268,12 @@ function PulseBar({ communityId, user, imMember, pulses, members, onChanged }) {
                         </span>
                     </div>
                     <div style={{
-                        height: 6, background: "rgba(0,0,0,0.08)",
+                        height: 6, background: "rgba(234, 235, 230, 0.08)",
                         borderRadius: 3, marginTop: 6, overflow: "hidden",
                     }}>
                         <div style={{
                             width: `${pct}%`, height: "100%",
-                            background: ready ? "var(--accent)" : "var(--warn)",
+                            background: ready ? "var(--accent)" : "rgba(200, 255, 68, 0.5)",
                             transition: "width .3s",
                         }} />
                     </div>
@@ -368,7 +368,7 @@ function NewsTicker({ events, communityId }) {
             {open && (
                 <div style={{
                     maxHeight: 240, overflow: "auto", marginTop: "0.5rem",
-                    fontSize: "0.8rem", fontFamily: "ui-monospace, Menlo, monospace",
+                    fontSize: "0.8rem", fontFamily: "'JetBrains Mono', ui-monospace, Menlo, monospace",
                 }}>
                     {events.slice(0, 30).map((e, i) => (
                         <div key={i} className="muted" style={{ padding: "0.15rem 0" }}>
@@ -452,8 +452,8 @@ function Header({ user, onLogout }) {
                     ← <span className="home-link-label">Home</span>
                 </a>
                 <a href="#/" className="brand" aria-label="Kibbutznik home">
-                    <img src="/favicon.svg" className="brand-mark" alt="" />
-                    <span>Kibbutznik</span>
+                    {/* The film's wordmark: dotless ı's re-dotted with the pulse. */}
+                    <span className="wm" aria-hidden="true">k<span className="i">ı</span>bbutzn<span className="i">ı</span>k</span>
                 </a>
             </div>
             <div className="row">
@@ -488,7 +488,7 @@ function ErrorBanner({ error }) {
             role="alert"
             style={{
                 background: "var(--accent-soft)",
-                border: "1px solid #f0c6cd",
+                border: "1px solid rgba(255, 107, 94, 0.35)",
                 color: "var(--text)",
                 padding: "0.7rem 0.95rem",
                 borderRadius: "var(--radius)",
@@ -790,7 +790,7 @@ function MembershipNode({ membership: m, depth, byParent, stats }) {
                             <strong>{m.community_name}</strong>
                             <span className="pill">{isAction ? "action" : "member"}</span>
                             {pulseReady && (
-                                <span className="pill" style={{ background: "rgba(240,192,64,0.2)", color: "var(--warn)" }}>
+                                <span className="pill" style={{ background: "rgba(200, 255, 68, 0.15)", color: "var(--accent)" }}>
                                     ⚡ ready
                                 </span>
                             )}
@@ -806,12 +806,12 @@ function MembershipNode({ membership: m, depth, byParent, stats }) {
                                     Next <Term name="Pulse">pulse</Term>: {nextPulse.support_count}/{nextPulse.threshold}
                                 </div>
                                 <div style={{
-                                    height: 4, background: "rgba(0,0,0,0.08)",
+                                    height: 4, background: "rgba(234, 235, 230, 0.08)",
                                     borderRadius: 2, overflow: "hidden",
                                 }}>
                                     <div style={{
                                         width: `${pulsePct}%`, height: "100%",
-                                        background: pulseReady ? "var(--accent)" : "var(--warn)",
+                                        background: pulseReady ? "var(--accent)" : "rgba(200, 255, 68, 0.5)",
                                     }} />
                                 </div>
                             </div>
@@ -936,7 +936,7 @@ function DashboardPage({ user }) {
             {(attention.unsupportedCount > 0 || attention.readyPulses > 0) && (
                 <section style={{ marginBottom: "1.5rem" }}>
                     <div className="card" style={{
-                        background: "rgba(240, 192, 64, 0.12)",
+                        background: "rgba(255, 180, 74, 0.12)",
                         borderLeft: "3px solid var(--warn)",
                     }}>
                         <div className="bold" style={{ marginBottom: "0.3rem" }}>
@@ -1195,7 +1195,7 @@ function CreateKibbutzPage({ user }) {
 
 // ── Kibbutz view ────────────────────────────────────────
 const PROPOSAL_STATUS_COLORS = {
-    OutThere: "var(--warn)",
+    OutThere: "var(--text-dim)",   // the film draws OUT THERE as a plain outline
     OnTheAir: "var(--accent)",
     Accepted: "var(--accent)",
     Rejected: "var(--danger)",
@@ -1452,7 +1452,7 @@ function KibbutzPage({ communityId, user, onRefreshMembership }) {
                     <div className="bold" style={{ marginBottom: 4 }}>Invite link ready</div>
                     <input className="input" readOnly value={inviteUrl}
                            onClick={(e) => e.target.select()}
-                           style={{ fontFamily: "monospace", fontSize: "0.85rem" }} />
+                           style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.85rem" }} />
                     <div className="row" style={{ marginTop: "0.5rem" }}>
                         <button className="btn" onClick={() => navigator.clipboard?.writeText(inviteUrl)}>📋 Copy</button>
                         <button className="btn ghost" onClick={() => setInviteUrl(null)}>Close</button>
@@ -1601,7 +1601,7 @@ function ApplyModal({ community, user, pitch, setPitch, isFinancial, membershipF
                 </div>
                 {isFinancial && membershipFee > 0 && (
                     <div className="card" style={{
-                        background: "rgba(240,192,64,0.12)",
+                        background: "rgba(255, 180, 74, 0.12)",
                         borderLeft: "3px solid var(--warn)",
                         marginBottom: "0.8rem", padding: "0.7rem 0.9rem",
                     }}>
@@ -1843,7 +1843,7 @@ function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
         <div style={{ marginLeft: depth > 0 ? 14 : 0 }}>
             <div style={{
                 padding: "0.5rem 0.7rem",
-                background: "rgba(0,0,0,0.04)",
+                background: "rgba(234, 235, 230, 0.04)",
                 borderRadius: 6,
                 borderLeft: depth > 0 ? "2px solid var(--border)" : "none",
             }}>
@@ -1875,7 +1875,7 @@ function CommentNode({ c, byParent, user, canReply, onReload, depth }) {
                                     onClick={() => vote(-1)}
                                     style={{
                                         padding: "0 6px", fontSize: "0.8rem",
-                                        color: myVote === -1 ? "var(--danger, #c33)" : undefined,
+                                        color: myVote === -1 ? "var(--danger, #FF6B5E)" : undefined,
                                         fontWeight: myVote === -1 ? 700 : undefined,
                                     }}
                                     title={myVote === -1 ? "Click to remove your downvote" : "Downvote"}>▼</button>
@@ -2443,7 +2443,7 @@ function ChatPanel({ communityId, user, imMember, members, liveEvents }) {
                         <div key={m.id} style={{
                             alignSelf: mine ? "flex-end" : "flex-start",
                             maxWidth: "80%",
-                            background: mine ? "var(--accent-soft)" : "rgba(0,0,0,0.04)",
+                            background: mine ? "var(--accent-soft)" : "rgba(234, 235, 230, 0.04)",
                             borderRadius: 10,
                             padding: "0.5rem 0.8rem",
                         }}>
@@ -2689,7 +2689,7 @@ function VariablesPanel({ communityId, variables, imMember, user, onChanged }) {
                                             <div className="bold" style={{ fontSize: "0.9rem" }}>{n}</div>
                                             {editing !== n && (
                                                 <code style={{
-                                                    background: "rgba(0,0,0,0.04)",
+                                                    background: "rgba(234, 235, 230, 0.04)",
                                                     padding: "1px 6px", borderRadius: 3,
                                                     fontSize: "0.82rem",
                                                 }}>{variables[n] || "(empty)"}</code>
@@ -2883,7 +2883,7 @@ function ContainerCard({ container, nameFor, depth }) {
                                         {a.title || "Untitled"}
                                     </div>
                                     <span className="pill" style={{
-                                        background: a.status === 2 ? "var(--accent)" : "rgba(0,0,0,0.06)",
+                                        background: a.status === 2 ? "var(--accent)" : "rgba(234, 235, 230, 0.06)",
                                         color: a.status === 2 ? "white" : "var(--text-dim)",
                                     }}>
                                         {STATUS[a.status] || a.status}
@@ -3622,7 +3622,7 @@ function ApiTokenManager() {
                     <div className="bold">Save this now — it won't be shown again:</div>
                     <input className="input" readOnly value={justCreated}
                            onClick={(e) => e.target.select()}
-                           style={{ fontFamily: "monospace", marginTop: 6 }} />
+                           style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", marginTop: 6 }} />
                     <div className="row" style={{ marginTop: "0.5rem" }}>
                         <button className="btn" onClick={() => navigator.clipboard?.writeText(justCreated)}>
                             📋 Copy
@@ -3691,7 +3691,7 @@ function SkillsPage() {
                     tools to any MCP host. The agent reasons locally; the server
                     is a thin, authenticated wrapper over our HTTP API.
                 </p>
-                <pre style={{ background: "#0f1a1a", color: "#9cd", padding: "0.8rem", borderRadius: 6, overflow: "auto", fontSize: "0.85rem" }}>
+                <pre style={{ background: "#0D0D0C", color: "#8FD3E3", padding: "0.8rem", borderRadius: 6, overflow: "auto", fontSize: "0.85rem" }}>
 {`pip install kibbutznik-mcp
 # add to your MCP host config:
 {
