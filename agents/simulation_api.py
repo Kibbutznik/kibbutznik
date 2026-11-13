@@ -362,7 +362,11 @@ LLM_PRESETS = {
     # before adding a preset — a dead id fails only at switch time.
     #
     # gpt-oss-20b: the `:nitro` lane is gone; the plain id is live and
-    # cheap ($0.03/$0.13 per M). MoE, 3.6B active params — fast.
+    # cheap ($0.03/$0.13 per M). MoE, 3.6B active params — fast. It 400s
+    # on `reasoning: {enabled: false}`; OPENROUTER_MODEL_OVERRIDES asks for
+    # `effort: low` instead. Bake-off 2026-11-13: passes, the cheapest
+    # model that does ($0.59 per 1k turns), but weaker judgment than the
+    # default — backed 11% of clearly bad proposals, never objected.
     "or-gpt-oss-20b":       {"backend": "openrouter", "model": "openai/gpt-oss-20b",                         "think": False},
     # Free tier (rate-limited) — the credit-exhaustion lifeboat. When the
     # OpenRouter balance hits zero EVERY paid preset returns 402 and every
@@ -376,22 +380,25 @@ LLM_PRESETS = {
     # Qwen3.7 Flash — cheapest capable option on the catalog
     # ($0.03/$0.13 per M, 1M ctx). NOTE: it's a reasoning + vision model;
     # reasoning traces bill at OUTPUT rates, so measure real cost per run
-    # before assuming the headline price. Untested on the action format.
+    # before assuming the headline price. Bake-off 2026-11-13: backed only
+    # 22% of clearly GOOD proposals and idled on an empty board — fails.
     "or-qwen3.7-flash":     {"backend": "openrouter", "model": "qwen/qwen3.7-flash",                         "think": False},
-    # Mercury 2.5 (Inception) — diffusion LLM, 260k ctx.
-    # $0.04/$0.15 per M: ~3.7x cheaper IN and 4x cheaper OUT than
-    # `mistral-small-2603`, and our prompt is input-dominated (~10k in,
-    # ~200 out), so this is close to a 3.7x cost cut per turn.
-    # IMPORTANT: it reasons by DEFAULT and will spend the entire
-    # max_tokens budget on a reasoning trace, returning `content: null`.
-    # `_call_openrouter` sends `reasoning: {enabled: false}` for every
-    # OpenRouter call, which is what makes this preset usable — verified
-    # against the live API 2026-09-10 (reasoning on: 499/512 tokens
-    # reasoning, content null; reasoning off: clean JSON array, 0
-    # reasoning tokens). NOT yet validated on a full simulation round —
-    # see the lunaris entry above for how a model can pass a smoke test
-    # and still fail at copying real ids.
-    "or-mercury-2.5":       {"backend": "openrouter", "model": "inception/mercury-2.5",                      "think": False},
+    # Mercury 2.5 (Inception) was the default from 2026-09-10 until
+    # OpenRouter retired it in 2026-11: every turn 404'd and the sim quietly
+    # degraded to do_nothing. Inception has no models on OpenRouter now.
+    # Its id is pinned in the retired list in tests/test_agents.py.
+    #
+    # DeepSeek V4.1 Flash — the default since 2026-11-13, picked by
+    # scripts/llm_bakeoff.py over eight other cheap candidates, on live
+    # community state plus the synthetic judge/busy/empty scenarios:
+    # backed 92% of clearly good proposals and 0% of clearly bad ones,
+    # created the most proposals of any model, 0 invented ids, p90 3.5s,
+    # $0.39 per 1k turns measured (≈$0.65 at list price). Needs the
+    # cheapest-first routing in OPENROUTER_MODEL_OVERRIDES to stay cheap.
+    # Pinned to the dated id on purpose: the `~deepseek/deepseek-flash-latest`
+    # alias would survive the next retirement but would also change the
+    # model under the sim without a bake-off.
+    "or-deepseek-v4.1-flash": {"backend": "openrouter", "model": "deepseek/deepseek-v4.1-flash-1017",   "think": False},
     # Gemini 3.5 Flash Lite — live successor to the retired 2.5 preview.
     # "Lite" is misleading: $0.30/$2.50 per M, i.e. output costs ~4x our
     # current model. Kept as an option, NOT a cost saving.

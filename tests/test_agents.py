@@ -592,6 +592,7 @@ class TestLLMPresets:
             "openai/gpt-oss-20b:nitro",
             "sao10k/l3-lunaris-8b",
             "openai/gpt-oss-20b:free",
+            "inception/mercury-2.5",  # retired 2026-11; stalled the live sim
         }
         in_use = {cfg["model"] for cfg in LLM_PRESETS.values()}
         assert not (in_use & retired), (
@@ -607,14 +608,18 @@ class TestLLMPresets:
                 if c["backend"] == "openrouter" and c["model"].endswith(":free")]
         assert free, "no free-tier OpenRouter preset registered"
 
-    def test_mercury_preset_registered_and_shaped(self):
-        """mercury-2.5 is only usable because `_call_openrouter` disables
-        reasoning; if someone adds the preset without that, every turn
-        returns `content: null`."""
+    def test_default_deepseek_preset_registered_and_shaped(self):
+        """The bake-off winner that replaced the retired mercury-2.5. Its
+        cost depends on cheapest-first provider routing, so the preset and
+        the override have to travel together."""
+        from agents.decision_engine import openrouter_payload
         from agents.simulation_api import LLM_PRESETS
-        cfg = LLM_PRESETS["or-mercury-2.5"]
+        cfg = LLM_PRESETS["or-deepseek-v4.1-flash"]
         assert cfg["backend"] == "openrouter"
-        assert cfg["model"] == "inception/mercury-2.5"
+        assert cfg["model"] == "deepseek/deepseek-v4.1-flash-1017"
+        body = openrouter_payload(cfg["model"], "prompt")
+        assert body["provider"] == {"sort": "price"}
+        assert body["reasoning"] == {"enabled": False}
 
     def test_all_presets_have_required_shape(self):
         """Every preset must carry a backend + model — the switcher
@@ -1314,6 +1319,64 @@ class TestOpenRouterEmptyContent:
         assert seen["reasoning"] == {"enabled": False}
 
 
+class TestOpenRouterModelOverrides:
+    """Per-model request fields layered over the shared payload. Found by
+    scripts/llm_bakeoff.py: gpt-oss-20b answers EVERY request that turns
+    reasoning off with HTTP 400 ("Reasoning is mandatory"), so its preset
+    was dead on arrival; DeepSeek's cost depends on provider routing."""
+
+    def test_default_payload_turns_reasoning_off_and_leaves_routing_alone(self):
+        from agents.decision_engine import openrouter_payload
+        body = openrouter_payload("mistralai/mistral-small-2603", "p")
+        assert body["reasoning"] == {"enabled": False}
+        assert "provider" not in body
+        assert body["messages"][1] == {"role": "user", "content": "p"}
+
+    def test_gpt_oss_asks_for_low_reasoning_instead_of_none(self):
+        from agents.decision_engine import openrouter_payload
+        body = openrouter_payload("openai/gpt-oss-20b", "p")
+        assert body["reasoning"] == {"effort": "low"}
+
+    def test_payload_mutation_does_not_leak_into_the_table(self):
+        from agents.decision_engine import (
+            OPENROUTER_MODEL_OVERRIDES,
+            openrouter_payload,
+        )
+        body = openrouter_payload("deepseek/deepseek-v4.1-flash-1017", "p")
+        body["provider"]["sort"] = "latency"
+        assert OPENROUTER_MODEL_OVERRIDES["deepseek/deepseek-v4.1-flash-1017"]["provider"] == {"sort": "price"}
+
+    def test_every_override_belongs_to_a_preset(self):
+        """An override for a model no preset uses is dead config — usually
+        a sign the preset was repointed and the override left behind."""
+        from agents.decision_engine import OPENROUTER_MODEL_OVERRIDES
+        from agents.simulation_api import LLM_PRESETS
+        in_use = {c["model"] for c in LLM_PRESETS.values() if c["backend"] == "openrouter"}
+        assert set(OPENROUTER_MODEL_OVERRIDES) <= in_use, (
+            f"orphaned overrides: {sorted(set(OPENROUTER_MODEL_OVERRIDES) - in_use)}")
+
+    @pytest.mark.asyncio
+    async def test_call_openrouter_sends_the_override(self):
+        from agents.decision_engine import DecisionEngine
+        eng = DecisionEngine.__new__(DecisionEngine)
+        eng.model = "openai/gpt-oss-20b"
+        seen = {}
+
+        class _Resp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"finish_reason": "stop", "message": {"content": "[]"}}]}
+
+        class _Client:
+            async def post(self, path, json=None, **kw):
+                seen.update(json or {})
+                return _Resp()
+
+        eng._openrouter_client = _Client()
+        await DecisionEngine._call_openrouter(eng, "prompt")
+        assert seen["reasoning"] == {"effort": "low"}
+
+
 class TestLLMPresetEnv:
     """KBZ_LLM_PRESET makes a model migration survive a restart. The
     runtime switcher (POST /simulation/llm) only mutates the live engine,
@@ -1329,15 +1392,15 @@ class TestLLMPresetEnv:
 
     def test_preset_env_overrides_backend_and_model(self, monkeypatch):
         from agents.run_with_viewer import _apply_preset_env
-        monkeypatch.setenv("KBZ_LLM_PRESET", "or-mercury-2.5")
+        monkeypatch.setenv("KBZ_LLM_PRESET", "or-deepseek-v4.1-flash")
         args = self._Args()
-        assert _apply_preset_env(args, [], self._boom) == "or-mercury-2.5"
+        assert _apply_preset_env(args, [], self._boom) == "or-deepseek-v4.1-flash"
         assert args.backend == "openrouter"
-        assert args.model == "inception/mercury-2.5"
+        assert args.model == "deepseek/deepseek-v4.1-flash-1017"
 
     def test_explicit_cli_flags_win_over_env(self, monkeypatch):
         from agents.run_with_viewer import _apply_preset_env
-        monkeypatch.setenv("KBZ_LLM_PRESET", "or-mercury-2.5")
+        monkeypatch.setenv("KBZ_LLM_PRESET", "or-deepseek-v4.1-flash")
         args = self._Args()
         assert _apply_preset_env(args, ["--model", "gemma4:26b"], self._boom) is None
         assert args.backend == "anthropic"  # untouched

@@ -9,6 +9,7 @@ The engine takes the agent's persona + community state and produces
 a structured action decision.
 """
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -248,6 +249,64 @@ end.** You don't need to put `support_pulse` last in the JSON array
 yourself — the runtime takes care of it — but it WILL be the final
 action of the round regardless of where you place it.
 """
+
+
+OPENROUTER_SYSTEM_PROMPT = (
+    "You are a governance simulation agent. "
+    "You MUST respond with ONLY a JSON array. "
+    "No markdown, no explanation, no text before or after the JSON."
+)
+
+
+# Per-model request fields, layered over the defaults below. Keyed by model
+# id because these are properties of a model and its providers, not of the
+# preset name. Every entry was measured with scripts/llm_bakeoff.py, which
+# also probes each candidate for the reasoning refusal described here.
+OPENROUTER_MODEL_OVERRIDES: dict[str, dict] = {
+    # Refuses `reasoning: {enabled: false}` with HTTP 400 "Reasoning is
+    # mandatory for this endpoint and cannot be disabled" — without this
+    # entry EVERY call fails and every agent turn degrades to do_nothing.
+    # `effort: low` costs ~180 reasoning tokens a turn (billed as output).
+    "openai/gpt-oss-20b": {"reasoning": {"effort": "low"}},
+    # ~50 providers serve this model, from $0.03 to $0.60 per M input.
+    # OpenRouter's default load balancing averaged $1.47 per 1k turns in
+    # the 2026-11-13 bake-off; cheapest-first measured $0.39 per 1k, a
+    # faster p90 (3.5s vs 5.1s) and no worse on any quality metric.
+    # Fallback to the next-cheapest provider stays on.
+    "deepseek/deepseek-v4.1-flash-1017": {"provider": {"sort": "price"}},
+}
+
+
+def openrouter_payload(model: str, prompt: str) -> dict:
+    """The exact request body the simulation sends to OpenRouter.
+
+    A function rather than inline in `_call_openrouter` so that
+    `scripts/llm_bakeoff.py` judges a candidate model on the request it
+    would really get — a model that only behaves under different
+    sampling settings would otherwise pass the bake-off and fail live.
+    """
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": OPENROUTER_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        # Reasoning OFF. Several catalog models (inception/mercury-2.5,
+        # qwen3.7-flash, gpt-oss-20b) reason by DEFAULT: the tokens are
+        # billed at output rates AND they eat the max_tokens budget, so
+        # the request hits finish_reason="length" with `content: null`
+        # before a single character of JSON is emitted. Measured on
+        # mercury-2.5: 499/512 tokens spent reasoning, content null.
+        # We never want a reasoning trace here — the task is "emit a
+        # JSON array" — so disable it explicitly. OpenRouter ignores
+        # this field for models that don't support it.
+        "reasoning": {"enabled": False},
+    }
+    # deepcopy: callers may mutate the payload; the table must not change.
+    payload.update(copy.deepcopy(OPENROUTER_MODEL_OVERRIDES.get(model, {})))
+    return payload
 
 
 @dataclass
@@ -931,29 +990,7 @@ class DecisionEngine:
                 timeout=httpx.Timeout(120.0, connect=10.0),
             )
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": (
-                    "You are a governance simulation agent. "
-                    "You MUST respond with ONLY a JSON array. "
-                    "No markdown, no explanation, no text before or after the JSON."
-                )},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.7,
-            "max_tokens": 1024,
-            # Reasoning OFF. Several catalog models (inception/mercury-2.5,
-            # qwen3.7-flash, gpt-oss-20b) reason by DEFAULT: the tokens are
-            # billed at output rates AND they eat the max_tokens budget, so
-            # the request hits finish_reason="length" with `content: null`
-            # before a single character of JSON is emitted. Measured on
-            # mercury-2.5: 499/512 tokens spent reasoning, content null.
-            # We never want a reasoning trace here — the task is "emit a
-            # JSON array" — so disable it explicitly. OpenRouter ignores
-            # this field for models that don't support it.
-            "reasoning": {"enabled": False},
-        }
+        payload = openrouter_payload(self.model, prompt)
         resp = await self._openrouter_client.post("/chat/completions", json=payload)
         resp.raise_for_status()
         data = resp.json()
