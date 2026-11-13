@@ -162,8 +162,8 @@ const PROPOSAL_TYPE_META = {
 // jargon term discoverable (OutThere/OnTheAir) for researcher mode.
 const PROPOSAL_STATUS_LABEL = {
     Draft: "Draft",
-    OutThere: "Open for support",
-    OnTheAir: "Active vote",
+    OutThere: "Out there",    // the film's words: gathering support
+    OnTheAir: "On the air",   // decided at the next pulse
     Accepted: "Accepted",
     Rejected: "Rejected",
     Canceled: "Withdrawn",
@@ -270,6 +270,58 @@ function useProposalCardTitle(p) {
 }
 
 // ── EntityLink ─────────────────────────────────────────
+// ── Film components ─────────────────────────────────────
+// The explainer film's visual vocabulary, as reusable pieces.
+
+// A member, drawn the way the film draws a bot: square head, two eyes,
+// an antenna. Every member of this kibbutz is an AI, so they're all bots.
+// The head takes `color` from the agent's categorical colour class.
+function BotFace({ className = "", title, onClick }) {
+    return (
+        <span className={`bot-face ${className}`} title={title} onClick={onClick}>
+            <svg viewBox="0 0 40 46" aria-hidden="true">
+                <line className="bf-stem" x1="20" y1="4" x2="20" y2="11" />
+                <circle cx="20" cy="4" r="3.4" />
+                <rect x="3" y="11" width="34" height="32" rx="8" />
+                <rect className="bf-eye" x="12.5" y="22" width="4.4" height="8.5" rx="2.2" />
+                <rect className="bf-eye" x="23.1" y="22" width="4.4" height="8.5" rx="2.2" />
+            </svg>
+        </span>
+    );
+}
+
+// The heartbeat line from the film. `slice` keeps the centre beat centred
+// at any width; the side complexes simply run off the edges.
+const ECG_PATH = "M0,50 L275,50 L283,45 L291,50 L294,50 L298,55 L302,20 L306,74 L310,50 L318,50 L326,44 L334,50 L572,50 L581,44 L590,50 L594,50 L597,57 L602,4 L607,92 L612,50 L622,50 L632,41 L642,50 L875,50 L883,45 L891,50 L894,50 L898,55 L902,20 L906,74 L910,50 L918,50 L926,44 L934,50 L1200,50";
+function Ecg({ className = "" }) {
+    return (
+        <svg className={`ecg ${className}`} viewBox="0 0 1200 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <path d={ECG_PATH} />
+            <circle className="ecg-beat" cx="600" cy="50" r="7" />
+        </svg>
+    );
+}
+
+// The film's pulse gauge: a ring that fills as members call the pulse,
+// with the heartbeat inside. Lime only once it can fire.
+function PulseGauge({ support, threshold, onClick }) {
+    const safe = Math.max(1, threshold || 1);
+    const pct = Math.min(100, Math.round((support / safe) * 100));
+    const ready = support >= safe;
+    return (
+        <button type="button" className={`pulse-gauge ${ready ? "ready" : ""}`} onClick={onClick}
+                aria-label={`Next pulse: ${support} of ${safe} supporters`}>
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle className="pg-track" cx="60" cy="60" r="50" />
+                <circle className="pg-arc" cx="60" cy="60" r="50" pathLength="100"
+                        strokeDasharray={`${pct} 100`} transform="rotate(-90 60 60)" />
+                <path className="pg-ecg" d="M27,57 L43,57 L47,52 L51,57 L54,57 L58,42 L62,72 L65,57 L74,57 L78,53 L82,57 L93,57" />
+                <text x="60" y="89" className="pg-count">{support}/{safe}</text>
+            </svg>
+        </button>
+    );
+}
+
 function EntityLink({ type, id, label, openDetail }) {
     return (
         <span
@@ -3166,6 +3218,7 @@ function TabNav({ activeTab, setActiveTab }) {
 
     return (
         <div className="tab-nav" role="tablist">
+            <span className="tab-kbz" aria-hidden="true"><b>KBZ</b> //</span>
             {TAB_GROUPS.map((group, gi) => (
                 <React.Fragment key={group.name}>
                     {gi > 0 && <span className="tab-group-sep" aria-hidden="true"></span>}
@@ -3260,11 +3313,13 @@ function CommunityOverview({ status, pulses, openDetail, communityId, overrideCo
                 <div className="community-title-banner action">
                     <div className="community-title-label">Action Community</div>
                     <div className="community-title-name">{overrideCommunity.name}</div>
+                    <Ecg className="banner-ecg" />
                 </div>
             ) : (
                 <div className="community-title-banner root">
                     <div className="community-title-label">Root Community</div>
                     <div className="community-title-name">{community?.name || "Loading..."}</div>
+                    <Ecg className="banner-ecg" />
                 </div>
             )}
             <div className="card-title">Community Overview</div>
@@ -3287,15 +3342,16 @@ function CommunityOverview({ status, pulses, openDetail, communityId, overrideCo
                     <div className="stat-label">Total Events</div>
                 </div>
             </div>
-            <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 4 }}>
-                    Next Pulse Progress
-                </div>
-                <div className="pulse-bar" style={{ cursor: nextPulse ? "pointer" : "default" }}
-                     onClick={() => nextPulse && openDetail("pulse", nextPulse.id, "Next Pulse")}>
-                    <div className="pulse-bar-fill" style={{ width: `${pct}%` }}></div>
-                    <div className="pulse-bar-text">
-                        {supportCount} / {threshold} ({pct}%)
+            <div className="pulse-row">
+                <PulseGauge support={supportCount} threshold={threshold}
+                            onClick={() => nextPulse && openDetail("pulse", nextPulse.id, "Next Pulse")} />
+                <div className="pulse-row-text">
+                    <div className="film-label">Next pulse</div>
+                    <div className="pulse-row-line">
+                        <strong>{supportCount} of {threshold}</strong> members have called it
+                    </div>
+                    <div className="pulse-row-sub">
+                        Anyone can call the pulse. Nothing moves until enough of you do — then everything on the air is decided at once.
                     </div>
                 </div>
             </div>
@@ -3449,18 +3505,18 @@ function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, ope
         <div className={`proposal-card ${cardStatusClass} ${readyClass} clickable`}
              onClick={() => openDetail("proposal", p.id, `${p.proposal_type}`)}>
             <div className="pc-head">
-                <span className="pc-type"><span>{typeMeta.emoji}</span> {typeMeta.label}</span>
+                <span className="pc-type">{typeMeta.label}</span>
                 <span className={statusClassName} title={p.proposal_status}>{statusLabel}</span>
             </div>
             <div className="pc-author">
-                <span
-                    className="pc-avatar clickable"
+                <BotFace
+                    className="pc-bot clickable"
+                    title={`Open ${authorName}`}
                     onClick={(e) => {
                         e.stopPropagation();
                         if (p.user_id) openDetail("user", p.user_id, authorName);
                     }}
-                    title={`Open ${authorName}`}
-                >{initial}</span>
+                />
                 <span
                     className="pc-author-name clickable"
                     onClick={(e) => {
@@ -3484,7 +3540,7 @@ function ProposalCard({ p, memberCount, proposalThreshold, getTypeThreshold, ope
                     )}
                 </div>
                 <div className="pc-support-track">
-                    <div className="pc-support-fill" style={{ width: `${fillPct}%` }}></div>
+                    <div className="pc-support-fill" style={{ width: `${fillPct}%`, "--fill": Math.max(fillPct, 1) }}></div>
                     {tickPct != null && (
                         <div className="pc-threshold-tick" style={{ left: `${tickPct}%` }}></div>
                     )}
@@ -3550,19 +3606,23 @@ function ProposalBoard({ proposals, openDetail, pulses, status, activeCommunity,
     return (
         <div className="card">
             <div className="card-title">Proposals</div>
-            <div className="proposal-columns">
+            {/* The film's board: OUT THERE › ON THE AIR › DECIDED, left to right. */}
+            <div className="proposal-columns lifecycle">
                 <div>
-                    <div className="proposal-column-title" title="OnTheAir">{PROPOSAL_STATUS_LABEL.OnTheAir} ({onTheAir.length})</div>
-                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
-                    {onTheAir.length === 0 && <div className="empty-state">None</div>}
-                </div>
-                <div>
-                    <div className="proposal-column-title" title="OutThere">{PROPOSAL_STATUS_LABEL.OutThere} ({outThere.length})</div>
+                    <div className="proposal-column-title" title="OutThere">{PROPOSAL_STATUS_LABEL.OutThere} <span className="col-count">{outThere.length}</span></div>
+                    <div className="col-sub">gathering support</div>
                     {outThere.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
                     {outThere.length === 0 && <div className="empty-state">None</div>}
                 </div>
                 <div>
-                    <div className="proposal-column-title">Last Pulse Results ({recent.length})</div>
+                    <div className="proposal-column-title on" title="OnTheAir">{PROPOSAL_STATUS_LABEL.OnTheAir} <span className="col-count">{onTheAir.length}</span></div>
+                    <div className="col-sub">decided at the next pulse</div>
+                    {onTheAir.map((p) => <ProposalCard key={p.id} p={p} memberCount={memberCount} proposalThreshold={proposalThreshold} getTypeThreshold={getTypeThreshold} openDetail={openDetail} agentsByUserId={agentsByUserId} />)}
+                    {onTheAir.length === 0 && <div className="empty-state">None</div>}
+                </div>
+                <div>
+                    <div className="proposal-column-title">Decided <span className="col-count">{recent.length}</span></div>
+                    <div className="col-sub">at the last pulse</div>
                     {accepted.length > 0 && (
                         <div style={{ marginBottom: 8 }}>
                             <div className="results-sub accepted">Accepted ({accepted.length})</div>
@@ -3787,9 +3847,7 @@ function AgentCard({ agent, expanded, onToggle, openDetail }) {
     return (
         <div className={`agent-card ${expanded ? "expanded" : ""}`} onClick={onToggle}>
             <div className="agent-header">
-                <div className={`agent-avatar ${colorClass}`} aria-hidden="true">
-                    {initial}
-                </div>
+                <BotFace className={`agent-bot ${colorClass}`} />
                 <div className="agent-identity">
                     <div
                         className={`agent-name entity-link ${colorClass}`}
@@ -5234,6 +5292,11 @@ function App() {
 
     return (
         <div>
+            {/* The film's viewfinder: registration marks at the corners. */}
+            <div className="hud" aria-hidden="true">
+                <span className="hud-c tl"></span><span className="hud-c tr"></span>
+                <span className="hud-c bl"></span><span className="hud-c br"></span>
+            </div>
             <Header
                 status={status}
                 openDetail={openDetail}
